@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_THERMOSTAT, DOMAIN
@@ -34,7 +35,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class ThermostatPausedBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class ThermostatPausedBinarySensor(CoordinatorEntity, RestoreEntity, BinarySensorEntity):
     """Binary sensor indicating if thermostat is paused."""
 
     _attr_has_entity_name = True
@@ -51,6 +52,29 @@ class ThermostatPausedBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_paused"
         self._attr_name = "Thermostat Paused"
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state when added to hass."""
+        await super().async_added_to_hass()
+
+        # Try to restore previous state
+        if (last_state := await self.async_get_last_state()) is not None:
+            _LOGGER.debug("Restoring state for %s: %s", self.entity_id, last_state.state)
+
+            # Restore coordinator state from entity attributes
+            attrs = last_state.attributes
+            coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+            # Restore paused state
+            if last_state.state == "on":
+                coordinator.is_paused = True
+                coordinator.previous_hvac_mode = attrs.get("previous_mode")
+                coordinator.trigger_sensor = None  # Will be re-detected if still open
+
+                _LOGGER.info(
+                    "Restored paused state: previous_mode=%s",
+                    coordinator.previous_hvac_mode,
+                )
 
     @property
     def device_info(self):

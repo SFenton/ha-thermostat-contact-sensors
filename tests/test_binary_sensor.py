@@ -179,3 +179,45 @@ async def test_binary_sensor_device_info(
     assert our_device.name == "Test Thermostat Contact Sensors"
 
     await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+
+async def test_binary_sensor_restores_state(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test binary sensor restores paused state from previous run."""
+    from homeassistant.const import STATE_ON
+    from homeassistant.core import State
+    from unittest.mock import patch
+
+    mock_config_entry.add_to_hass(hass)
+
+    entity_id = "binary_sensor.test_thermostat_contact_sensors_thermostat_paused"
+
+    # Create a mock last state that was paused
+    mock_last_state = State(
+        entity_id,
+        STATE_ON,
+        {
+            "thermostat": "climate.test_thermostat",
+            "previous_mode": "cool",
+            "open_count": 1,
+            "triggered_by": "Front Door",
+        },
+    )
+
+    # Patch RestoreEntity.async_get_last_state to return our mock state
+    with patch(
+        "homeassistant.helpers.restore_state.RestoreEntity.async_get_last_state",
+        return_value=mock_last_state,
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Check coordinator state was restored
+    coordinator = mock_config_entry.runtime_data
+    assert coordinator.is_paused is True
+    assert coordinator.previous_hvac_mode == "cool"
+
+    await hass.config_entries.async_unload(mock_config_entry.entry_id)

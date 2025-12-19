@@ -159,15 +159,11 @@ class ThermostatContactSensorsConfigFlow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return ThermostatContactSensorsOptionsFlow(config_entry)
+        return ThermostatContactSensorsOptionsFlow()
 
 
 class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Thermostat Contact Sensors."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

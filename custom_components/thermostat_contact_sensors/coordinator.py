@@ -424,6 +424,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                     state.attributes.get("friendly_name", sensor)
                 )
 
+        # Get thermostat friendly name
+        thermostat_name = self.thermostat
+        thermostat_state = self.hass.states.get(self.thermostat)
+        if thermostat_state:
+            thermostat_name = thermostat_state.attributes.get(
+                "friendly_name", self.thermostat
+            )
+
         template_vars = {
             "trigger_sensor": self.trigger_sensor or "",
             "trigger_sensor_name": trigger_sensor_name,
@@ -436,6 +444,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "close_timeout": self.close_timeout,
             "previous_mode": self.previous_hvac_mode or "unknown",
             "thermostat": self.thermostat,
+            "thermostat_name": thermostat_name,
         }
 
         if paused:
