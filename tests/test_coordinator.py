@@ -1,0 +1,787 @@
+"""Tests for the coordinator."""
+from __future__ import annotations
+
+import asyncio
+from datetime import timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from homeassistant.components.climate import HVACMode
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
+from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
+
+from custom_components.thermostat_contact_sensors.const import (
+    CONF_CLOSE_TIMEOUT,
+    CONF_NOTIFY_SERVICE,
+    CONF_OPEN_TIMEOUT,
+    DOMAIN,
+)
+from custom_components.thermostat_contact_sensors.coordinator import (
+    ThermostatContactSensorsCoordinator,
+)
+
+from .conftest import (
+    TEST_NOTIFY_SERVICE,
+    TEST_SENSOR_1,
+    TEST_SENSOR_2,
+    TEST_SENSOR_3,
+    TEST_THERMOSTAT,
+    get_test_config_options,
+)
+
+
+@pytest.fixture(autouse=True)
+async def setup_ha(hass: HomeAssistant, setup_test_entities) -> None:
+    """Set up Home Assistant with test entities."""
+    pass
+
+
+@pytest.fixture
+def coordinator(hass: HomeAssistant) -> ThermostatContactSensorsCoordinator:
+    """Create a coordinator for testing."""
+    options = get_test_config_options()
+    options[CONF_OPEN_TIMEOUT] = 1  # 1 minute for faster tests
+    options[CONF_CLOSE_TIMEOUT] = 1
+
+    return ThermostatContactSensorsCoordinator(
+        hass,
+        config_entry_id="test_entry",
+        contact_sensors=[TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3],
+        thermostat=TEST_THERMOSTAT,
+        options=options,
+    )
+
+
+@pytest.fixture
+def coordinator_no_notify(hass: HomeAssistant) -> ThermostatContactSensorsCoordinator:
+    """Create a coordinator without notifications for testing."""
+    options = get_test_config_options()
+    options[CONF_OPEN_TIMEOUT] = 1
+    options[CONF_CLOSE_TIMEOUT] = 1
+    options[CONF_NOTIFY_SERVICE] = ""
+
+    return ThermostatContactSensorsCoordinator(
+        hass,
+        config_entry_id="test_entry_no_notify",
+        contact_sensors=[TEST_SENSOR_1],
+        thermostat=TEST_THERMOSTAT,
+        options=options,
+    )
+
+
+class TestCoordinatorSetup:
+    """Tests for coordinator setup and shutdown."""
+
+    async def test_coordinator_setup(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test coordinator setup."""
+        await coordinator.async_setup()
+
+        assert coordinator.is_paused is False
+        assert coordinator.open_sensors == []
+        assert coordinator.trigger_sensor is None
+        assert coordinator._unsub_state_change is not None
+
+        await coordinator.async_shutdown()
+
+    async def test_coordinator_shutdown(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test coordinator shutdown cleans up resources."""
+        await coordinator.async_setup()
+
+        assert coordinator._unsub_state_change is not None
+
+        await coordinator.async_shutdown()
+
+        assert coordinator._unsub_state_change is None
+
+    async def test_coordinator_initial_open_sensors(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test coordinator detects initially open sensors."""
+        # Open a sensor before setup
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await coordinator.async_setup()
+
+        assert TEST_SENSOR_1 in coordinator.open_sensors
+        assert coordinator.open_count == 1
+
+        await coordinator.async_shutdown()
+
+
+class TestSensorStateChanges:
+    """Tests for sensor state change handling."""
+
+    async def test_sensor_open_starts_timer(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test that opening a sensor starts the open timer."""
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert TEST_SENSOR_1 in coordinator.open_sensors
+        assert coordinator._open_timer is not None
+        assert coordinator._pending_open_sensor == TEST_SENSOR_1
+
+        await coordinator.async_shutdown()
+
+    async def test_sensor_close_before_timeout_cancels_timer(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test that closing sensor before timeout cancels timer."""
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert coordinator._open_timer is not None
+
+        # Close the sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert coordinator._open_timer is None
+        assert coordinator.is_paused is False
+
+        await coordinator.async_shutdown()
+
+    async def test_multiple_sensors_open(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test multiple sensors opening."""
+        await coordinator.async_setup()
+
+        # Open first sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Open second sensor
+        hass.states.async_set(TEST_SENSOR_2, STATE_ON, {"friendly_name": "Back Window"})
+        await hass.async_block_till_done()
+
+        assert len(coordinator.open_sensors) == 2
+        assert TEST_SENSOR_1 in coordinator.open_sensors
+        assert TEST_SENSOR_2 in coordinator.open_sensors
+
+        await coordinator.async_shutdown()
+
+    async def test_sensor_unavailable_ignored(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test that unavailable state changes are ignored."""
+        await coordinator.async_setup()
+
+        # Set sensor to unavailable
+        hass.states.async_set(TEST_SENSOR_1, STATE_UNAVAILABLE, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert TEST_SENSOR_1 not in coordinator.open_sensors
+        assert coordinator._open_timer is None
+
+        await coordinator.async_shutdown()
+
+
+class TestThermostatPausing:
+    """Tests for thermostat pausing logic."""
+
+    async def test_thermostat_pauses_after_timeout(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that thermostat pauses after open timeout."""
+        # Use very short timeout
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01  # ~0.6 seconds
+
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Wait for timeout
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+        assert coordinator.previous_hvac_mode == HVACMode.HEAT
+        mock_climate_service.assert_called()
+
+        await coordinator.async_shutdown()
+
+    async def test_thermostat_stores_previous_mode(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that previous HVAC mode is stored correctly."""
+        # Set thermostat to cool mode
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.COOL,
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Open a sensor and wait for timeout
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.previous_hvac_mode == HVACMode.COOL
+
+        await coordinator.async_shutdown()
+
+    async def test_no_pause_if_sensor_closes_before_timeout(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test that thermostat doesn't pause if sensor closes before timeout."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 10  # Long timeout
+
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Close it quickly
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+        mock_climate_service.assert_not_called()
+
+        await coordinator.async_shutdown()
+
+
+class TestThermostatResuming:
+    """Tests for thermostat resuming logic."""
+
+    async def test_thermostat_resumes_after_all_closed(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that thermostat resumes after all sensors closed."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+        coordinator._options[CONF_CLOSE_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Open a sensor and wait for pause
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Close the sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Wait for close timeout
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+
+        await coordinator.async_shutdown()
+
+    async def test_close_timer_cancelled_if_sensor_reopens(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that close timer is cancelled if a sensor reopens."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+        coordinator._options[CONF_CLOSE_TIMEOUT] = 10  # Long close timeout
+
+        await coordinator.async_setup()
+
+        # Open a sensor and wait for pause
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Close the sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Close timer should start
+        assert coordinator._close_timer is not None
+
+        # Reopen the sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Close timer should be cancelled
+        assert coordinator._close_timer is None
+        assert coordinator.is_paused is True
+
+        await coordinator.async_shutdown()
+
+    async def test_resume_restores_previous_mode(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that resume restores the previous HVAC mode."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+        coordinator._options[CONF_CLOSE_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Trigger pause and resume
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        # Check thermostat was restored
+        state = hass.states.get(TEST_THERMOSTAT)
+        assert state.state == HVACMode.HEAT
+
+        await coordinator.async_shutdown()
+
+
+class TestNotifications:
+    """Tests for notification sending."""
+
+    async def test_notification_sent_on_pause(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that notification is sent when thermostat pauses."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Trigger pause
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        mock_notify_service.assert_called()
+
+        await coordinator.async_shutdown()
+
+    async def test_notification_sent_on_resume(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that notification is sent when thermostat resumes."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+        coordinator._options[CONF_CLOSE_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Trigger pause and resume
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        mock_notify_service.reset_mock()
+
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        mock_notify_service.assert_called()
+
+        await coordinator.async_shutdown()
+
+    async def test_no_notification_when_disabled(
+        self,
+        hass: HomeAssistant,
+        coordinator_no_notify: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that no notification is sent when service is empty."""
+        coordinator_no_notify._options[CONF_OPEN_TIMEOUT] = 0.01
+
+        await coordinator_no_notify.async_setup()
+
+        # Trigger pause
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        mock_notify_service.assert_not_called()
+
+        await coordinator_no_notify.async_shutdown()
+
+
+class TestOpenSensorCounts:
+    """Tests for open sensor counting."""
+
+    async def test_open_count(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test open sensor count is correct."""
+        await coordinator.async_setup()
+
+        assert coordinator.open_count == 0
+
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert coordinator.open_count == 1
+
+        hass.states.async_set(TEST_SENSOR_2, STATE_ON, {"friendly_name": "Back Window"})
+        await hass.async_block_till_done()
+
+        assert coordinator.open_count == 2
+
+        await coordinator.async_shutdown()
+
+    async def test_open_doors_count(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test open doors count is correct."""
+        await coordinator.async_setup()
+
+        # Open a door sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert coordinator.open_doors_count == 1
+        assert coordinator.open_windows_count == 0
+
+        await coordinator.async_shutdown()
+
+    async def test_open_windows_count(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test open windows count is correct."""
+        await coordinator.async_setup()
+
+        # Open a window sensor
+        hass.states.async_set(TEST_SENSOR_2, STATE_ON, {"friendly_name": "Back Window"})
+        await hass.async_block_till_done()
+
+        assert coordinator.open_windows_count == 1
+        assert coordinator.open_doors_count == 0
+
+        await coordinator.async_shutdown()
+
+
+class TestOptionsUpdate:
+    """Tests for options updates."""
+
+    async def test_update_options(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test updating options."""
+        await coordinator.async_setup()
+
+        assert coordinator.open_timeout == 1
+
+        new_options = get_test_config_options()
+        new_options[CONF_OPEN_TIMEOUT] = 10
+
+        coordinator.update_options(new_options)
+
+        assert coordinator.open_timeout == 10
+
+        await coordinator.async_shutdown()
+
+
+class TestManualOverride:
+    """Tests for manual thermostat override detection."""
+
+    async def test_manual_on_while_paused_clears_paused_state(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that user manually turning on thermostat while paused clears paused state."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+        coordinator._options[CONF_CLOSE_TIMEOUT] = 10  # Long timeout
+
+        await coordinator.async_setup()
+
+        # Open a sensor and wait for pause
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+        assert coordinator.previous_hvac_mode == "heat"
+
+        # User manually turns thermostat back on
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            "cool",
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        # Paused state should be cleared
+        assert coordinator.is_paused is False
+        assert coordinator.previous_hvac_mode is None
+        assert coordinator.trigger_sensor is None
+
+        await coordinator.async_shutdown()
+
+    async def test_manual_on_while_paused_cancels_close_timer(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that manual on cancels any pending close timer."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+        coordinator._options[CONF_CLOSE_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Open then close a sensor to start close timer
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Close sensor to start close timer
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert coordinator._close_timer is not None
+
+        # User manually turns thermostat on - should cancel close timer
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            "heat",
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        assert coordinator._close_timer is None
+        assert coordinator.is_paused is False
+
+        await coordinator.async_shutdown()
+
+    async def test_manual_off_while_paused_updates_previous_mode(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that user turning off after manual on updates previous_hvac_mode."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+        coordinator._options[CONF_CLOSE_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Open a sensor and wait for pause
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+        assert coordinator.previous_hvac_mode == "heat"
+
+        # User manually turns thermostat to cool (override - clears paused state)
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            "cool",
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+        assert coordinator._last_known_hvac_mode == "cool"
+
+        # Close the sensor first, then reopen to trigger new pause cycle
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Reopen sensor to trigger new pause
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        # Should store "cool" as the previous mode (the user's choice)
+        assert coordinator.is_paused is True
+        assert coordinator.previous_hvac_mode == "cool"
+
+        await coordinator.async_shutdown()
+
+    async def test_tracks_last_known_hvac_mode(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test that last known HVAC mode is tracked correctly."""
+        await coordinator.async_setup()
+
+        # Initial state is heat
+        assert coordinator._last_known_hvac_mode == "heat"
+
+        # Change to cool
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            "cool",
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        assert coordinator._last_known_hvac_mode == "cool"
+
+        # Change to auto
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            "auto",
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        assert coordinator._last_known_hvac_mode == "auto"
+
+        # Turn off - should NOT update last known mode
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            "off",
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        assert coordinator._last_known_hvac_mode == "auto"
+
+        await coordinator.async_shutdown()
+
+    async def test_respects_user_mode_change_for_restore(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test complete flow: pause, user overrides to cool, user turns off, sensors close, restores to cool."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+        coordinator._options[CONF_CLOSE_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Start with heat mode
+        assert coordinator._last_known_hvac_mode == "heat"
+
+        # Open sensor and wait for pause
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+        mock_climate_service.reset_mock()
+
+        # User manually turns thermostat to cool
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            "cool",
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+        assert coordinator._last_known_hvac_mode == "cool"
+
+        # User then turns it off manually
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            "off",
+            {"friendly_name": "Test Thermostat"},
+        )
+        await hass.async_block_till_done()
+
+        # Last known should still be "cool"
+        assert coordinator._last_known_hvac_mode == "cool"
+
+        await coordinator.async_shutdown()

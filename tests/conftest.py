@@ -1,0 +1,193 @@
+"""Fixtures for Thermostat Contact Sensors tests."""
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import AsyncMock
+
+import pytest
+from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
+from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.thermostat_contact_sensors.const import (
+    CONF_CLOSE_TIMEOUT,
+    CONF_CONTACT_SENSORS,
+    CONF_NOTIFICATION_TAG,
+    CONF_NOTIFY_MESSAGE_PAUSED,
+    CONF_NOTIFY_MESSAGE_RESUMED,
+    CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_TITLE_PAUSED,
+    CONF_NOTIFY_TITLE_RESUMED,
+    CONF_OPEN_TIMEOUT,
+    CONF_THERMOSTAT,
+    DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_NOTIFICATION_TAG,
+    DEFAULT_NOTIFY_MESSAGE_PAUSED,
+    DEFAULT_NOTIFY_MESSAGE_RESUMED,
+    DEFAULT_NOTIFY_TITLE_PAUSED,
+    DEFAULT_NOTIFY_TITLE_RESUMED,
+    DEFAULT_OPEN_TIMEOUT,
+    DOMAIN,
+)
+
+
+# Test entity IDs
+TEST_THERMOSTAT = "climate.test_thermostat"
+TEST_SENSOR_1 = "binary_sensor.front_door_contact"
+TEST_SENSOR_2 = "binary_sensor.back_window_contact"
+TEST_SENSOR_3 = "binary_sensor.garage_door_contact"
+TEST_NOTIFY_SERVICE = "notify.test_notify"
+
+
+@pytest.fixture(autouse=True)
+async def auto_enable_custom_integrations(
+    hass: HomeAssistant,
+    enable_custom_integrations: None,
+) -> None:
+    """Enable custom integrations for all tests."""
+    pass
+
+
+@pytest.fixture
+def mock_config_entry() -> MockConfigEntry:
+    """Create a mock config entry."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Test Thermostat Contact Sensors",
+        data={
+            "name": "Test Thermostat Contact Sensors",
+            CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3],
+            CONF_THERMOSTAT: TEST_THERMOSTAT,
+        },
+        options={
+            CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
+            CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
+            CONF_NOTIFY_SERVICE: TEST_NOTIFY_SERVICE,
+            CONF_NOTIFY_TITLE_PAUSED: DEFAULT_NOTIFY_TITLE_PAUSED,
+            CONF_NOTIFY_MESSAGE_PAUSED: DEFAULT_NOTIFY_MESSAGE_PAUSED,
+            CONF_NOTIFY_TITLE_RESUMED: DEFAULT_NOTIFY_TITLE_RESUMED,
+            CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
+            CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
+        },
+        entry_id="test_entry_id",
+        unique_id=TEST_THERMOSTAT,
+    )
+
+
+@pytest.fixture
+def mock_config_entry_no_notify() -> MockConfigEntry:
+    """Create a mock config entry without notifications."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Test Thermostat No Notify",
+        data={
+            "name": "Test Thermostat No Notify",
+            CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
+            CONF_THERMOSTAT: TEST_THERMOSTAT,
+        },
+        options={
+            CONF_OPEN_TIMEOUT: 2,
+            CONF_CLOSE_TIMEOUT: 2,
+            CONF_NOTIFY_SERVICE: "",
+            CONF_NOTIFY_TITLE_PAUSED: DEFAULT_NOTIFY_TITLE_PAUSED,
+            CONF_NOTIFY_MESSAGE_PAUSED: DEFAULT_NOTIFY_MESSAGE_PAUSED,
+            CONF_NOTIFY_TITLE_RESUMED: DEFAULT_NOTIFY_TITLE_RESUMED,
+            CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
+            CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
+        },
+        entry_id="test_entry_no_notify",
+        unique_id=f"{TEST_THERMOSTAT}_no_notify",
+    )
+
+
+@pytest.fixture
+async def setup_test_entities(hass: HomeAssistant) -> None:
+    """Set up test entities."""
+    # Set up thermostat
+    hass.states.async_set(
+        TEST_THERMOSTAT,
+        HVACMode.HEAT,
+        {
+            "friendly_name": "Test Thermostat",
+            "hvac_modes": [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO],
+            "current_temperature": 20,
+            "temperature": 22,
+        },
+    )
+
+    # Set up contact sensors (all closed initially)
+    hass.states.async_set(
+        TEST_SENSOR_1,
+        STATE_OFF,
+        {"friendly_name": "Front Door Contact", "device_class": "door"},
+    )
+    hass.states.async_set(
+        TEST_SENSOR_2,
+        STATE_OFF,
+        {"friendly_name": "Back Window Contact", "device_class": "window"},
+    )
+    hass.states.async_set(
+        TEST_SENSOR_3,
+        STATE_OFF,
+        {"friendly_name": "Garage Door Contact", "device_class": "garage_door"},
+    )
+
+    await hass.async_block_till_done()
+
+
+@pytest.fixture
+def mock_notify_service(hass: HomeAssistant) -> AsyncMock:
+    """Mock the notify service."""
+    mock_service = AsyncMock()
+    hass.services.async_register(
+        "notify",
+        "test_notify",
+        mock_service,
+    )
+    return mock_service
+
+
+@pytest.fixture
+def mock_climate_service(hass: HomeAssistant) -> AsyncMock:
+    """Mock the climate set_hvac_mode service."""
+    mock_service = AsyncMock()
+
+    async def handle_set_hvac_mode(call):
+        """Handle the set_hvac_mode service call."""
+        entity_id = call.data.get("entity_id")
+        hvac_mode = call.data.get("hvac_mode")
+        # Update the state
+        current_attrs = hass.states.get(entity_id).attributes if hass.states.get(entity_id) else {}
+        hass.states.async_set(entity_id, hvac_mode, current_attrs)
+        await mock_service(call)
+
+    hass.services.async_register(
+        CLIMATE_DOMAIN,
+        "set_hvac_mode",
+        handle_set_hvac_mode,
+    )
+    return mock_service
+
+
+def get_test_config_data() -> dict[str, Any]:
+    """Get test configuration data."""
+    return {
+        "name": "Test Thermostat Contact Sensors",
+        CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3],
+        CONF_THERMOSTAT: TEST_THERMOSTAT,
+    }
+
+
+def get_test_config_options() -> dict[str, Any]:
+    """Get test configuration options."""
+    return {
+        CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
+        CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
+        CONF_NOTIFY_SERVICE: TEST_NOTIFY_SERVICE,
+        CONF_NOTIFY_TITLE_PAUSED: DEFAULT_NOTIFY_TITLE_PAUSED,
+        CONF_NOTIFY_MESSAGE_PAUSED: DEFAULT_NOTIFY_MESSAGE_PAUSED,
+        CONF_NOTIFY_TITLE_RESUMED: DEFAULT_NOTIFY_TITLE_RESUMED,
+        CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
+        CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
+    }

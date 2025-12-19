@@ -1,0 +1,73 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure Thermostat Contact Sensors",
+        "description": "Set up monitoring of contact sensors to automatically pause your thermostat when doors/windows are left open.",
+        "data": {
+          "name": "Name",
+          "contact_sensors": "Contact Sensors",
+          "thermostat": "Thermostat",
+          "open_timeout": "Open Timeout (minutes)",
+          "close_timeout": "Close Timeout (minutes)",
+          "notify_service": "Notification Service (optional)"
+        },
+        "data_description": {
+          "name": "A friendly name for this configuration",
+          "contact_sensors": "Select all door and window sensors to monitor",
+          "thermostat": "Select the thermostat/climate entity to control",
+          "open_timeout": "Minutes a sensor must be open before pausing thermostat",
+          "close_timeout": "Minutes all sensors must be closed before resuming thermostat",
+          "notify_service": "Enter a notify service (e.g., notify.mobile_app_phone) or leave empty to disable"
+        }
+      }
+    },
+    "error": {
+      "no_sensors_selected": "Please select at least one contact sensor",
+      "no_thermostat_selected": "Please select a thermostat"
+    },
+    "abort": {
+      "already_configured": "This thermostat is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Thermostat Contact Sensors Options",
+        "description": "Adjust timeouts and notification settings. You can use template variables in messages:\n- `{{ trigger_sensor_name }}` - Friendly name of the sensor that triggered\n- `{{ open_count }}` - Number of open sensors\n- `{{ open_timeout }}` / `{{ close_timeout }}` - Timeout values\n- `{{ previous_mode }}` - Previous HVAC mode",
+        "data": {
+          "open_timeout": "Open Timeout (minutes)",
+          "close_timeout": "Close Timeout (minutes)",
+          "notify_service": "Notification Service",
+          "notify_title_paused": "Notification Title (Paused)",
+          "notify_message_paused": "Notification Message (Paused)",
+          "notify_title_resumed": "Notification Title (Resumed)",
+          "notify_message_resumed": "Notification Message (Resumed)",
+          "notification_tag": "Notification Tag"
+        },
+        "data_description": {
+          "open_timeout": "Minutes a sensor must be open before pausing thermostat",
+          "close_timeout": "Minutes all sensors must be closed before resuming thermostat",
+          "notify_service": "Service to call for notifications (e.g., notify.mobile_app_phone). Leave empty to disable.",
+          "notify_title_paused": "Title for the paused notification",
+          "notify_message_paused": "Message template for paused notification",
+          "notify_title_resumed": "Title for the resumed notification",
+          "notify_message_resumed": "Message template for resumed notification",
+          "notification_tag": "Tag to use for persistent/replaceable notifications"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "thermostat_paused": {
+        "name": "Thermostat Paused"
+      }
+    },
+    "sensor": {
+      "open_count": {
+        "name": "Open Sensors"
+      }
+    }
+  }
+}
