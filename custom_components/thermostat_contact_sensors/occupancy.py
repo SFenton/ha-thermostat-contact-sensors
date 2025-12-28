@@ -648,16 +648,13 @@ class RoomOccupancyTracker:
         """Force an update of all areas' active status.
 
         This should be called periodically to update the active status
-        for areas that are continuously occupied.
+        for areas that are continuously occupied and to refresh sensor
+        attributes like occupancy_duration_minutes.
         """
         now = dt_util.utcnow()
-        changed = False
 
         for area in self._areas.values():
-            was_active = area.is_active
             self._update_area_active_status(area, now)
-            if area.is_active != was_active:
-                changed = True
 
-        if changed:
-            self._notify_update()
+        # Always notify to refresh sensor attributes (duration, time remaining, etc.)
+        self._notify_update()
