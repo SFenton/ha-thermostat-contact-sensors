@@ -683,19 +683,19 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 )
             )
 
-        # Add temperature sensors if any exist in this area
-        if area_info["temperature_sensors"]:
-            schema_dict[vol.Optional(
-                CONF_TEMPERATURE_SENSORS,
-                default=current_area_config.get(
-                    CONF_TEMPERATURE_SENSORS, area_info["temperature_sensors"]
-                ),
-            )] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=SENSOR_DOMAIN,
-                    multiple=True,
-                )
+        # Always show temperature sensors field so users can add sensors
+        # even if none were auto-detected with device_class=temperature
+        schema_dict[vol.Optional(
+            CONF_TEMPERATURE_SENSORS,
+            default=current_area_config.get(
+                CONF_TEMPERATURE_SENSORS, area_info.get("temperature_sensors", [])
+            ),
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=SENSOR_DOMAIN,
+                multiple=True,
             )
+        )
 
         # Add other sensors if any exist in this area
         if area_info["sensors"]:
