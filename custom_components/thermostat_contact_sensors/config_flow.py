@@ -401,9 +401,19 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
         areas_data = get_areas_with_sensors(self.hass)
 
         # Build menu options dynamically based on areas
-        menu_options = []
+        # Use a dict to map step IDs to display labels
+        menu_options = {}
         for area_id, area_info in areas_data.items():
-            menu_options.append(f"area_{area_id}")
+            # Check if area is enabled in config
+            is_enabled = areas_config.get(area_id, {}).get(CONF_AREA_ENABLED, True)
+            status = "✓" if is_enabled else "○"
+            sensor_count = (
+                len(area_info["binary_sensors"])
+                + len(area_info["temperature_sensors"])
+                + len(area_info["sensors"])
+            )
+            step_id = f"area_{area_id}"
+            menu_options[step_id] = f"{status} {area_info['name']} ({sensor_count} sensors)"
 
         if not menu_options:
             # No areas found, show a message
