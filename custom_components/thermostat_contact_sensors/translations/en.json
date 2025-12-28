@@ -72,8 +72,9 @@
       },
       "global_settings": {
         "title": "Global Settings",
-        "description": "Configure timeouts and notifications. Notification messages support Jinja2 templates.",
+        "description": "Configure occupancy detection, timeouts, and notifications. Notification messages support Jinja2 templates.",
         "data": {
+          "min_occupancy_minutes": "Minimum Occupancy Time (minutes)",
           "open_timeout": "Open Timeout (minutes)",
           "close_timeout": "Close Timeout (minutes)",
           "notify_service": "Notification Service",
@@ -84,6 +85,7 @@
           "notification_tag": "Notification Tag"
         },
         "data_description": {
+          "min_occupancy_minutes": "A room must be continuously occupied for this many minutes before it is considered active for heating/cooling. This prevents short visits from affecting thermostat behavior.",
           "open_timeout": "Minutes a sensor must be open before pausing thermostat",
           "close_timeout": "Minutes all sensors must be closed before resuming thermostat",
           "notify_service": "Service to call for notifications (e.g., notify.mobile_app_phone). Leave empty to disable notifications.",

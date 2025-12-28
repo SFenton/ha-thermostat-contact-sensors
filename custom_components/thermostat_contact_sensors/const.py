@@ -22,9 +22,13 @@ CONF_BINARY_SENSORS = "binary_sensors"
 CONF_TEMPERATURE_SENSORS = "temperature_sensors"
 CONF_SENSORS = "sensors"
 
+# Occupancy configuration keys
+CONF_MIN_OCCUPANCY_MINUTES = "min_occupancy_minutes"
+
 # Defaults
 DEFAULT_OPEN_TIMEOUT = 5  # minutes
 DEFAULT_CLOSE_TIMEOUT = 5  # minutes
+DEFAULT_MIN_OCCUPANCY_MINUTES = 5  # minutes
 DEFAULT_NOTIFY_TITLE_PAUSED = "Thermostat · Paused"
 DEFAULT_NOTIFY_MESSAGE_PAUSED = (
     "{{ trigger_sensor_name }} has been open for {{ open_timeout }} minutes. "

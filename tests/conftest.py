@@ -19,6 +19,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_MIN_OCCUPANCY_MINUTES,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
     CONF_NOTIFY_MESSAGE_RESUMED,
@@ -30,6 +31,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_MIN_OCCUPANCY_MINUTES,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
     DEFAULT_NOTIFY_MESSAGE_RESUMED,
@@ -96,6 +98,7 @@ def mock_config_entry() -> MockConfigEntry:
             CONF_AREAS: get_test_areas_config(),
         },
         options={
+            CONF_MIN_OCCUPANCY_MINUTES: DEFAULT_MIN_OCCUPANCY_MINUTES,
             CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
             CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
             CONF_NOTIFY_SERVICE: TEST_NOTIFY_SERVICE,
@@ -123,6 +126,7 @@ def mock_config_entry_no_notify() -> MockConfigEntry:
             CONF_AREAS: get_test_areas_config(),
         },
         options={
+            CONF_MIN_OCCUPANCY_MINUTES: DEFAULT_MIN_OCCUPANCY_MINUTES,
             CONF_OPEN_TIMEOUT: 2,
             CONF_CLOSE_TIMEOUT: 2,
             CONF_NOTIFY_SERVICE: "",

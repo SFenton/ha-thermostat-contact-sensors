@@ -23,6 +23,7 @@ from .const import (
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_MIN_OCCUPANCY_MINUTES,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
     CONF_NOTIFY_MESSAGE_RESUMED,
@@ -34,6 +35,7 @@ from .const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_MIN_OCCUPANCY_MINUTES,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
     DEFAULT_NOTIFY_MESSAGE_RESUMED,
@@ -308,6 +310,20 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
 
         data_schema = vol.Schema(
             {
+                vol.Optional(
+                    CONF_MIN_OCCUPANCY_MINUTES,
+                    default=options.get(
+                        CONF_MIN_OCCUPANCY_MINUTES, DEFAULT_MIN_OCCUPANCY_MINUTES
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=60,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
                 vol.Optional(
                     CONF_OPEN_TIMEOUT,
                     default=options.get(CONF_OPEN_TIMEOUT, DEFAULT_OPEN_TIMEOUT),

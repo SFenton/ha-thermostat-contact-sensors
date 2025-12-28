@@ -1,0 +1,535 @@
+"""Room occupancy tracking for Thermostat Contact Sensors integration.
+
+This module provides occupancy detection and tracking for rooms (areas) based on
+binary sensors and regular sensors. A room is considered occupied if ANY sensor
+in the area indicates presence (OR logic).
+
+Occupancy detection:
+- binary_sensor: state "on" = occupied
+- sensor: attribute "previous_valid_state" = "on" = occupied
+
+A room becomes "active" (eligible for heating/cooling) when it has been
+continuously occupied for a configurable number of minutes.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Any
+
+from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util import dt as dt_util
+
+from .const import (
+    CONF_AREA_ENABLED,
+    CONF_AREAS,
+    CONF_BINARY_SENSORS,
+    CONF_MIN_OCCUPANCY_MINUTES,
+    CONF_SENSORS,
+    DEFAULT_MIN_OCCUPANCY_MINUTES,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class AreaOccupancyState:
+    """State tracking for a single area's occupancy."""
+
+    area_id: str
+    area_name: str
+    binary_sensors: list[str] = field(default_factory=list)
+    sensors: list[str] = field(default_factory=list)
+
+    # Tracking state
+    occupied_binary_sensors: set[str] = field(default_factory=set)
+    occupied_sensors: set[str] = field(default_factory=set)
+    occupancy_start_time: datetime | None = None
+    is_active: bool = False
+
+    @property
+    def is_occupied(self) -> bool:
+        """Return True if ANY sensor indicates occupancy."""
+        return len(self.occupied_binary_sensors) > 0 or len(self.occupied_sensors) > 0
+
+    @property
+    def all_sensors(self) -> list[str]:
+        """Return all sensors being tracked for this area."""
+        return self.binary_sensors + self.sensors
+
+    @property
+    def occupied_sensor_count(self) -> int:
+        """Return the number of sensors currently indicating occupancy."""
+        return len(self.occupied_binary_sensors) + len(self.occupied_sensors)
+
+    @property
+    def total_sensor_count(self) -> int:
+        """Return the total number of occupancy sensors in this area."""
+        return len(self.binary_sensors) + len(self.sensors)
+
+    def get_occupancy_duration(self, now: datetime | None = None) -> timedelta | None:
+        """Return how long the room has been continuously occupied.
+
+        Returns None if the room is not currently occupied.
+        """
+        if not self.is_occupied or self.occupancy_start_time is None:
+            return None
+
+        if now is None:
+            now = dt_util.utcnow()
+
+        return now - self.occupancy_start_time
+
+    def get_occupancy_minutes(self, now: datetime | None = None) -> float:
+        """Return occupancy duration in minutes, or 0 if not occupied."""
+        duration = self.get_occupancy_duration(now)
+        if duration is None:
+            return 0.0
+        return duration.total_seconds() / 60.0
+
+
+def is_binary_sensor_occupied(state: State | None) -> bool:
+    """Check if a binary_sensor indicates occupancy.
+
+    Args:
+        state: The state object for the binary sensor.
+
+    Returns:
+        True if state is "on", False otherwise.
+    """
+    if state is None:
+        return False
+
+    if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return False
+
+    return state.state == STATE_ON
+
+
+def is_sensor_occupied(state: State | None) -> bool:
+    """Check if a sensor indicates occupancy via previous_valid_state attribute.
+
+    Args:
+        state: The state object for the sensor.
+
+    Returns:
+        True if the "previous_valid_state" attribute is "on", False otherwise.
+    """
+    if state is None:
+        return False
+
+    if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return False
+
+    # Check the previous_valid_state attribute
+    previous_valid_state = state.attributes.get("previous_valid_state")
+    return previous_valid_state == STATE_ON
+
+
+def get_sensor_occupancy_state(entity_id: str, state: State | None) -> bool:
+    """Determine occupancy state for any sensor type.
+
+    Args:
+        entity_id: The entity ID of the sensor.
+        state: The state object for the sensor.
+
+    Returns:
+        True if the sensor indicates occupancy, False otherwise.
+    """
+    if state is None:
+        return False
+
+    # Determine sensor type from domain
+    domain = entity_id.split(".")[0] if "." in entity_id else ""
+
+    if domain == "binary_sensor":
+        return is_binary_sensor_occupied(state)
+    elif domain == "sensor":
+        return is_sensor_occupied(state)
+    else:
+        # Unknown sensor type, default to checking for "on" state
+        _LOGGER.warning("Unknown sensor domain for occupancy: %s", entity_id)
+        return state.state == STATE_ON
+
+
+class RoomOccupancyTracker:
+    """Track room occupancy across multiple areas.
+
+    This class monitors occupancy sensors in configured areas and tracks:
+    - Which sensors currently indicate occupancy
+    - When continuous occupancy started for each area
+    - Whether an area is "active" (occupied long enough to be considered for heating/cooling)
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        areas_config: dict[str, dict[str, Any]],
+        min_occupancy_minutes: int = DEFAULT_MIN_OCCUPANCY_MINUTES,
+    ) -> None:
+        """Initialize the room occupancy tracker.
+
+        Args:
+            hass: The Home Assistant instance.
+            areas_config: Configuration dict for areas (from config entry data).
+            min_occupancy_minutes: Minutes of continuous occupancy required
+                                   for a room to be considered "active".
+        """
+        self.hass = hass
+        self._min_occupancy_minutes = min_occupancy_minutes
+        self._areas: dict[str, AreaOccupancyState] = {}
+        self._unsub_state_change: callable | None = None
+        self._update_callbacks: list[callable] = []
+
+        # Build area tracking from config
+        self._build_area_tracking(areas_config)
+
+    @property
+    def min_occupancy_minutes(self) -> int:
+        """Return the minimum occupancy minutes threshold."""
+        return self._min_occupancy_minutes
+
+    @min_occupancy_minutes.setter
+    def min_occupancy_minutes(self, value: int) -> None:
+        """Set the minimum occupancy minutes threshold."""
+        self._min_occupancy_minutes = value
+        # Re-evaluate active status for all areas
+        self._update_all_active_status()
+
+    @property
+    def areas(self) -> dict[str, AreaOccupancyState]:
+        """Return all tracked areas."""
+        return self._areas
+
+    @property
+    def all_tracked_sensors(self) -> list[str]:
+        """Return all sensors being tracked across all areas."""
+        sensors = []
+        for area in self._areas.values():
+            sensors.extend(area.all_sensors)
+        return sensors
+
+    @property
+    def occupied_areas(self) -> list[AreaOccupancyState]:
+        """Return list of currently occupied areas."""
+        return [area for area in self._areas.values() if area.is_occupied]
+
+    @property
+    def active_areas(self) -> list[AreaOccupancyState]:
+        """Return list of active areas (occupied long enough).
+
+        An area is "active" when it has been continuously occupied for
+        at least min_occupancy_minutes.
+        """
+        return [area for area in self._areas.values() if area.is_active]
+
+    @property
+    def any_area_occupied(self) -> bool:
+        """Return True if any area is currently occupied."""
+        return len(self.occupied_areas) > 0
+
+    @property
+    def any_area_active(self) -> bool:
+        """Return True if any area is active (occupied long enough)."""
+        return len(self.active_areas) > 0
+
+    def _build_area_tracking(self, areas_config: dict[str, dict[str, Any]]) -> None:
+        """Build area tracking structures from configuration.
+
+        Args:
+            areas_config: Configuration dict for areas.
+        """
+        self._areas = {}
+
+        for area_id, area_config in areas_config.items():
+            # Skip disabled areas
+            if not area_config.get(CONF_AREA_ENABLED, True):
+                continue
+
+            # Get occupancy sensors for this area
+            binary_sensors = area_config.get(CONF_BINARY_SENSORS, [])
+            sensors = area_config.get(CONF_SENSORS, [])
+
+            # Only track areas that have occupancy sensors configured
+            if not binary_sensors and not sensors:
+                continue
+
+            self._areas[area_id] = AreaOccupancyState(
+                area_id=area_id,
+                area_name=area_config.get("name", area_id),
+                binary_sensors=list(binary_sensors),
+                sensors=list(sensors),
+            )
+
+        _LOGGER.debug(
+            "Built occupancy tracking for %d areas with %d total sensors",
+            len(self._areas),
+            len(self.all_tracked_sensors),
+        )
+
+    def update_config(self, areas_config: dict[str, dict[str, Any]]) -> None:
+        """Update area configuration.
+
+        This will rebuild the tracking structures and re-scan sensor states.
+
+        Args:
+            areas_config: New configuration dict for areas.
+        """
+        self._build_area_tracking(areas_config)
+        self._scan_all_sensors()
+
+    async def async_setup(self) -> None:
+        """Set up the occupancy tracker and start listening to state changes."""
+        # Initial scan of all sensor states
+        self._scan_all_sensors()
+
+        # Subscribe to state changes for all tracked sensors
+        all_sensors = self.all_tracked_sensors
+        if all_sensors:
+            self._unsub_state_change = async_track_state_change_event(
+                self.hass,
+                all_sensors,
+                self._async_sensor_state_changed,
+            )
+
+        _LOGGER.debug(
+            "Occupancy tracker setup complete. Monitoring %d sensors across %d areas",
+            len(all_sensors),
+            len(self._areas),
+        )
+
+    async def async_shutdown(self) -> None:
+        """Shut down the occupancy tracker."""
+        if self._unsub_state_change:
+            self._unsub_state_change()
+            self._unsub_state_change = None
+
+        _LOGGER.debug("Occupancy tracker shut down")
+
+    def register_update_callback(self, callback: callable) -> callable:
+        """Register a callback to be called when occupancy state changes.
+
+        Args:
+            callback: A callable that takes no arguments.
+
+        Returns:
+            A callable to unregister the callback.
+        """
+        self._update_callbacks.append(callback)
+
+        def unregister():
+            if callback in self._update_callbacks:
+                self._update_callbacks.remove(callback)
+
+        return unregister
+
+    def _notify_update(self) -> None:
+        """Notify all registered callbacks of an update."""
+        for callback in self._update_callbacks:
+            try:
+                callback()
+            except Exception:
+                _LOGGER.exception("Error in occupancy update callback")
+
+    def _scan_all_sensors(self) -> None:
+        """Scan all sensors and update occupancy state."""
+        now = dt_util.utcnow()
+
+        for area in self._areas.values():
+            self._update_area_occupancy(area, now)
+
+    def _update_area_occupancy(self, area: AreaOccupancyState, now: datetime) -> None:
+        """Update occupancy state for a single area.
+
+        Args:
+            area: The area state to update.
+            now: Current timestamp.
+        """
+        was_occupied = area.is_occupied
+
+        # Check all binary sensors
+        area.occupied_binary_sensors = set()
+        for sensor in area.binary_sensors:
+            state = self.hass.states.get(sensor)
+            if is_binary_sensor_occupied(state):
+                area.occupied_binary_sensors.add(sensor)
+
+        # Check all regular sensors
+        area.occupied_sensors = set()
+        for sensor in area.sensors:
+            state = self.hass.states.get(sensor)
+            if is_sensor_occupied(state):
+                area.occupied_sensors.add(sensor)
+
+        is_now_occupied = area.is_occupied
+
+        # Handle occupancy state transitions
+        if is_now_occupied and not was_occupied:
+            # Just became occupied - start timing
+            area.occupancy_start_time = now
+            _LOGGER.debug(
+                "Area %s became occupied at %s",
+                area.area_id,
+                now.isoformat(),
+            )
+        elif not is_now_occupied and was_occupied:
+            # Just became unoccupied - reset timing
+            area.occupancy_start_time = None
+            area.is_active = False
+            _LOGGER.debug("Area %s became unoccupied", area.area_id)
+
+        # Update active status
+        self._update_area_active_status(area, now)
+
+    def _update_area_active_status(
+        self, area: AreaOccupancyState, now: datetime
+    ) -> None:
+        """Update the active status for an area based on occupancy duration.
+
+        Args:
+            area: The area state to update.
+            now: Current timestamp.
+        """
+        was_active = area.is_active
+
+        if not area.is_occupied:
+            area.is_active = False
+        else:
+            occupancy_minutes = area.get_occupancy_minutes(now)
+            area.is_active = occupancy_minutes >= self._min_occupancy_minutes
+
+        if area.is_active and not was_active:
+            _LOGGER.debug(
+                "Area %s became active (occupied for %.1f minutes)",
+                area.area_id,
+                area.get_occupancy_minutes(now),
+            )
+        elif not area.is_active and was_active:
+            _LOGGER.debug("Area %s became inactive", area.area_id)
+
+    def _update_all_active_status(self) -> None:
+        """Update active status for all areas."""
+        now = dt_util.utcnow()
+        for area in self._areas.values():
+            self._update_area_active_status(area, now)
+
+    @callback
+    def _async_sensor_state_changed(self, event) -> None:
+        """Handle sensor state changes."""
+        entity_id = event.data.get("entity_id")
+        new_state: State | None = event.data.get("new_state")
+        old_state: State | None = event.data.get("old_state")
+
+        if new_state is None:
+            return
+
+        # Find which area this sensor belongs to
+        area = self._find_area_for_sensor(entity_id)
+        if area is None:
+            return
+
+        now = dt_util.utcnow()
+
+        # Determine if occupancy state changed for this sensor
+        was_occupied = self._was_sensor_occupied(entity_id, old_state)
+        is_occupied = get_sensor_occupancy_state(entity_id, new_state)
+
+        if was_occupied != is_occupied:
+            _LOGGER.debug(
+                "Sensor %s occupancy changed: %s -> %s",
+                entity_id,
+                was_occupied,
+                is_occupied,
+            )
+
+            # Update the area's occupancy state
+            self._update_area_occupancy(area, now)
+
+            # Notify listeners
+            self._notify_update()
+
+    def _find_area_for_sensor(self, entity_id: str) -> AreaOccupancyState | None:
+        """Find the area that contains a given sensor.
+
+        Args:
+            entity_id: The entity ID to look up.
+
+        Returns:
+            The AreaOccupancyState if found, None otherwise.
+        """
+        for area in self._areas.values():
+            if entity_id in area.all_sensors:
+                return area
+        return None
+
+    def _was_sensor_occupied(self, entity_id: str, old_state: State | None) -> bool:
+        """Determine if a sensor was previously indicating occupancy.
+
+        Args:
+            entity_id: The entity ID.
+            old_state: The previous state object.
+
+        Returns:
+            True if the sensor was indicating occupancy.
+        """
+        if old_state is None:
+            return False
+
+        return get_sensor_occupancy_state(entity_id, old_state)
+
+    def get_area(self, area_id: str) -> AreaOccupancyState | None:
+        """Get the occupancy state for a specific area.
+
+        Args:
+            area_id: The area ID to look up.
+
+        Returns:
+            The AreaOccupancyState if found, None otherwise.
+        """
+        return self._areas.get(area_id)
+
+    def get_summary(self) -> dict[str, Any]:
+        """Get a summary of current occupancy state.
+
+        Returns:
+            A dict with occupancy summary information.
+        """
+        return {
+            "total_areas": len(self._areas),
+            "occupied_areas": len(self.occupied_areas),
+            "active_areas": len(self.active_areas),
+            "min_occupancy_minutes": self._min_occupancy_minutes,
+            "areas": {
+                area_id: {
+                    "name": area.area_name,
+                    "is_occupied": area.is_occupied,
+                    "is_active": area.is_active,
+                    "occupancy_minutes": area.get_occupancy_minutes(),
+                    "occupied_sensors": list(area.occupied_binary_sensors)
+                    + list(area.occupied_sensors),
+                    "total_sensors": area.total_sensor_count,
+                }
+                for area_id, area in self._areas.items()
+            },
+        }
+
+    def force_update_active_status(self) -> None:
+        """Force an update of all areas' active status.
+
+        This should be called periodically to update the active status
+        for areas that are continuously occupied.
+        """
+        now = dt_util.utcnow()
+        changed = False
+
+        for area in self._areas.values():
+            was_active = area.is_active
+            self._update_area_active_status(area, now)
+            if area.is_active != was_active:
+                changed = True
+
+        if changed:
+            self._notify_update()
