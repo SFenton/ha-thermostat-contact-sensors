@@ -1463,3 +1463,375 @@ class TestRoomOccupancyTrackerEdgeCases:
 
         # Area should not be tracked (no sensors)
         assert "empty_area" not in tracker.areas
+
+
+class TestAreaOccupancyStateSerialization:
+    """Tests for AreaOccupancyState serialization/deserialization."""
+
+    def test_to_storage_dict_empty_state(self) -> None:
+        """Test serialization of empty state."""
+        area = AreaOccupancyState(
+            area_id="test_area",
+            area_name="Test Area",
+        )
+
+        result = area.to_storage_dict()
+
+        assert result["area_id"] == "test_area"
+        assert result["is_active"] is False
+        assert result["occupancy_start_time"] is None
+        assert result["was_active_before_unoccupied"] is False
+        assert result["unoccupancy_start_time"] is None
+
+    def test_to_storage_dict_active_state(self) -> None:
+        """Test serialization of active state with timestamps."""
+        now = dt_util.utcnow()
+        area = AreaOccupancyState(
+            area_id="test_area",
+            area_name="Test Area",
+        )
+        area.is_active = True
+        area.occupancy_start_time = now
+
+        result = area.to_storage_dict()
+
+        assert result["is_active"] is True
+        assert result["occupancy_start_time"] == now.isoformat()
+
+    def test_to_storage_dict_grace_period_state(self) -> None:
+        """Test serialization of grace period state."""
+        now = dt_util.utcnow()
+        area = AreaOccupancyState(
+            area_id="test_area",
+            area_name="Test Area",
+        )
+        area.is_active = True
+        area.was_active_before_unoccupied = True
+        area.unoccupancy_start_time = now
+
+        result = area.to_storage_dict()
+
+        assert result["was_active_before_unoccupied"] is True
+        assert result["unoccupancy_start_time"] == now.isoformat()
+
+    def test_restore_from_storage_empty_data(self) -> None:
+        """Test restoration with empty data does not change state."""
+        area = AreaOccupancyState(
+            area_id="test_area",
+            area_name="Test Area",
+        )
+
+        area.restore_from_storage({})
+
+        assert area.is_active is False
+        assert area.occupancy_start_time is None
+
+    def test_restore_from_storage_active_state(self) -> None:
+        """Test restoration of active state."""
+        now = dt_util.utcnow()
+        area = AreaOccupancyState(
+            area_id="test_area",
+            area_name="Test Area",
+        )
+
+        area.restore_from_storage({
+            "is_active": True,
+            "occupancy_start_time": now.isoformat(),
+        })
+
+        assert area.is_active is True
+        assert area.occupancy_start_time == now
+
+    def test_restore_from_storage_grace_period_state(self) -> None:
+        """Test restoration of grace period state."""
+        now = dt_util.utcnow()
+        area = AreaOccupancyState(
+            area_id="test_area",
+            area_name="Test Area",
+        )
+
+        area.restore_from_storage({
+            "was_active_before_unoccupied": True,
+            "unoccupancy_start_time": now.isoformat(),
+        })
+
+        assert area.was_active_before_unoccupied is True
+        assert area.unoccupancy_start_time == now
+
+    def test_restore_from_storage_invalid_timestamp(self) -> None:
+        """Test restoration handles invalid timestamps gracefully."""
+        area = AreaOccupancyState(
+            area_id="test_area",
+            area_name="Test Area",
+        )
+
+        area.restore_from_storage({
+            "is_active": True,
+            "occupancy_start_time": "invalid-timestamp",
+        })
+
+        # Should restore is_active but skip invalid timestamp
+        assert area.is_active is True
+        assert area.occupancy_start_time is None
+
+
+class TestRoomOccupancyTrackerPersistence:
+    """Tests for RoomOccupancyTracker state persistence."""
+
+    async def test_tracker_with_entry_id_has_store(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test tracker initializes store when entry_id is provided."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_id",
+        )
+
+        assert tracker._store is not None
+        assert "test_entry_id" in tracker._store.key
+
+    async def test_tracker_without_entry_id_no_store(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test tracker has no store when entry_id is not provided."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+        )
+
+        assert tracker._store is None
+
+    async def test_save_state_creates_data(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test saving state creates properly structured data."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_id",
+        )
+
+        # Make an area active
+        now = dt_util.utcnow()
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+        area.is_active = True
+        area.occupancy_start_time = now - timedelta(minutes=10)
+
+        # Save state
+        await tracker._async_save_state()
+
+        # Load and verify
+        stored_data = await tracker._store.async_load()
+        assert stored_data is not None
+        assert "areas" in stored_data
+        assert TEST_AREA_LIVING_ROOM in stored_data["areas"]
+        assert stored_data["areas"][TEST_AREA_LIVING_ROOM]["is_active"] is True
+
+    async def test_restore_state_loads_data(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test restoring state loads and applies data correctly."""
+        now = dt_util.utcnow()
+        occupancy_start = now - timedelta(minutes=10)
+
+        # Create first tracker and save state
+        tracker1 = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_id",
+        )
+
+        area1 = tracker1.get_area(TEST_AREA_LIVING_ROOM)
+        area1.is_active = True
+        area1.occupancy_start_time = occupancy_start
+
+        await tracker1._async_save_state()
+
+        # Create second tracker (simulating restart) and restore
+        tracker2 = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_id",
+        )
+
+        await tracker2._async_restore_state()
+
+        # Verify state was restored
+        area2 = tracker2.get_area(TEST_AREA_LIVING_ROOM)
+        assert area2.is_active is True
+        assert area2.occupancy_start_time == occupancy_start
+
+    async def test_restore_state_no_data(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test restoring state with no saved data doesn't crash."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="unique_entry_no_data",
+        )
+
+        # Should not raise
+        await tracker._async_restore_state()
+
+        # State should remain at defaults
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+        assert area.is_active is False
+
+    async def test_setup_restores_state(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test async_setup restores state before scanning sensors."""
+        now = dt_util.utcnow()
+        occupancy_start = now - timedelta(minutes=10)
+
+        # Turn on sensor to establish occupancy
+        hass.states.async_set(
+            TEST_BINARY_SENSOR_MOTION_1,
+            STATE_ON,
+            {"friendly_name": "Living Room Motion", "device_class": "motion"},
+        )
+        await hass.async_block_till_done()
+
+        # Create first tracker, make area active, save and shutdown
+        tracker1 = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_persist",
+        )
+        await tracker1.async_setup()
+
+        area1 = tracker1.get_area(TEST_AREA_LIVING_ROOM)
+        # Override the occupancy_start_time to simulate longer occupancy
+        area1.occupancy_start_time = occupancy_start
+        area1.is_active = True  # Force active for test
+
+        await tracker1.async_shutdown()  # This saves state
+
+        # Create new tracker and setup (simulating restart)
+        # Sensor is still on, so occupancy will be maintained
+        tracker2 = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_persist",
+        )
+        await tracker2.async_setup()
+
+        # State should be restored
+        area2 = tracker2.get_area(TEST_AREA_LIVING_ROOM)
+        assert area2.is_active is True
+        assert area2.occupancy_start_time == occupancy_start
+
+        await tracker2.async_shutdown()
+
+    async def test_shutdown_saves_state(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test async_shutdown saves state that can be restored."""
+        # Turn on sensor to establish occupancy
+        hass.states.async_set(
+            TEST_BINARY_SENSOR_MOTION_1,
+            STATE_ON,
+            {"friendly_name": "Living Room Motion", "device_class": "motion"},
+        )
+        await hass.async_block_till_done()
+
+        tracker1 = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_shutdown",
+        )
+        await tracker1.async_setup()
+
+        # Make area active with specific timestamp
+        now = dt_util.utcnow()
+        original_start_time = now - timedelta(minutes=5)
+        area1 = tracker1.get_area(TEST_AREA_LIVING_ROOM)
+        area1.is_active = True
+        area1.occupancy_start_time = original_start_time
+
+        # Shutdown (should save)
+        await tracker1.async_shutdown()
+
+        # Create new tracker and verify state is restored (proving save worked)
+        tracker2 = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_shutdown",
+        )
+        await tracker2.async_setup()
+
+        area2 = tracker2.get_area(TEST_AREA_LIVING_ROOM)
+        # is_active should be preserved
+        assert area2.is_active is True
+        # occupancy_start_time should be preserved from restore
+        assert area2.occupancy_start_time == original_start_time
+
+        await tracker2.async_shutdown()
+
+    async def test_restore_ignores_unknown_areas(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test restoring state ignores areas that no longer exist in config."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_unknown",
+        )
+
+        # Manually save data with an unknown area
+        await tracker._store.async_save({
+            "version": 1,
+            "saved_at": dt_util.utcnow().isoformat(),
+            "areas": {
+                "unknown_area": {"is_active": True},
+                TEST_AREA_LIVING_ROOM: {"is_active": True},
+            },
+        })
+
+        # Restore - should not crash
+        await tracker._async_restore_state()
+
+        # Known area should be restored
+        assert tracker.get_area(TEST_AREA_LIVING_ROOM).is_active is True
+        # Unknown area should not exist
+        assert tracker.get_area("unknown_area") is None
+
+    async def test_persist_grace_period_state(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test grace period state is persisted and restored."""
+        now = dt_util.utcnow()
+        unoccupancy_start = now - timedelta(minutes=2)
+
+        # Create tracker and set grace period state
+        tracker1 = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_grace",
+        )
+        await tracker1.async_setup()
+
+        area1 = tracker1.get_area(TEST_AREA_LIVING_ROOM)
+        area1.is_active = True
+        area1.was_active_before_unoccupied = True
+        area1.unoccupancy_start_time = unoccupancy_start
+
+        await tracker1.async_shutdown()
+
+        # Create new tracker
+        tracker2 = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            entry_id="test_entry_grace",
+        )
+        await tracker2.async_setup()
+
+        # Grace period state should be restored
+        area2 = tracker2.get_area(TEST_AREA_LIVING_ROOM)
+        assert area2.is_active is True
+        assert area2.was_active_before_unoccupied is True
+        assert area2.unoccupancy_start_time == unoccupancy_start
+
+        await tracker2.async_shutdown()

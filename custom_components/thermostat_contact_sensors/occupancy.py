@@ -10,6 +10,10 @@ Occupancy detection:
 
 A room becomes "active" (eligible for heating/cooling) when it has been
 continuously occupied for a configurable number of minutes.
+
+State persistence:
+- Occupancy state is saved on shutdown and restored on startup
+- This allows rooms to maintain their active status across restarts
 """
 from __future__ import annotations
 
@@ -21,6 +25,7 @@ from typing import Any
 from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -32,9 +37,13 @@ from .const import (
     CONF_SENSORS,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Storage version for state persistence
+STORAGE_VERSION = 1
 
 
 @dataclass
@@ -133,6 +142,43 @@ class AreaOccupancyState:
             and self.unoccupancy_start_time is not None
         )
 
+    def to_storage_dict(self) -> dict[str, Any]:
+        """Serialize the occupancy state for storage.
+
+        Only persists state that needs to survive restarts.
+        """
+        return {
+            "area_id": self.area_id,
+            "is_active": self.is_active,
+            "occupancy_start_time": self.occupancy_start_time.isoformat() if self.occupancy_start_time else None,
+            "was_active_before_unoccupied": self.was_active_before_unoccupied,
+            "unoccupancy_start_time": self.unoccupancy_start_time.isoformat() if self.unoccupancy_start_time else None,
+        }
+
+    def restore_from_storage(self, data: dict[str, Any]) -> None:
+        """Restore occupancy state from storage.
+
+        Args:
+            data: Stored state dictionary.
+        """
+        if data.get("is_active"):
+            self.is_active = True
+
+        if data.get("occupancy_start_time"):
+            try:
+                self.occupancy_start_time = datetime.fromisoformat(data["occupancy_start_time"])
+            except (ValueError, TypeError):
+                pass
+
+        if data.get("was_active_before_unoccupied"):
+            self.was_active_before_unoccupied = True
+
+        if data.get("unoccupancy_start_time"):
+            try:
+                self.unoccupancy_start_time = datetime.fromisoformat(data["unoccupancy_start_time"])
+            except (ValueError, TypeError):
+                pass
+
 
 def is_binary_sensor_occupied(state: State | None) -> bool:
     """Check if a binary_sensor indicates occupancy.
@@ -213,6 +259,7 @@ class RoomOccupancyTracker:
         areas_config: dict[str, dict[str, Any]],
         min_occupancy_minutes: int = DEFAULT_MIN_OCCUPANCY_MINUTES,
         grace_period_minutes: int = DEFAULT_GRACE_PERIOD_MINUTES,
+        entry_id: str | None = None,
     ) -> None:
         """Initialize the room occupancy tracker.
 
@@ -223,6 +270,7 @@ class RoomOccupancyTracker:
                                    for a room to be considered "active".
             grace_period_minutes: Minutes to wait before deactivating when an
                                   active room becomes unoccupied. Minimum 2.
+            entry_id: Config entry ID for state persistence storage.
         """
         self.hass = hass
         self._min_occupancy_minutes = min_occupancy_minutes
@@ -231,6 +279,15 @@ class RoomOccupancyTracker:
         self._unsub_state_change: callable | None = None
         self._unsub_time_interval: callable | None = None
         self._update_callbacks: list[callable] = []
+        self._entry_id = entry_id
+
+        # Set up storage for state persistence
+        if entry_id:
+            self._store: Store | None = Store(
+                hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}.occupancy"
+            )
+        else:
+            self._store = None
 
         # Build area tracking from config
         self._build_area_tracking(areas_config)
@@ -343,6 +400,9 @@ class RoomOccupancyTracker:
 
     async def async_setup(self) -> None:
         """Set up the occupancy tracker and start listening to state changes."""
+        # Restore state from storage before scanning
+        await self._async_restore_state()
+
         # Initial scan of all sensor states
         self._scan_all_sensors()
 
@@ -380,6 +440,9 @@ class RoomOccupancyTracker:
 
     async def async_shutdown(self) -> None:
         """Shut down the occupancy tracker."""
+        # Save state before shutting down
+        await self._async_save_state()
+
         if self._unsub_state_change:
             self._unsub_state_change()
             self._unsub_state_change = None
@@ -389,6 +452,52 @@ class RoomOccupancyTracker:
             self._unsub_time_interval = None
 
         _LOGGER.debug("Occupancy tracker shut down")
+
+    async def _async_save_state(self) -> None:
+        """Save current occupancy state to storage."""
+        if self._store is None:
+            return
+
+        state_data = {
+            "version": STORAGE_VERSION,
+            "saved_at": dt_util.utcnow().isoformat(),
+            "areas": {
+                area_id: area.to_storage_dict()
+                for area_id, area in self._areas.items()
+            },
+        }
+
+        await self._store.async_save(state_data)
+        _LOGGER.debug("Saved occupancy state for %d areas", len(self._areas))
+
+    async def _async_restore_state(self) -> None:
+        """Restore occupancy state from storage."""
+        if self._store is None:
+            return
+
+        stored_data = await self._store.async_load()
+        if stored_data is None:
+            _LOGGER.debug("No stored occupancy state found")
+            return
+
+        areas_data = stored_data.get("areas", {})
+        restored_count = 0
+
+        for area_id, area_state_data in areas_data.items():
+            if area_id in self._areas:
+                self._areas[area_id].restore_from_storage(area_state_data)
+                restored_count += 1
+                _LOGGER.debug(
+                    "Restored state for area %s: is_active=%s",
+                    area_id,
+                    self._areas[area_id].is_active,
+                )
+
+        _LOGGER.info(
+            "Restored occupancy state for %d areas (saved at %s)",
+            restored_count,
+            stored_data.get("saved_at", "unknown"),
+        )
 
     def register_update_callback(self, callback: callable) -> callable:
         """Register a callback to be called when occupancy state changes.
@@ -430,6 +539,7 @@ class RoomOccupancyTracker:
             now: Current timestamp.
         """
         was_occupied = area.is_occupied
+        had_restored_occupancy_start = area.occupancy_start_time is not None
 
         # Check all binary sensors
         area.occupied_binary_sensors = set()
@@ -461,6 +571,13 @@ class RoomOccupancyTracker:
                     "Area %s became occupied during grace period at %s - remaining active",
                     area.area_id,
                     now.isoformat(),
+                )
+            elif had_restored_occupancy_start:
+                # We have a restored occupancy_start_time from storage, keep it
+                _LOGGER.debug(
+                    "Area %s using restored occupancy start time %s",
+                    area.area_id,
+                    area.occupancy_start_time.isoformat() if area.occupancy_start_time else "None",
                 )
             else:
                 # Normal occupancy - start timing fresh

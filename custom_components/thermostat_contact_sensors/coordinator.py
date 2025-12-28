@@ -105,6 +105,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             areas_config=self._areas_config,
             min_occupancy_minutes=min_occupancy,
             grace_period_minutes=grace_period,
+            entry_id=config_entry_id,
         )
 
         # Thermostat controller
