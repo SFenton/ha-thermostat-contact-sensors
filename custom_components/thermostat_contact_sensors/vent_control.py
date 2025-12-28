@@ -61,6 +61,7 @@ class AreaVentState:
     should_open: bool = False
     open_reason: str | None = None
     occupancy_start_time: datetime | None = None
+    distance_from_target: float | None = None  # How far from target temp
 
 
 @dataclass
@@ -265,6 +266,7 @@ class VentController:
             area_id=area_id,
             area_name=area_name,
             occupancy_start_time=occupancy_start_time,
+            distance_from_target=distance_from_target,
         )
 
         # Determine if vents should be open for this area
@@ -336,18 +338,17 @@ class VentController:
     def calculate_minimum_vents_priority(
         self,
         area_states: dict[str, AreaVentState],
-        room_temp_states: dict[str, "RoomTemperatureState"] | None = None,
     ) -> list[tuple[str, str, int, float]]:
         """Calculate priority order for keeping minimum vents open.
 
         Priority order:
-        1. Active rooms (highest)
-        2. Occupied rooms
-        3. Rooms furthest from target temperature
+        1. Critical rooms (highest - safety)
+        2. Active rooms
+        3. Occupied rooms
+        4. Rooms furthest from target temperature (tiebreaker)
 
         Args:
             area_states: Dict of area_id -> AreaVentState.
-            room_temp_states: Dict of area_id -> RoomTemperatureState (optional).
 
         Returns:
             List of (area_id, vent_entity_id, member_count, priority_score).
@@ -372,16 +373,11 @@ class VentController:
                     priority_score += 2000.0
 
                 # Add distance from target as tiebreaker
-                if room_temp_states and area_id in room_temp_states:
-                    temp_state = room_temp_states[area_id]
-                    if temp_state.determining_temperature is not None:
-                        # Add absolute distance from comfortable range
-                        # Higher distance = higher priority
-                        distance = abs(
-                            temp_state.determining_temperature
-                            - (temp_state.determining_temperature or 0)
-                        )
-                        priority_score += distance
+                # Rooms further from target get higher priority
+                if area_state.distance_from_target is not None:
+                    # Scale distance to be meaningful but not override categories
+                    # e.g., 5°C from target = +50 priority points
+                    priority_score += area_state.distance_from_target * 10.0
 
                 priority_list.append(
                     (area_id, vent.entity_id, vent.member_count, priority_score)
@@ -505,7 +501,7 @@ class VentController:
 
             # Get priority list for vents that would otherwise close
             priority_list = self.calculate_minimum_vents_priority(
-                control_state.area_states, room_temp_states
+                control_state.area_states
             )
 
             # Keep vents open in priority order until we hit minimum
