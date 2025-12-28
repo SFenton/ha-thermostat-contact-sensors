@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
@@ -25,7 +26,8 @@ from .coordinator import ThermostatContactSensorsCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-type ThermostatContactSensorsConfigEntry = ConfigEntry[ThermostatContactSensorsCoordinator]
+# Type alias for ConfigEntry with our coordinator (Python 3.9+ compatible)
+ThermostatContactSensorsConfigEntry = ConfigEntry
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -66,9 +68,9 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
                 CONF_SENSORS: [],
             }
 
-        hass.config_entries.async_update_entry(
-            config_entry, data=new_data, version=2
-        )
+        # Update entry data and version
+        hass.config_entries.async_update_entry(config_entry, data=new_data)
+        config_entry.version = 2
 
         _LOGGER.info("Migration to version 2 successful")
 
@@ -84,8 +86,10 @@ async def async_setup_entry(
     # Get contact sensors from legacy config or from areas config
     contact_sensors = entry.data.get(CONF_CONTACT_SENSORS, [])
 
-    # If using new areas config, gather all binary sensors from enabled areas
+    # Get areas config
     areas_config = entry.data.get(CONF_AREAS, {})
+
+    # If using new areas config, gather all binary sensors from enabled areas
     if areas_config:
         contact_sensors = []
         for area_id, area_config in areas_config.items():
@@ -99,6 +103,7 @@ async def async_setup_entry(
         contact_sensors=contact_sensors,
         thermostat=entry.data[CONF_THERMOSTAT],
         options=dict(entry.options),
+        areas_config=areas_config,
     )
 
     # Store coordinator

@@ -25,10 +25,18 @@ CONF_SENSORS = "sensors"
 # Occupancy configuration keys
 CONF_MIN_OCCUPANCY_MINUTES = "min_occupancy_minutes"
 
+# Thermostat control configuration keys
+CONF_TEMPERATURE_DEADBAND = "temperature_deadband"
+CONF_MIN_CYCLE_ON_MINUTES = "min_cycle_on_minutes"
+CONF_MIN_CYCLE_OFF_MINUTES = "min_cycle_off_minutes"
+
 # Defaults
 DEFAULT_OPEN_TIMEOUT = 5  # minutes
 DEFAULT_CLOSE_TIMEOUT = 5  # minutes
 DEFAULT_MIN_OCCUPANCY_MINUTES = 5  # minutes
+DEFAULT_TEMPERATURE_DEADBAND = 0.5  # degrees (precision: 0.1)
+DEFAULT_MIN_CYCLE_ON_MINUTES = 5  # minutes
+DEFAULT_MIN_CYCLE_OFF_MINUTES = 5  # minutes
 DEFAULT_NOTIFY_TITLE_PAUSED = "Thermostat · Paused"
 DEFAULT_NOTIFY_MESSAGE_PAUSED = (
     "{{ trigger_sensor_name }} has been open for {{ open_timeout }} minutes. "

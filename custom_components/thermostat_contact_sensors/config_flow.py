@@ -23,6 +23,8 @@ from .const import (
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_MIN_CYCLE_OFF_MINUTES,
+    CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
@@ -32,9 +34,12 @@ from .const import (
     CONF_NOTIFY_TITLE_RESUMED,
     CONF_OPEN_TIMEOUT,
     CONF_SENSORS,
+    CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_MIN_CYCLE_OFF_MINUTES,
+    DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
@@ -42,6 +47,7 @@ from .const import (
     DEFAULT_NOTIFY_TITLE_PAUSED,
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
+    DEFAULT_TEMPERATURE_DEADBAND,
     DOMAIN,
 )
 
@@ -233,15 +239,21 @@ class ThermostatContactSensorsConfigFlow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return ThermostatContactSensorsOptionsFlow()
+        return ThermostatContactSensorsOptionsFlow(config_entry)
 
 
 class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Thermostat Contact Sensors."""
 
-    def __init__(self) -> None:
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
+        self._config_entry = config_entry
         self._selected_area_id: str | None = None
+
+    @property
+    def config_entry(self) -> config_entries.ConfigEntry:
+        """Return the config entry."""
+        return self._config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -319,6 +331,48 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                     selector.NumberSelectorConfig(
                         min=1,
                         max=60,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_TEMPERATURE_DEADBAND,
+                    default=options.get(
+                        CONF_TEMPERATURE_DEADBAND, DEFAULT_TEMPERATURE_DEADBAND
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=5.0,
+                        step=0.1,
+                        unit_of_measurement="°",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_MIN_CYCLE_ON_MINUTES,
+                    default=options.get(
+                        CONF_MIN_CYCLE_ON_MINUTES, DEFAULT_MIN_CYCLE_ON_MINUTES
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=30,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_MIN_CYCLE_OFF_MINUTES,
+                    default=options.get(
+                        CONF_MIN_CYCLE_OFF_MINUTES, DEFAULT_MIN_CYCLE_OFF_MINUTES
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=30,
                         step=1,
                         unit_of_measurement="minutes",
                         mode=selector.NumberSelectorMode.BOX,

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -12,9 +13,17 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import (
+    CONF_AREA_ENABLED,
+    CONF_MIN_OCCUPANCY_MINUTES,
+    DEFAULT_MIN_OCCUPANCY_MINUTES,
+    DOMAIN,
+)
 from .coordinator import ThermostatContactSensorsCoordinator
+from .occupancy import AreaOccupancyState
+from .thermostat_control import ThermostatAction, ThermostatState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,9 +36,17 @@ async def async_setup_entry(
     """Set up sensor entities."""
     coordinator: ThermostatContactSensorsCoordinator = entry.runtime_data
 
-    entities = [
+    entities: list[SensorEntity] = [
         OpenSensorCountSensor(coordinator, entry),
+        ThermostatControlSensor(coordinator, entry),
     ]
+
+    # Create a sensor for each enabled area
+    for area_id, area_config in coordinator.areas_config.items():
+        if area_config.get(CONF_AREA_ENABLED, True):
+            entities.append(
+                RoomOccupancySensor(coordinator, entry, area_id)
+            )
 
     async_add_entities(entities)
 
@@ -92,3 +109,272 @@ class OpenSensorCountSensor(CoordinatorEntity, SensorEntity):
             "monitored_sensors": coordinator.contact_sensors,
             "total_monitored": len(coordinator.contact_sensors),
         }
+
+
+class RoomOccupancySensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing occupancy status for a room/area."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:home-account"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+        area_id: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._area_id = area_id
+        self._attr_unique_id = f"{entry.entry_id}_{area_id}_occupancy"
+
+        # Get area name from registry or config
+        area_config = coordinator.areas_config.get(area_id, {})
+        self._area_name = area_config.get("name", area_id.replace("_", " ").title())
+        self._attr_name = f"{self._area_name} Occupancy"
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    def _get_area_state(self) -> AreaOccupancyState | None:
+        """Get the area state from the occupancy tracker."""
+        return self.coordinator.occupancy_tracker.areas.get(self._area_id)
+
+    @property
+    def native_value(self) -> str:
+        """Return the occupancy state as a string."""
+        area_state = self._get_area_state()
+
+        if area_state is None:
+            return "unknown"
+
+        if area_state.is_active:
+            return "active"
+        elif area_state.is_occupied:
+            return "occupied"
+        else:
+            return "inactive"
+
+    @property
+    def icon(self) -> str:
+        """Return the icon based on occupancy state."""
+        value = self.native_value
+        if value == "active":
+            return "mdi:home-account"
+        elif value == "occupied":
+            return "mdi:home-clock"
+        else:
+            return "mdi:home-outline"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        area_state = self._get_area_state()
+
+        if area_state is None:
+            return {
+                "is_occupied": False,
+                "is_active": False,
+                "area_id": self._area_id,
+                "area_name": self._area_name,
+            }
+
+        now = dt_util.utcnow()
+        min_occupancy = self.coordinator.occupancy_tracker.min_occupancy_minutes
+
+        attrs = {
+            "is_occupied": area_state.is_occupied,
+            "is_active": area_state.is_active,
+            "area_id": self._area_id,
+            "area_name": self._area_name,
+            "occupied_sensor_count": area_state.occupied_sensor_count,
+            "total_sensor_count": area_state.total_sensor_count,
+            "min_occupancy_minutes": min_occupancy,
+        }
+
+        # Add occupied sensors with friendly names
+        occupied_sensors = []
+        for sensor_id in area_state.occupied_binary_sensors:
+            state = self.hass.states.get(sensor_id)
+            name = state.attributes.get("friendly_name", sensor_id) if state else sensor_id
+            occupied_sensors.append({"entity_id": sensor_id, "name": name})
+        for sensor_id in area_state.occupied_sensors:
+            state = self.hass.states.get(sensor_id)
+            name = state.attributes.get("friendly_name", sensor_id) if state else sensor_id
+            occupied_sensors.append({"entity_id": sensor_id, "name": name})
+        attrs["occupied_sensors"] = occupied_sensors
+
+        # Add occupancy timing info
+        if area_state.is_occupied and area_state.occupancy_start_time:
+            duration_minutes = area_state.get_occupancy_minutes(now)
+            attrs["occupancy_duration_minutes"] = round(duration_minutes, 1)
+            attrs["occupied_since"] = area_state.occupancy_start_time.isoformat()
+
+            if not area_state.is_active:
+                # Calculate time until active
+                remaining = min_occupancy - duration_minutes
+                attrs["time_until_active_minutes"] = round(max(0, remaining), 1)
+            else:
+                attrs["time_until_active_minutes"] = 0
+        else:
+            attrs["occupancy_duration_minutes"] = 0
+            attrs["occupied_since"] = None
+            attrs["time_until_active_minutes"] = None
+
+        return attrs
+
+
+class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing thermostat control status."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:thermostat"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_thermostat_control"
+        self._attr_name = "Thermostat Control"
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    def _get_thermostat_state(self) -> ThermostatState | None:
+        """Get the last evaluated thermostat state."""
+        return self.coordinator.last_thermostat_state
+
+    @property
+    def native_value(self) -> str:
+        """Return the control state as a string."""
+        state = self._get_thermostat_state()
+
+        if state is None:
+            return "unknown"
+
+        # Check for paused state first
+        if self.coordinator.is_paused:
+            return "paused"
+
+        # Check HVAC mode
+        if state.hvac_mode and state.hvac_mode.value == "off":
+            return "off"
+
+        # Check if no active rooms
+        if state.active_room_count == 0:
+            return "idle"
+
+        # Check satiation
+        if state.all_active_rooms_satiated:
+            return "satiated"
+
+        # Not satiated - determine if heating or cooling needed
+        hvac_mode = state.hvac_mode.value if state.hvac_mode else "unknown"
+        if hvac_mode == "heat":
+            return "heating_needed"
+        elif hvac_mode == "cool":
+            return "cooling_needed"
+        elif hvac_mode == "heat_cool":
+            return "conditioning_needed"
+        else:
+            return "conditioning_needed"
+
+    @property
+    def icon(self) -> str:
+        """Return the icon based on control state."""
+        value = self.native_value
+        icons = {
+            "paused": "mdi:thermostat-off",
+            "off": "mdi:thermostat-off",
+            "idle": "mdi:thermostat",
+            "satiated": "mdi:thermostat-check",
+            "heating_needed": "mdi:fire",
+            "cooling_needed": "mdi:snowflake",
+            "conditioning_needed": "mdi:thermostat-auto",
+            "unknown": "mdi:thermostat",
+        }
+        return icons.get(value, "mdi:thermostat")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        state = self._get_thermostat_state()
+        coordinator = self.coordinator
+
+        # Base attributes
+        attrs: dict[str, Any] = {
+            "thermostat_entity_id": coordinator.thermostat,
+            "paused_by_contact_sensors": coordinator.is_paused,
+        }
+
+        # Get thermostat friendly name
+        thermostat_state = self.hass.states.get(coordinator.thermostat)
+        if thermostat_state:
+            attrs["thermostat_name"] = thermostat_state.attributes.get(
+                "friendly_name", coordinator.thermostat
+            )
+
+        if state is None:
+            return attrs
+
+        # HVAC mode and target temps
+        attrs["hvac_mode"] = state.hvac_mode.value if state.hvac_mode else None
+        attrs["is_on"] = state.is_on
+        attrs["target_temperature"] = state.target_temperature
+        attrs["target_temp_high"] = state.target_temp_high
+        attrs["target_temp_low"] = state.target_temp_low
+
+        # Room counts
+        attrs["active_room_count"] = state.active_room_count
+        attrs["satiated_room_count"] = state.satiated_room_count
+        attrs["all_active_rooms_satiated"] = state.all_active_rooms_satiated
+
+        # Recommended action
+        if state.recommended_action:
+            attrs["recommended_action"] = state.recommended_action.value
+        attrs["action_reason"] = state.action_reason
+
+        # Cycle protection
+        can_turn_on, turn_on_reason = coordinator.thermostat_controller.can_turn_on()
+        can_turn_off, turn_off_reason = coordinator.thermostat_controller.can_turn_off()
+        attrs["can_turn_on"] = can_turn_on
+        attrs["can_turn_on_reason"] = turn_on_reason
+        attrs["can_turn_off"] = can_turn_off
+        attrs["can_turn_off_reason"] = turn_off_reason
+
+        # Room-by-room status
+        room_summary = {}
+        for area_id, room_state in state.room_states.items():
+            room_summary[area_id] = {
+                "area_name": room_state.area_name,
+                "is_satiated": room_state.is_satiated,
+                "satiation_reason": room_state.satiation_reason.value if room_state.satiation_reason else None,
+                "has_valid_readings": room_state.has_valid_readings,
+                "sensor_readings": room_state.sensor_readings,
+            }
+            if room_state.satiated_sensor:
+                room_summary[area_id]["satiated_sensor"] = room_state.satiated_sensor
+            if room_state.satiated_temperature is not None:
+                room_summary[area_id]["satiated_temperature"] = room_state.satiated_temperature
+        attrs["room_summary"] = room_summary
+
+        return attrs

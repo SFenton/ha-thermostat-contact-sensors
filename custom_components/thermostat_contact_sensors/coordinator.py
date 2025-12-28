@@ -16,6 +16,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_MIN_CYCLE_OFF_MINUTES,
+    CONF_MIN_CYCLE_ON_MINUTES,
+    CONF_MIN_OCCUPANCY_MINUTES,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
     CONF_NOTIFY_MESSAGE_RESUMED,
@@ -23,16 +26,24 @@ from .const import (
     CONF_NOTIFY_TITLE_PAUSED,
     CONF_NOTIFY_TITLE_RESUMED,
     CONF_OPEN_TIMEOUT,
+    CONF_TEMPERATURE_DEADBAND,
+    CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_MIN_CYCLE_OFF_MINUTES,
+    DEFAULT_MIN_CYCLE_ON_MINUTES,
+    DEFAULT_MIN_OCCUPANCY_MINUTES,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
     DEFAULT_NOTIFY_MESSAGE_RESUMED,
     DEFAULT_NOTIFY_TITLE_PAUSED,
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
+    DEFAULT_TEMPERATURE_DEADBAND,
     DOMAIN,
 )
+from .occupancy import RoomOccupancyTracker
+from .thermostat_control import ThermostatController, ThermostatState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +58,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         contact_sensors: list[str],
         thermostat: str,
         options: dict[str, Any],
+        areas_config: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -58,6 +70,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.config_entry_id = config_entry_id
         self.contact_sensors = contact_sensors
         self.thermostat = thermostat
+        self._areas_config = areas_config or {}
         self._options = options
 
         # State tracking
@@ -77,6 +90,35 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Listener cleanup
         self._unsub_state_change: callable | None = None
         self._unsub_thermostat_state_change: callable | None = None
+
+        # Occupancy tracker
+        min_occupancy = self._options.get(
+            CONF_MIN_OCCUPANCY_MINUTES, DEFAULT_MIN_OCCUPANCY_MINUTES
+        )
+        self.occupancy_tracker = RoomOccupancyTracker(
+            hass=hass,
+            areas_config=self._areas_config,
+            min_occupancy_minutes=min_occupancy,
+        )
+
+        # Thermostat controller
+        self.thermostat_controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=thermostat,
+            occupancy_tracker=self.occupancy_tracker,
+            temperature_deadband=self._options.get(
+                CONF_TEMPERATURE_DEADBAND, DEFAULT_TEMPERATURE_DEADBAND
+            ),
+            min_cycle_on_minutes=self._options.get(
+                CONF_MIN_CYCLE_ON_MINUTES, DEFAULT_MIN_CYCLE_ON_MINUTES
+            ),
+            min_cycle_off_minutes=self._options.get(
+                CONF_MIN_CYCLE_OFF_MINUTES, DEFAULT_MIN_CYCLE_OFF_MINUTES
+            ),
+        )
+
+        # Last thermostat state for sensors
+        self._last_thermostat_state: ThermostatState | None = None
 
     @property
     def open_timeout(self) -> int:
@@ -108,9 +150,69 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Return count of open window sensors."""
         return len([s for s in self.open_sensors if "window" in s.lower()])
 
+    @property
+    def areas_config(self) -> dict[str, dict[str, Any]]:
+        """Return the areas configuration."""
+        return self._areas_config
+
+    @property
+    def last_thermostat_state(self) -> ThermostatState | None:
+        """Return the last evaluated thermostat state."""
+        return self._last_thermostat_state
+
+    def get_area_temp_sensors(self) -> dict[str, list[str]]:
+        """Get temperature sensors for each area.
+
+        Returns:
+            Dict of area_id -> list of temperature sensor entity IDs.
+        """
+        result = {}
+        for area_id, area_config in self._areas_config.items():
+            temp_sensors = area_config.get(CONF_TEMPERATURE_SENSORS, [])
+            if temp_sensors:
+                result[area_id] = list(temp_sensors)
+        return result
+
+    def update_thermostat_state(self) -> ThermostatState | None:
+        """Evaluate and update the current thermostat control state.
+
+        Returns:
+            The updated ThermostatState.
+        """
+        # Get active areas from occupancy tracker
+        active_areas = self.occupancy_tracker.active_areas
+        area_temp_sensors = self.get_area_temp_sensors()
+
+        # Update pause state on thermostat controller
+        self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
+
+        # Evaluate what action should be taken
+        self._last_thermostat_state = self.thermostat_controller.evaluate_thermostat_action(
+            active_areas=active_areas,
+            area_temp_sensors=area_temp_sensors,
+        )
+
+        return self._last_thermostat_state
+
     def update_options(self, options: dict[str, Any]) -> None:
         """Update options from config entry."""
         self._options = options
+
+        # Update occupancy tracker
+        self.occupancy_tracker.min_occupancy_minutes = options.get(
+            CONF_MIN_OCCUPANCY_MINUTES, DEFAULT_MIN_OCCUPANCY_MINUTES
+        )
+
+        # Update thermostat controller
+        self.thermostat_controller.temperature_deadband = options.get(
+            CONF_TEMPERATURE_DEADBAND, DEFAULT_TEMPERATURE_DEADBAND
+        )
+        self.thermostat_controller.min_cycle_on_minutes = options.get(
+            CONF_MIN_CYCLE_ON_MINUTES, DEFAULT_MIN_CYCLE_ON_MINUTES
+        )
+        self.thermostat_controller.min_cycle_off_minutes = options.get(
+            CONF_MIN_CYCLE_OFF_MINUTES, DEFAULT_MIN_CYCLE_OFF_MINUTES
+        )
 
     async def async_setup(self) -> None:
         """Set up the coordinator and start listening to state changes."""
@@ -121,6 +223,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         climate_state = self.hass.states.get(self.thermostat)
         if climate_state and climate_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN, HVACMode.OFF):
             self._last_known_hvac_mode = climate_state.state
+
+        # Set up occupancy tracker
+        await self.occupancy_tracker.async_setup()
+
+        # Register callback for occupancy changes to trigger coordinator updates
+        self.occupancy_tracker.register_update_callback(
+            lambda: self.hass.async_create_task(self._async_occupancy_changed())
+        )
 
         # Subscribe to contact sensor state changes
         self._unsub_state_change = async_track_state_change_event(
@@ -142,6 +252,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self.thermostat,
         )
 
+        # Initial thermostat state evaluation
+        self.update_thermostat_state()
+
     async def async_shutdown(self) -> None:
         """Shut down the coordinator."""
         self._cancel_open_timer()
@@ -154,6 +267,15 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self._unsub_thermostat_state_change:
             self._unsub_thermostat_state_change()
             self._unsub_thermostat_state_change = None
+
+        # Shut down occupancy tracker
+        await self.occupancy_tracker.async_shutdown()
+
+    async def _async_occupancy_changed(self) -> None:
+        """Handle occupancy state changes."""
+        _LOGGER.debug("Occupancy changed, updating thermostat state")
+        self.update_thermostat_state()
+        self.async_set_updated_data(None)
 
     def _update_open_sensors(self) -> None:
         """Update the list of currently open sensors."""

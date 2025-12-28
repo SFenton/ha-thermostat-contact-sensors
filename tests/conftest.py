@@ -19,6 +19,8 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_MIN_CYCLE_OFF_MINUTES,
+    CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
@@ -28,9 +30,12 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_NOTIFY_TITLE_RESUMED,
     CONF_OPEN_TIMEOUT,
     CONF_SENSORS,
+    CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_MIN_CYCLE_OFF_MINUTES,
+    DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
@@ -38,6 +43,7 @@ from custom_components.thermostat_contact_sensors.const import (
     DEFAULT_NOTIFY_TITLE_PAUSED,
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
+    DEFAULT_TEMPERATURE_DEADBAND,
     DOMAIN,
 )
 
@@ -91,6 +97,7 @@ def mock_config_entry() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title="Test Thermostat Contact Sensors",
+        version=2,  # Set to version 2 to skip migration
         data={
             "name": "Test Thermostat Contact Sensors",
             CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3],
@@ -99,6 +106,9 @@ def mock_config_entry() -> MockConfigEntry:
         },
         options={
             CONF_MIN_OCCUPANCY_MINUTES: DEFAULT_MIN_OCCUPANCY_MINUTES,
+            CONF_TEMPERATURE_DEADBAND: DEFAULT_TEMPERATURE_DEADBAND,
+            CONF_MIN_CYCLE_ON_MINUTES: DEFAULT_MIN_CYCLE_ON_MINUTES,
+            CONF_MIN_CYCLE_OFF_MINUTES: DEFAULT_MIN_CYCLE_OFF_MINUTES,
             CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
             CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
             CONF_NOTIFY_SERVICE: TEST_NOTIFY_SERVICE,
@@ -127,6 +137,9 @@ def mock_config_entry_no_notify() -> MockConfigEntry:
         },
         options={
             CONF_MIN_OCCUPANCY_MINUTES: DEFAULT_MIN_OCCUPANCY_MINUTES,
+            CONF_TEMPERATURE_DEADBAND: DEFAULT_TEMPERATURE_DEADBAND,
+            CONF_MIN_CYCLE_ON_MINUTES: DEFAULT_MIN_CYCLE_ON_MINUTES,
+            CONF_MIN_CYCLE_OFF_MINUTES: DEFAULT_MIN_CYCLE_OFF_MINUTES,
             CONF_OPEN_TIMEOUT: 2,
             CONF_CLOSE_TIMEOUT: 2,
             CONF_NOTIFY_SERVICE: "",
@@ -215,9 +228,9 @@ async def setup_area_registry(hass: HomeAssistant) -> None:
     """Set up area registry with test areas."""
     area_reg = ar.async_get(hass)
 
-    # Create test areas
-    area_reg.async_create(TEST_AREA_LIVING_ROOM, name="Living Room")
-    area_reg.async_create(TEST_AREA_BEDROOM, name="Bedroom")
+    # Create test areas (async_create takes name as first positional arg)
+    area_reg.async_create(name="Living Room")
+    area_reg.async_create(name="Bedroom")
 
 
 @pytest.fixture
@@ -225,53 +238,53 @@ async def setup_entity_registry(hass: HomeAssistant, setup_area_registry) -> Non
     """Set up entity registry with test entities assigned to areas."""
     entity_reg = er.async_get(hass)
 
-    # Register binary sensors
-    entity_reg.async_get_or_create(
+    # Register binary sensors and get the actual entity entries
+    entry = entity_reg.async_get_or_create(
         "binary_sensor",
         "test",
         "front_door_contact",
         suggested_object_id="front_door_contact",
         original_device_class="door",
     )
-    entity_reg.async_update_entity(TEST_SENSOR_1, area_id=TEST_AREA_LIVING_ROOM)
+    entity_reg.async_update_entity(entry.entity_id, area_id=TEST_AREA_LIVING_ROOM)
 
-    entity_reg.async_get_or_create(
+    entry = entity_reg.async_get_or_create(
         "binary_sensor",
         "test",
         "back_window_contact",
         suggested_object_id="back_window_contact",
         original_device_class="window",
     )
-    entity_reg.async_update_entity(TEST_SENSOR_2, area_id=TEST_AREA_LIVING_ROOM)
+    entity_reg.async_update_entity(entry.entity_id, area_id=TEST_AREA_LIVING_ROOM)
 
-    entity_reg.async_get_or_create(
+    entry = entity_reg.async_get_or_create(
         "binary_sensor",
         "test",
         "garage_door_contact",
         suggested_object_id="garage_door_contact",
         original_device_class="garage_door",
     )
-    entity_reg.async_update_entity(TEST_SENSOR_3, area_id=TEST_AREA_BEDROOM)
+    entity_reg.async_update_entity(entry.entity_id, area_id=TEST_AREA_BEDROOM)
 
     # Register temperature sensor
-    entity_reg.async_get_or_create(
+    entry = entity_reg.async_get_or_create(
         "sensor",
         "test",
         "living_room_temperature",
         suggested_object_id="living_room_temperature",
         original_device_class="temperature",
     )
-    entity_reg.async_update_entity(TEST_TEMP_SENSOR_1, area_id=TEST_AREA_LIVING_ROOM)
+    entity_reg.async_update_entity(entry.entity_id, area_id=TEST_AREA_LIVING_ROOM)
 
     # Register other sensor
-    entity_reg.async_get_or_create(
+    entry = entity_reg.async_get_or_create(
         "sensor",
         "test",
         "living_room_humidity",
         suggested_object_id="living_room_humidity",
         original_device_class="humidity",
     )
-    entity_reg.async_update_entity(TEST_OTHER_SENSOR_1, area_id=TEST_AREA_LIVING_ROOM)
+    entity_reg.async_update_entity(entry.entity_id, area_id=TEST_AREA_LIVING_ROOM)
 
 
 def get_test_config_data() -> dict[str, Any]:
@@ -287,6 +300,10 @@ def get_test_config_data() -> dict[str, Any]:
 def get_test_config_options() -> dict[str, Any]:
     """Get test configuration options."""
     return {
+        CONF_MIN_OCCUPANCY_MINUTES: DEFAULT_MIN_OCCUPANCY_MINUTES,
+        CONF_TEMPERATURE_DEADBAND: DEFAULT_TEMPERATURE_DEADBAND,
+        CONF_MIN_CYCLE_ON_MINUTES: DEFAULT_MIN_CYCLE_ON_MINUTES,
+        CONF_MIN_CYCLE_OFF_MINUTES: DEFAULT_MIN_CYCLE_OFF_MINUTES,
         CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
         CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
         CONF_NOTIFY_SERVICE: TEST_NOTIFY_SERVICE,

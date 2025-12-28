@@ -176,7 +176,11 @@ async def test_options_update_listener(
     )
     await hass.async_block_till_done()
 
-    # Verify coordinator was updated
+    # The options update listener reloads the integration, so we need
+    # to get the new coordinator instance
+    coordinator = mock_config_entry.runtime_data
+
+    # Verify coordinator was updated with new options
     assert coordinator.open_timeout == 20
     assert coordinator.open_timeout != original_timeout
 

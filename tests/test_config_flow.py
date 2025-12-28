@@ -75,25 +75,30 @@ async def test_config_flow_user_success(hass: HomeAssistant) -> None:
 
 
 async def test_config_flow_no_thermostat_error(hass: HomeAssistant) -> None:
-    """Test config flow with no thermostat selected."""
+    """Test config flow rejects invalid thermostat selection.
+
+    The EntitySelector validates that the thermostat must be a valid entity ID.
+    When an empty string is provided, the schema validation rejects it before
+    our custom validation runs.
+    """
+    import voluptuous
+
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": config_entries.SOURCE_USER},
     )
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={
-            "name": "Test",
-            CONF_THERMOSTAT: "",
-            CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
-            CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
-            CONF_NOTIFY_SERVICE: "",
-        },
-    )
-
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {CONF_THERMOSTAT: "no_thermostat_selected"}
+    with pytest.raises(voluptuous.error.MultipleInvalid):
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                "name": "Test",
+                CONF_THERMOSTAT: "",
+                CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
+                CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
+                CONF_NOTIFY_SERVICE: "",
+            },
+        )
 
 
 async def test_config_flow_duplicate_thermostat(hass: HomeAssistant) -> None:

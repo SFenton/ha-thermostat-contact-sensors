@@ -821,13 +821,23 @@ class TestRoomOccupancyTrackerActiveStatus:
 
         area = tracker.get_area(TEST_AREA_LIVING_ROOM)
 
-        # Set up as occupied and active
+        # First turn the sensor ON to properly occupy the area
+        hass.states.async_set(
+            TEST_BINARY_SENSOR_MOTION_1,
+            STATE_ON,
+            {"friendly_name": "Living Room Motion", "device_class": "motion"},
+        )
+        await hass.async_block_till_done()
+
+        # Verify area is now occupied
+        assert area.is_occupied is True
+
+        # Set as active by back-dating the occupancy start time
         now = dt_util.utcnow()
-        area.occupied_binary_sensors = {TEST_BINARY_SENSOR_MOTION_1}
         area.occupancy_start_time = now - timedelta(minutes=10)
         area.is_active = True
 
-        # Turn off all sensors
+        # Turn off the sensor
         hass.states.async_set(
             TEST_BINARY_SENSOR_MOTION_1,
             STATE_OFF,
