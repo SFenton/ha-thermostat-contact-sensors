@@ -249,6 +249,124 @@ class TestRoomOccupancySensor:
 
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
 
+    async def test_grace_period_attributes_when_not_in_grace_period(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test grace period attributes when area is not in grace period."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entity_id = "sensor.test_thermostat_contact_sensors_living_room_occupancy"
+        state = hass.states.get(entity_id)
+
+        # Should have grace period attributes but set to False/None
+        assert state.attributes.get("is_in_grace_period") is False
+        assert state.attributes.get("time_until_inactive_minutes") is None
+        assert state.attributes.get("unoccupied_since") is None
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_active_area_enters_grace_period_when_unoccupied(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test that an active area enters grace period when unoccupied."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entity_id = "sensor.test_thermostat_contact_sensors_living_room_occupancy"
+
+        # First turn the sensor ON so we can later turn it OFF
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        await hass.async_block_till_done()
+
+        # Get the coordinator from runtime_data
+        coordinator = mock_config_entry.runtime_data
+        area = coordinator.occupancy_tracker.get_area(TEST_AREA_LIVING_ROOM)
+        now = dt_util.utcnow()
+
+        # Back-date the occupancy to make it active
+        area.occupancy_start_time = now - timedelta(minutes=10)
+        area.is_active = True
+
+        # Update coordinator to reflect active state
+        coordinator.async_set_updated_data(None)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(entity_id)
+        assert state.state == "active"
+
+        # Now turn the sensor OFF to trigger unoccupied state change
+        # This should enter grace period
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Motion Sensor"})
+        await hass.async_block_till_done()
+
+        state = hass.states.get(entity_id)
+
+        # Should still be "active" but in grace period
+        assert state.state == "active"
+        assert state.attributes.get("is_occupied") is False
+        assert state.attributes.get("is_active") is True
+        assert state.attributes.get("is_in_grace_period") is True
+        assert state.attributes.get("time_until_inactive_minutes") is not None
+        assert state.attributes.get("unoccupied_since") is not None
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_reoccupancy_during_grace_period_clears_grace_period(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test that re-occupancy during grace period clears grace period state."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entity_id = "sensor.test_thermostat_contact_sensors_living_room_occupancy"
+
+        # First turn sensor ON
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        await hass.async_block_till_done()
+
+        # Get the coordinator from runtime_data
+        coordinator = mock_config_entry.runtime_data
+        area = coordinator.occupancy_tracker.get_area(TEST_AREA_LIVING_ROOM)
+        now = dt_util.utcnow()
+
+        # Back-date the occupancy to make it active
+        area.occupancy_start_time = now - timedelta(minutes=10)
+        area.is_active = True
+
+        # Turn off sensor (enter grace period)
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Motion Sensor"})
+        await hass.async_block_till_done()
+
+        state = hass.states.get(entity_id)
+        assert state.attributes.get("is_in_grace_period") is True
+
+        # Turn on sensor again (re-occupy during grace period)
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        await hass.async_block_till_done()
+
+        state = hass.states.get(entity_id)
+
+        # Should be active and NOT in grace period
+        assert state.state == "active"
+        assert state.attributes.get("is_occupied") is True
+        assert state.attributes.get("is_active") is True
+        assert state.attributes.get("is_in_grace_period") is False
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
 
 # =============================================================================
 # Thermostat Control Sensor Tests

@@ -50,6 +50,12 @@ class AreaOccupancyState:
     occupancy_start_time: datetime | None = None
     is_active: bool = False
 
+    # Grace period tracking - when an active room becomes unoccupied,
+    # we don't immediately deactivate. We track when it became unoccupied
+    # and only deactivate after the grace period expires.
+    unoccupancy_start_time: datetime | None = None
+    was_active_before_unoccupied: bool = False
+
     @property
     def is_occupied(self) -> bool:
         """Return True if ANY sensor indicates occupancy."""
@@ -89,6 +95,41 @@ class AreaOccupancyState:
         if duration is None:
             return 0.0
         return duration.total_seconds() / 60.0
+
+    def get_unoccupancy_duration(self, now: datetime | None = None) -> timedelta | None:
+        """Return how long the room has been continuously unoccupied.
+
+        Returns None if the room is currently occupied or never became unoccupied.
+        """
+        if self.is_occupied or self.unoccupancy_start_time is None:
+            return None
+
+        if now is None:
+            now = dt_util.utcnow()
+
+        return now - self.unoccupancy_start_time
+
+    def get_unoccupancy_minutes(self, now: datetime | None = None) -> float:
+        """Return unoccupancy duration in minutes, or 0 if occupied."""
+        duration = self.get_unoccupancy_duration(now)
+        if duration is None:
+            return 0.0
+        return duration.total_seconds() / 60.0
+
+    @property
+    def is_in_grace_period(self) -> bool:
+        """Return True if this area is in the grace period after becoming unoccupied.
+
+        An area is in grace period when:
+        - It's currently unoccupied
+        - It was active before becoming unoccupied
+        - The unoccupancy tracking has started
+        """
+        return (
+            not self.is_occupied
+            and self.was_active_before_unoccupied
+            and self.unoccupancy_start_time is not None
+        )
 
 
 def is_binary_sensor_occupied(state: State | None) -> bool:
@@ -390,18 +431,46 @@ class RoomOccupancyTracker:
 
         # Handle occupancy state transitions
         if is_now_occupied and not was_occupied:
-            # Just became occupied - start timing
-            area.occupancy_start_time = now
-            _LOGGER.debug(
-                "Area %s became occupied at %s",
-                area.area_id,
-                now.isoformat(),
-            )
+            # Just became occupied
+            # If returning during grace period, maintain activity by back-dating
+            # the occupancy start time to ensure we exceed the threshold
+            if area.was_active_before_unoccupied:
+                # Room was active before brief unoccupancy - back-date to maintain active status
+                area.occupancy_start_time = now - timedelta(
+                    minutes=self._min_occupancy_minutes + 1
+                )
+                _LOGGER.debug(
+                    "Area %s became occupied during grace period at %s - remaining active",
+                    area.area_id,
+                    now.isoformat(),
+                )
+            else:
+                # Normal occupancy - start timing fresh
+                area.occupancy_start_time = now
+                _LOGGER.debug(
+                    "Area %s became occupied at %s",
+                    area.area_id,
+                    now.isoformat(),
+                )
+            # Clear grace period tracking
+            area.unoccupancy_start_time = None
+            area.was_active_before_unoccupied = False
         elif not is_now_occupied and was_occupied:
-            # Just became unoccupied - reset timing
+            # Just became unoccupied - start grace period if was active
             area.occupancy_start_time = None
-            area.is_active = False
-            _LOGGER.debug("Area %s became unoccupied", area.area_id)
+            if area.is_active:
+                # Start grace period - don't deactivate yet
+                area.unoccupancy_start_time = now
+                area.was_active_before_unoccupied = True
+                _LOGGER.debug(
+                    "Area %s became unoccupied while active - starting grace period",
+                    area.area_id,
+                )
+            else:
+                # Wasn't active, just reset
+                area.unoccupancy_start_time = None
+                area.was_active_before_unoccupied = False
+                _LOGGER.debug("Area %s became unoccupied", area.area_id)
 
         # Update active status
         self._update_area_active_status(area, now)
@@ -417,11 +486,29 @@ class RoomOccupancyTracker:
         """
         was_active = area.is_active
 
-        if not area.is_occupied:
-            area.is_active = False
-        else:
+        if area.is_occupied:
+            # Room is occupied - check if it's been long enough to become active
             occupancy_minutes = area.get_occupancy_minutes(now)
             area.is_active = occupancy_minutes >= self._min_occupancy_minutes
+        elif area.is_in_grace_period:
+            # Room is unoccupied but in grace period - check if grace period expired
+            unoccupancy_minutes = area.get_unoccupancy_minutes(now)
+            if unoccupancy_minutes >= self._min_occupancy_minutes:
+                # Grace period expired - deactivate
+                area.is_active = False
+                area.was_active_before_unoccupied = False
+                area.unoccupancy_start_time = None
+                _LOGGER.debug(
+                    "Area %s grace period expired (unoccupied for %.1f minutes) - deactivating",
+                    area.area_id,
+                    unoccupancy_minutes,
+                )
+            else:
+                # Still in grace period - remain active
+                area.is_active = True
+        else:
+            # Room is unoccupied and not in grace period
+            area.is_active = False
 
         if area.is_active and not was_active:
             _LOGGER.debug(
@@ -429,7 +516,7 @@ class RoomOccupancyTracker:
                 area.area_id,
                 area.get_occupancy_minutes(now),
             )
-        elif not area.is_active and was_active:
+        elif not area.is_active and was_active and not area.is_in_grace_period:
             _LOGGER.debug("Area %s became inactive", area.area_id)
 
     def _update_all_active_status(self) -> None:

@@ -808,10 +808,10 @@ class TestRoomOccupancyTrackerActiveStatus:
 
         await tracker.async_shutdown()
 
-    async def test_active_becomes_inactive_when_unoccupied(
+    async def test_active_enters_grace_period_when_unoccupied(
         self, hass: HomeAssistant, setup_occupancy_entities
     ) -> None:
-        """Test that an active area becomes inactive when unoccupied."""
+        """Test that an active area enters grace period when unoccupied."""
         tracker = RoomOccupancyTracker(
             hass,
             get_test_occupancy_areas_config(),
@@ -845,8 +845,165 @@ class TestRoomOccupancyTrackerActiveStatus:
         )
         await hass.async_block_till_done()
 
+        # Area should be unoccupied but still active (in grace period)
+        assert area.is_occupied is False
+        assert area.is_active is True
+        assert area.is_in_grace_period is True
+        assert area.was_active_before_unoccupied is True
+        assert area.unoccupancy_start_time is not None
+
+        await tracker.async_shutdown()
+
+    async def test_grace_period_expires_after_threshold(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test that grace period expires after min_occupancy_minutes of unoccupancy."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            min_occupancy_minutes=5,
+        )
+        await tracker.async_setup()
+
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+
+        # Set up area as in grace period with back-dated unoccupancy
+        now = dt_util.utcnow()
+        area.is_active = True
+        area.was_active_before_unoccupied = True
+        area.unoccupancy_start_time = now - timedelta(minutes=6)  # More than threshold
+
+        # Force update active status
+        tracker.force_update_active_status()
+
+        # Grace period should have expired
+        assert area.is_active is False
+        assert area.is_in_grace_period is False
+        assert area.was_active_before_unoccupied is False
+        assert area.unoccupancy_start_time is None
+
+        await tracker.async_shutdown()
+
+    async def test_reoccupancy_during_grace_period_remains_active(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test that re-occupancy during grace period maintains active status."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            min_occupancy_minutes=5,
+        )
+        await tracker.async_setup()
+
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+
+        # First turn the sensor ON to properly occupy the area
+        hass.states.async_set(
+            TEST_BINARY_SENSOR_MOTION_1,
+            STATE_ON,
+            {"friendly_name": "Living Room Motion", "device_class": "motion"},
+        )
+        await hass.async_block_till_done()
+
+        # Set as active by back-dating the occupancy start time
+        now = dt_util.utcnow()
+        area.occupancy_start_time = now - timedelta(minutes=10)
+        area.is_active = True
+
+        # Turn off the sensor (enters grace period)
+        hass.states.async_set(
+            TEST_BINARY_SENSOR_MOTION_1,
+            STATE_OFF,
+            {"friendly_name": "Living Room Motion", "device_class": "motion"},
+        )
+        await hass.async_block_till_done()
+
+        assert area.is_in_grace_period is True
+        assert area.is_active is True
+
+        # Turn on the sensor again (re-occupy during grace period)
+        hass.states.async_set(
+            TEST_BINARY_SENSOR_MOTION_1,
+            STATE_ON,
+            {"friendly_name": "Living Room Motion", "device_class": "motion"},
+        )
+        await hass.async_block_till_done()
+
+        # Should be occupied and still active
+        assert area.is_occupied is True
+        assert area.is_active is True
+        # Grace period state should be cleared
+        assert area.is_in_grace_period is False
+        assert area.was_active_before_unoccupied is False
+        assert area.unoccupancy_start_time is None
+
+        await tracker.async_shutdown()
+
+    async def test_non_active_area_no_grace_period_when_unoccupied(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test that a non-active area does not enter grace period when unoccupied."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            min_occupancy_minutes=5,
+        )
+        await tracker.async_setup()
+
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+
+        # Turn on sensor (occupied but not yet active)
+        hass.states.async_set(
+            TEST_BINARY_SENSOR_MOTION_1,
+            STATE_ON,
+            {"friendly_name": "Living Room Motion", "device_class": "motion"},
+        )
+        await hass.async_block_till_done()
+
+        assert area.is_occupied is True
+        assert area.is_active is False
+
+        # Turn off sensor
+        hass.states.async_set(
+            TEST_BINARY_SENSOR_MOTION_1,
+            STATE_OFF,
+            {"friendly_name": "Living Room Motion", "device_class": "motion"},
+        )
+        await hass.async_block_till_done()
+
+        # Should be unoccupied and not in grace period
         assert area.is_occupied is False
         assert area.is_active is False
+        assert area.is_in_grace_period is False
+        assert area.was_active_before_unoccupied is False
+
+        await tracker.async_shutdown()
+
+    async def test_grace_period_not_expired_before_threshold(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test that grace period does not expire before min_occupancy_minutes."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            min_occupancy_minutes=5,
+        )
+        await tracker.async_setup()
+
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+
+        # Set up area as in grace period with recent unoccupancy
+        now = dt_util.utcnow()
+        area.is_active = True
+        area.was_active_before_unoccupied = True
+        area.unoccupancy_start_time = now - timedelta(minutes=3)  # Less than threshold
+
+        # Force update active status
+        tracker.force_update_active_status()
+
+        # Grace period should still be active
+        assert area.is_active is True
+        assert area.is_in_grace_period is True
 
         await tracker.async_shutdown()
 

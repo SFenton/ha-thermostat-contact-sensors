@@ -229,6 +229,18 @@ class RoomOccupancySensor(CoordinatorEntity, SensorEntity):
             attrs["occupied_since"] = None
             attrs["time_until_active_minutes"] = None
 
+        # Add grace period info
+        attrs["is_in_grace_period"] = area_state.is_in_grace_period
+        if area_state.is_in_grace_period:
+            # Calculate time until grace period expires and area becomes inactive
+            unoccupancy_minutes = area_state.get_unoccupancy_minutes(now)
+            remaining = min_occupancy - unoccupancy_minutes
+            attrs["time_until_inactive_minutes"] = round(max(0, remaining), 1)
+            attrs["unoccupied_since"] = area_state.unoccupancy_start_time.isoformat() if area_state.unoccupancy_start_time else None
+        else:
+            attrs["time_until_inactive_minutes"] = None
+            attrs["unoccupied_since"] = None
+
         return attrs
 
 
@@ -371,10 +383,10 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
                 "has_valid_readings": room_state.has_valid_readings,
                 "sensor_readings": room_state.sensor_readings,
             }
-            if room_state.satiated_sensor:
-                room_summary[area_id]["satiated_sensor"] = room_state.satiated_sensor
-            if room_state.satiated_temperature is not None:
-                room_summary[area_id]["satiated_temperature"] = room_state.satiated_temperature
+            if room_state.determining_sensor:
+                room_summary[area_id]["determining_sensor"] = room_state.determining_sensor
+            if room_state.determining_temperature is not None:
+                room_summary[area_id]["determining_temperature"] = room_state.determining_temperature
         attrs["room_summary"] = room_summary
 
         return attrs
