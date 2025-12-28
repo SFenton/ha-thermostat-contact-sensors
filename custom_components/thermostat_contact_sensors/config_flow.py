@@ -247,7 +247,7 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
         """Show the main menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["manage_areas", "global_settings", "thermostat"],
+            menu_options=["manage_areas", "configure_area_sensors", "global_settings", "thermostat"],
         )
 
     async def async_step_thermostat(
@@ -393,7 +393,88 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
     async def async_step_manage_areas(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Show list of areas to manage."""
+        """Show checkboxes for all areas to quickly enable/disable them."""
+        # Get current areas config
+        areas_config = dict(self.config_entry.data.get(CONF_AREAS, {}))
+
+        # Get fresh area data from Home Assistant
+        areas_data = get_areas_with_sensors(self.hass)
+
+        if not areas_data:
+            return self.async_abort(reason="no_areas_found")
+
+        if user_input is not None:
+            # Update enabled state for each area
+            for area_id, area_info in areas_data.items():
+                field_key = f"area_{area_id}"
+                is_enabled = user_input.get(field_key, True)
+
+                if area_id not in areas_config:
+                    # Create new area config
+                    areas_config[area_id] = {
+                        CONF_AREA_ID: area_id,
+                        CONF_AREA_ENABLED: is_enabled,
+                        CONF_BINARY_SENSORS: area_info["binary_sensors"],
+                        CONF_TEMPERATURE_SENSORS: area_info["temperature_sensors"],
+                        CONF_SENSORS: area_info["sensors"],
+                    }
+                else:
+                    # Update existing
+                    areas_config[area_id][CONF_AREA_ENABLED] = is_enabled
+
+            # Save the updated config
+            new_data = {
+                **self.config_entry.data,
+                CONF_AREAS: areas_config,
+            }
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data=new_data,
+            )
+
+            return self.async_create_entry(title="", data=self.config_entry.options)
+
+        # Build the form schema with a checkbox for each area
+        schema_dict = {}
+        for area_id, area_info in areas_data.items():
+            sensor_count = (
+                len(area_info["binary_sensors"])
+                + len(area_info["temperature_sensors"])
+                + len(area_info["sensors"])
+            )
+            is_enabled = areas_config.get(area_id, {}).get(CONF_AREA_ENABLED, True)
+            field_key = f"area_{area_id}"
+
+            schema_dict[vol.Optional(
+                field_key,
+                default=is_enabled,
+                description={"suggested_value": is_enabled},
+            )] = selector.BooleanSelector()
+
+        data_schema = vol.Schema(schema_dict)
+
+        # Build description placeholders with area info
+        area_descriptions = []
+        for area_id, area_info in areas_data.items():
+            sensor_count = (
+                len(area_info["binary_sensors"])
+                + len(area_info["temperature_sensors"])
+                + len(area_info["sensors"])
+            )
+            area_descriptions.append(f"**{area_info['name']}**: {sensor_count} sensors")
+
+        return self.async_show_form(
+            step_id="manage_areas",
+            data_schema=data_schema,
+            description_placeholders={
+                "area_info": "\n".join(area_descriptions),
+            },
+        )
+
+    async def async_step_configure_area_sensors(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Show menu to select an area to configure its sensors."""
         # Get current areas config
         areas_config = self.config_entry.data.get(CONF_AREAS, {})
 
@@ -420,7 +501,7 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
             return self.async_abort(reason="no_areas_found")
 
         return self.async_show_menu(
-            step_id="manage_areas",
+            step_id="configure_area_sensors",
             menu_options=menu_options,
         )
 
@@ -464,8 +545,8 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 data=new_data,
             )
 
-            # Go back to areas menu
-            return await self.async_step_manage_areas()
+            # Go back to configure area sensors menu
+            return await self.async_step_configure_area_sensors()
 
         # Build the form schema
         schema_dict = {

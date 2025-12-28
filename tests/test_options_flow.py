@@ -63,6 +63,7 @@ async def test_options_flow_shows_menu(
     assert result["type"] == FlowResultType.MENU
     assert result["step_id"] == "init"
     assert "manage_areas" in result["menu_options"]
+    assert "configure_area_sensors" in result["menu_options"]
     assert "global_settings" in result["menu_options"]
     assert "thermostat" in result["menu_options"]
 
@@ -143,12 +144,12 @@ async def test_options_flow_thermostat(
     assert mock_config_entry.data[CONF_THERMOSTAT] == TEST_THERMOSTAT
 
 
-async def test_options_flow_manage_areas_menu(
+async def test_options_flow_manage_areas_checkboxes(
     hass: HomeAssistant,
     mock_config_entry: ConfigEntry,
     mock_climate_service,
 ) -> None:
-    """Test navigating to the manage areas menu."""
+    """Test navigating to the manage areas form with checkboxes."""
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
@@ -162,8 +163,31 @@ async def test_options_flow_manage_areas_menu(
         user_input={"next_step_id": "manage_areas"},
     )
 
-    assert result["type"] == FlowResultType.MENU
+    assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manage_areas"
+
+
+async def test_options_flow_configure_area_sensors_menu(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test navigating to the configure area sensors menu."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Select configure area sensors from menu
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "configure_area_sensors"},
+    )
+
+    assert result["type"] == FlowResultType.MENU
+    assert result["step_id"] == "configure_area_sensors"
     # Should have area options
     assert len(result["menu_options"]) >= 1
 
@@ -181,10 +205,10 @@ async def test_options_flow_area_config(
     # Start options flow
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
 
-    # Select manage areas from menu
+    # Select configure area sensors from menu
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        user_input={"next_step_id": "manage_areas"},
+        user_input={"next_step_id": "configure_area_sensors"},
     )
 
     # Select the living room area
@@ -207,9 +231,9 @@ async def test_options_flow_area_config(
         },
     )
 
-    # Should go back to manage areas menu
+    # Should go back to configure area sensors menu
     assert result["type"] == FlowResultType.MENU
-    assert result["step_id"] == "manage_areas"
+    assert result["step_id"] == "configure_area_sensors"
 
     # Verify the area config was updated
     assert mock_config_entry.data[CONF_AREAS][TEST_AREA_LIVING_ROOM][CONF_BINARY_SENSORS] == [TEST_SENSOR_1]
@@ -228,10 +252,10 @@ async def test_options_flow_disable_area(
     # Start options flow
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
 
-    # Navigate to manage areas
+    # Navigate to configure area sensors
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        user_input={"next_step_id": "manage_areas"},
+        user_input={"next_step_id": "configure_area_sensors"},
     )
 
     # Select the bedroom area

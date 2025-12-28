@@ -34,14 +34,19 @@
         "title": "Thermostat Contact Sensors",
         "description": "Configure your thermostat contact sensor integration.",
         "menu_options": {
-          "manage_areas": "Manage Areas",
+          "manage_areas": "Enable/Disable Areas",
+          "configure_area_sensors": "Configure Area Sensors",
           "global_settings": "Global Settings",
           "thermostat": "Change Thermostat"
         }
       },
       "manage_areas": {
-        "title": "Manage Areas",
-        "description": "Select an area to configure its sensors. ✓ = enabled, ○ = disabled"
+        "title": "Enable/Disable Areas",
+        "description": "Toggle areas on or off. Disabled areas will be ignored by the integration."
+      },
+      "configure_area_sensors": {
+        "title": "Configure Area Sensors",
+        "description": "Select an area to configure which sensors to use. ✓ = enabled, ○ = disabled"
       },
       "area_config": {
         "title": "Configure {area_name}",
