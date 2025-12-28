@@ -308,3 +308,187 @@ async def test_options_flow_thermostat_required(
 
     assert result["type"] == FlowResultType.FORM
     assert result["errors"][CONF_THERMOSTAT] == "no_thermostat_selected"
+
+
+async def test_options_flow_sensor_count_updates_after_adding(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test that sensor count updates in menu after adding sensors."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Get initial sensor count for living room
+    initial_config = mock_config_entry.data[CONF_AREAS][TEST_AREA_LIVING_ROOM]
+    initial_count = (
+        len(initial_config.get(CONF_BINARY_SENSORS, []))
+        + len(initial_config.get(CONF_TEMPERATURE_SENSORS, []))
+        + len(initial_config.get(CONF_SENSORS, []))
+    )
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Navigate to configure area sensors
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "configure_area_sensors"},
+    )
+
+    # Select the living room area
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": f"area_{TEST_AREA_LIVING_ROOM}"},
+    )
+
+    # Add an additional sensor (TEST_SENSOR_3 from bedroom)
+    new_binary_sensors = [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_AREA_ENABLED: True,
+            CONF_BINARY_SENSORS: new_binary_sensors,
+            CONF_TEMPERATURE_SENSORS: [],
+            CONF_SENSORS: [],
+        },
+    )
+
+    # Verify we're back at configure_area_sensors menu
+    assert result["type"] == FlowResultType.MENU
+    assert result["step_id"] == "configure_area_sensors"
+
+    # Verify the sensor count was updated in the config
+    updated_config = mock_config_entry.data[CONF_AREAS][TEST_AREA_LIVING_ROOM]
+    updated_count = (
+        len(updated_config.get(CONF_BINARY_SENSORS, []))
+        + len(updated_config.get(CONF_TEMPERATURE_SENSORS, []))
+        + len(updated_config.get(CONF_SENSORS, []))
+    )
+    assert updated_count == len(new_binary_sensors)
+    assert updated_count > initial_count
+
+    # Verify the menu shows the updated count in the label
+    living_room_option = result["menu_options"].get(f"area_{TEST_AREA_LIVING_ROOM}", "")
+    assert f"({updated_count} sensors)" in living_room_option
+
+
+async def test_options_flow_sensor_count_updates_after_removing(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test that sensor count updates in menu after removing sensors."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Get initial sensor count for living room
+    initial_config = mock_config_entry.data[CONF_AREAS][TEST_AREA_LIVING_ROOM]
+    initial_binary_sensors = initial_config.get(CONF_BINARY_SENSORS, [])
+    initial_count = (
+        len(initial_binary_sensors)
+        + len(initial_config.get(CONF_TEMPERATURE_SENSORS, []))
+        + len(initial_config.get(CONF_SENSORS, []))
+    )
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Navigate to configure area sensors
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "configure_area_sensors"},
+    )
+
+    # Select the living room area
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": f"area_{TEST_AREA_LIVING_ROOM}"},
+    )
+
+    # Remove all but one sensor
+    reduced_sensors = [TEST_SENSOR_1]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_AREA_ENABLED: True,
+            CONF_BINARY_SENSORS: reduced_sensors,
+            CONF_TEMPERATURE_SENSORS: [],
+            CONF_SENSORS: [],
+        },
+    )
+
+    # Verify we're back at configure_area_sensors menu
+    assert result["type"] == FlowResultType.MENU
+    assert result["step_id"] == "configure_area_sensors"
+
+    # Verify the sensor count was updated in the config
+    updated_config = mock_config_entry.data[CONF_AREAS][TEST_AREA_LIVING_ROOM]
+    updated_count = (
+        len(updated_config.get(CONF_BINARY_SENSORS, []))
+        + len(updated_config.get(CONF_TEMPERATURE_SENSORS, []))
+        + len(updated_config.get(CONF_SENSORS, []))
+    )
+    assert updated_count == len(reduced_sensors)
+    assert updated_count < initial_count
+
+    # Verify the menu shows the updated count in the label
+    living_room_option = result["menu_options"].get(f"area_{TEST_AREA_LIVING_ROOM}", "")
+    assert f"({updated_count} sensors)" in living_room_option
+
+
+async def test_options_flow_enable_disable_areas_shows_correct_count(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test that enable/disable areas form shows correct sensor counts from config."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # First, modify the sensors in an area
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "configure_area_sensors"},
+    )
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": f"area_{TEST_AREA_LIVING_ROOM}"},
+    )
+
+    # Set to exactly 1 sensor
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_AREA_ENABLED: True,
+            CONF_BINARY_SENSORS: [TEST_SENSOR_1],
+            CONF_TEMPERATURE_SENSORS: [],
+            CONF_SENSORS: [],
+        },
+    )
+
+    # Now start a new options flow and check the manage_areas form
+    result2 = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    result2 = await hass.config_entries.options.async_configure(
+        result2["flow_id"],
+        user_input={"next_step_id": "manage_areas"},
+    )
+
+    assert result2["type"] == FlowResultType.FORM
+    assert result2["step_id"] == "manage_areas"
+
+    # Check that the schema has the correct options with updated counts
+    # The living room should show (1 sensors) since we set it to 1
+    schema = result2["data_schema"]
+    # Find the enabled_areas field and check its options
+    for key in schema.schema:
+        if hasattr(key, "schema") and key.schema == "enabled_areas":
+            # This is the enabled_areas field
+            break

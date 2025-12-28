@@ -441,11 +441,20 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
         currently_enabled = []
 
         for area_id, area_info in areas_data.items():
-            sensor_count = (
-                len(area_info["binary_sensors"])
-                + len(area_info["temperature_sensors"])
-                + len(area_info["sensors"])
-            )
+            # Get sensor count from saved config if available, otherwise from entity registry
+            if area_id in areas_config:
+                saved_config = areas_config[area_id]
+                sensor_count = (
+                    len(saved_config.get(CONF_BINARY_SENSORS, []))
+                    + len(saved_config.get(CONF_TEMPERATURE_SENSORS, []))
+                    + len(saved_config.get(CONF_SENSORS, []))
+                )
+            else:
+                sensor_count = (
+                    len(area_info["binary_sensors"])
+                    + len(area_info["temperature_sensors"])
+                    + len(area_info["sensors"])
+                )
             area_options.append(
                 selector.SelectOptionDict(
                     value=area_id,
@@ -495,11 +504,22 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
             # Check if area is enabled in config
             is_enabled = areas_config.get(area_id, {}).get(CONF_AREA_ENABLED, True)
             status = "✓" if is_enabled else "○"
-            sensor_count = (
-                len(area_info["binary_sensors"])
-                + len(area_info["temperature_sensors"])
-                + len(area_info["sensors"])
-            )
+
+            # Get sensor count from saved config if available, otherwise from entity registry
+            if area_id in areas_config:
+                saved_config = areas_config[area_id]
+                sensor_count = (
+                    len(saved_config.get(CONF_BINARY_SENSORS, []))
+                    + len(saved_config.get(CONF_TEMPERATURE_SENSORS, []))
+                    + len(saved_config.get(CONF_SENSORS, []))
+                )
+            else:
+                sensor_count = (
+                    len(area_info["binary_sensors"])
+                    + len(area_info["temperature_sensors"])
+                    + len(area_info["sensors"])
+                )
+
             step_id = f"area_{area_id}"
             menu_options[step_id] = f"{status} {area_info['name']} ({sensor_count} sensors)"
 
