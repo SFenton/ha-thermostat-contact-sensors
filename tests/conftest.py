@@ -2,15 +2,21 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.thermostat_contact_sensors.const import (
+    CONF_AREA_ENABLED,
+    CONF_AREA_ID,
+    CONF_AREAS,
+    CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
     CONF_NOTIFICATION_TAG,
@@ -20,6 +26,8 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_NOTIFY_TITLE_PAUSED,
     CONF_NOTIFY_TITLE_RESUMED,
     CONF_OPEN_TIMEOUT,
+    CONF_SENSORS,
+    CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_NOTIFICATION_TAG,
@@ -37,7 +45,13 @@ TEST_THERMOSTAT = "climate.test_thermostat"
 TEST_SENSOR_1 = "binary_sensor.front_door_contact"
 TEST_SENSOR_2 = "binary_sensor.back_window_contact"
 TEST_SENSOR_3 = "binary_sensor.garage_door_contact"
+TEST_TEMP_SENSOR_1 = "sensor.living_room_temperature"
+TEST_OTHER_SENSOR_1 = "sensor.living_room_humidity"
 TEST_NOTIFY_SERVICE = "notify.test_notify"
+
+# Test area IDs
+TEST_AREA_LIVING_ROOM = "living_room"
+TEST_AREA_BEDROOM = "bedroom"
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +61,26 @@ async def auto_enable_custom_integrations(
 ) -> None:
     """Enable custom integrations for all tests."""
     pass
+
+
+def get_test_areas_config() -> dict[str, dict]:
+    """Get test areas configuration."""
+    return {
+        TEST_AREA_LIVING_ROOM: {
+            CONF_AREA_ID: TEST_AREA_LIVING_ROOM,
+            CONF_AREA_ENABLED: True,
+            CONF_BINARY_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2],
+            CONF_TEMPERATURE_SENSORS: [TEST_TEMP_SENSOR_1],
+            CONF_SENSORS: [TEST_OTHER_SENSOR_1],
+        },
+        TEST_AREA_BEDROOM: {
+            CONF_AREA_ID: TEST_AREA_BEDROOM,
+            CONF_AREA_ENABLED: True,
+            CONF_BINARY_SENSORS: [TEST_SENSOR_3],
+            CONF_TEMPERATURE_SENSORS: [],
+            CONF_SENSORS: [],
+        },
+    }
 
 
 @pytest.fixture
@@ -59,6 +93,7 @@ def mock_config_entry() -> MockConfigEntry:
             "name": "Test Thermostat Contact Sensors",
             CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3],
             CONF_THERMOSTAT: TEST_THERMOSTAT,
+            CONF_AREAS: get_test_areas_config(),
         },
         options={
             CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
@@ -85,6 +120,7 @@ def mock_config_entry_no_notify() -> MockConfigEntry:
             "name": "Test Thermostat No Notify",
             CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
             CONF_THERMOSTAT: TEST_THERMOSTAT,
+            CONF_AREAS: get_test_areas_config(),
         },
         options={
             CONF_OPEN_TIMEOUT: 2,
@@ -170,12 +206,77 @@ def mock_climate_service(hass: HomeAssistant) -> AsyncMock:
     return mock_service
 
 
+@pytest.fixture
+async def setup_area_registry(hass: HomeAssistant) -> None:
+    """Set up area registry with test areas."""
+    area_reg = ar.async_get(hass)
+
+    # Create test areas
+    area_reg.async_create(TEST_AREA_LIVING_ROOM, name="Living Room")
+    area_reg.async_create(TEST_AREA_BEDROOM, name="Bedroom")
+
+
+@pytest.fixture
+async def setup_entity_registry(hass: HomeAssistant, setup_area_registry) -> None:
+    """Set up entity registry with test entities assigned to areas."""
+    entity_reg = er.async_get(hass)
+
+    # Register binary sensors
+    entity_reg.async_get_or_create(
+        "binary_sensor",
+        "test",
+        "front_door_contact",
+        suggested_object_id="front_door_contact",
+        original_device_class="door",
+    )
+    entity_reg.async_update_entity(TEST_SENSOR_1, area_id=TEST_AREA_LIVING_ROOM)
+
+    entity_reg.async_get_or_create(
+        "binary_sensor",
+        "test",
+        "back_window_contact",
+        suggested_object_id="back_window_contact",
+        original_device_class="window",
+    )
+    entity_reg.async_update_entity(TEST_SENSOR_2, area_id=TEST_AREA_LIVING_ROOM)
+
+    entity_reg.async_get_or_create(
+        "binary_sensor",
+        "test",
+        "garage_door_contact",
+        suggested_object_id="garage_door_contact",
+        original_device_class="garage_door",
+    )
+    entity_reg.async_update_entity(TEST_SENSOR_3, area_id=TEST_AREA_BEDROOM)
+
+    # Register temperature sensor
+    entity_reg.async_get_or_create(
+        "sensor",
+        "test",
+        "living_room_temperature",
+        suggested_object_id="living_room_temperature",
+        original_device_class="temperature",
+    )
+    entity_reg.async_update_entity(TEST_TEMP_SENSOR_1, area_id=TEST_AREA_LIVING_ROOM)
+
+    # Register other sensor
+    entity_reg.async_get_or_create(
+        "sensor",
+        "test",
+        "living_room_humidity",
+        suggested_object_id="living_room_humidity",
+        original_device_class="humidity",
+    )
+    entity_reg.async_update_entity(TEST_OTHER_SENSOR_1, area_id=TEST_AREA_LIVING_ROOM)
+
+
 def get_test_config_data() -> dict[str, Any]:
     """Get test configuration data."""
     return {
         "name": "Test Thermostat Contact Sensors",
         CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3],
         CONF_THERMOSTAT: TEST_THERMOSTAT,
+        CONF_AREAS: get_test_areas_config(),
     }
 
 

@@ -3,10 +3,9 @@
     "step": {
       "user": {
         "title": "Configure Thermostat Contact Sensors",
-        "description": "Set up monitoring of contact sensors to automatically pause your thermostat when doors/windows are left open.",
+        "description": "Set up monitoring of contact sensors to automatically pause your thermostat when doors/windows are left open. All areas and their sensors will be automatically discovered.",
         "data": {
           "name": "Name",
-          "contact_sensors": "Contact Sensors",
           "thermostat": "Thermostat",
           "open_timeout": "Open Timeout (minutes)",
           "close_timeout": "Close Timeout (minutes)",
@@ -14,7 +13,6 @@
         },
         "data_description": {
           "name": "A friendly name for this configuration",
-          "contact_sensors": "Select all door and window sensors to monitor",
           "thermostat": "Select the thermostat/climate entity to control",
           "open_timeout": "Minutes a sensor must be open before pausing thermostat",
           "close_timeout": "Minutes all sensors must be closed before resuming thermostat",
@@ -33,7 +31,36 @@
   "options": {
     "step": {
       "init": {
-        "title": "Thermostat Contact Sensors Options",
+        "title": "Thermostat Contact Sensors",
+        "description": "Configure your thermostat contact sensor integration.",
+        "menu_options": {
+          "manage_areas": "Manage Areas",
+          "global_settings": "Global Settings",
+          "thermostat": "Change Thermostat"
+        }
+      },
+      "manage_areas": {
+        "title": "Manage Areas",
+        "description": "Select an area to configure its sensors. ✓ = enabled, ○ = disabled"
+      },
+      "area_config": {
+        "title": "Configure {area_name}",
+        "description": "Select which sensors to use for this area.",
+        "data": {
+          "enabled": "Enable this area",
+          "binary_sensors": "Binary Sensors (motion, occupancy, door/window)",
+          "temperature_sensors": "Temperature Sensors",
+          "sensors": "Other Sensors"
+        },
+        "data_description": {
+          "enabled": "When disabled, this area will be ignored by the integration",
+          "binary_sensors": "Binary sensors in this area (motion, occupancy, contact sensors)",
+          "temperature_sensors": "Temperature sensors in this area",
+          "sensors": "Other sensors in this area"
+        }
+      },
+      "global_settings": {
+        "title": "Global Settings",
         "description": "Configure timeouts and notifications. Notification messages support Jinja2 templates.",
         "data": {
           "open_timeout": "Open Timeout (minutes)",
@@ -55,7 +82,21 @@
           "notify_message_resumed": "Message when resumed. Available variables: {{ trigger_sensor_name }}, {{ close_timeout }}, {{ previous_mode }}, {{ thermostat_name }}",
           "notification_tag": "Tag for persistent/replaceable notifications (allows updates to same notification)"
         }
+      },
+      "thermostat": {
+        "title": "Change Thermostat",
+        "description": "Select the thermostat to control.",
+        "data": {
+          "thermostat": "Thermostat"
+        },
+        "data_description": {
+          "thermostat": "Select the climate entity to control"
+        }
       }
+    },
+    "abort": {
+      "no_areas_found": "No areas found in Home Assistant. Please create areas and assign sensors to them first.",
+      "area_not_found": "The selected area was not found."
     }
   },
   "entity": {

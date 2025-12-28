@@ -14,6 +14,14 @@ CONF_NOTIFY_TITLE_RESUMED = "notify_title_resumed"
 CONF_NOTIFY_MESSAGE_RESUMED = "notify_message_resumed"
 CONF_NOTIFICATION_TAG = "notification_tag"
 
+# Area configuration keys
+CONF_AREAS = "areas"
+CONF_AREA_ID = "area_id"
+CONF_AREA_ENABLED = "enabled"
+CONF_BINARY_SENSORS = "binary_sensors"
+CONF_TEMPERATURE_SENSORS = "temperature_sensors"
+CONF_SENSORS = "sensors"
+
 # Defaults
 DEFAULT_OPEN_TIMEOUT = 5  # minutes
 DEFAULT_CLOSE_TIMEOUT = 5  # minutes

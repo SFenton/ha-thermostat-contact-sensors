@@ -7,6 +7,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.thermostat_contact_sensors.const import (
+    CONF_AREA_ENABLED,
+    CONF_AREAS,
+    CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
@@ -15,6 +18,9 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_NOTIFY_TITLE_PAUSED,
     CONF_NOTIFY_TITLE_RESUMED,
     CONF_OPEN_TIMEOUT,
+    CONF_SENSORS,
+    CONF_TEMPERATURE_SENSORS,
+    CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
@@ -25,43 +31,65 @@ from custom_components.thermostat_contact_sensors.const import (
     DOMAIN,
 )
 
-from .conftest import TEST_NOTIFY_SERVICE
+from .conftest import (
+    TEST_AREA_BEDROOM,
+    TEST_AREA_LIVING_ROOM,
+    TEST_NOTIFY_SERVICE,
+    TEST_SENSOR_1,
+    TEST_SENSOR_2,
+    TEST_SENSOR_3,
+    TEST_THERMOSTAT,
+)
 
 
 @pytest.fixture(autouse=True)
-async def setup_ha(hass: HomeAssistant, setup_test_entities) -> None:
+async def setup_ha(hass: HomeAssistant, setup_test_entities, setup_entity_registry) -> None:
     """Set up Home Assistant with test entities."""
     pass
 
 
-async def test_options_flow_init(
+async def test_options_flow_shows_menu(
     hass: HomeAssistant,
     mock_config_entry: ConfigEntry,
     mock_climate_service,
 ) -> None:
-    """Test the options flow initial step."""
+    """Test that options flow shows the main menu."""
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    assert result["type"] == FlowResultType.MENU
+    assert result["step_id"] == "init"
+    assert "manage_areas" in result["menu_options"]
+    assert "global_settings" in result["menu_options"]
+    assert "thermostat" in result["menu_options"]
+
+
+async def test_options_flow_global_settings(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test navigating to and updating global settings."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Select global settings from menu
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "global_settings"},
+    )
 
     assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "init"
+    assert result["step_id"] == "global_settings"
 
-
-async def test_options_flow_update_timeouts(
-    hass: HomeAssistant,
-    mock_config_entry: ConfigEntry,
-    mock_climate_service,
-) -> None:
-    """Test updating timeout values in options flow."""
-    mock_config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
-
+    # Update the settings
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
@@ -81,86 +109,178 @@ async def test_options_flow_update_timeouts(
     assert result["data"][CONF_CLOSE_TIMEOUT] == 15
 
 
-async def test_options_flow_update_notifications(
+async def test_options_flow_thermostat(
     hass: HomeAssistant,
     mock_config_entry: ConfigEntry,
     mock_climate_service,
 ) -> None:
-    """Test updating notification settings in options flow."""
+    """Test navigating to and updating thermostat selection."""
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
+    # Start options flow
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
 
-    custom_title = "Custom Paused Title"
-    custom_message = "{{ trigger_sensor_name }} opened - thermostat paused"
-    custom_tag = "my_custom_tag"
-
+    # Select thermostat from menu
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        user_input={
-            CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
-            CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
-            CONF_NOTIFY_SERVICE: "notify.different_service",
-            CONF_NOTIFY_TITLE_PAUSED: custom_title,
-            CONF_NOTIFY_MESSAGE_PAUSED: custom_message,
-            CONF_NOTIFY_TITLE_RESUMED: "Custom Resumed",
-            CONF_NOTIFY_MESSAGE_RESUMED: "All closed now",
-            CONF_NOTIFICATION_TAG: custom_tag,
-        },
+        user_input={"next_step_id": "thermostat"},
     )
-
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_NOTIFY_SERVICE] == "notify.different_service"
-    assert result["data"][CONF_NOTIFY_TITLE_PAUSED] == custom_title
-    assert result["data"][CONF_NOTIFY_MESSAGE_PAUSED] == custom_message
-    assert result["data"][CONF_NOTIFICATION_TAG] == custom_tag
-
-
-async def test_options_flow_disable_notifications(
-    hass: HomeAssistant,
-    mock_config_entry: ConfigEntry,
-    mock_climate_service,
-) -> None:
-    """Test disabling notifications via options flow."""
-    mock_config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
-
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        user_input={
-            CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
-            CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
-            CONF_NOTIFY_SERVICE: "",  # Empty to disable
-            CONF_NOTIFY_TITLE_PAUSED: DEFAULT_NOTIFY_TITLE_PAUSED,
-            CONF_NOTIFY_MESSAGE_PAUSED: DEFAULT_NOTIFY_MESSAGE_PAUSED,
-            CONF_NOTIFY_TITLE_RESUMED: DEFAULT_NOTIFY_TITLE_RESUMED,
-            CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
-            CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
-        },
-    )
-
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_NOTIFY_SERVICE] == ""
-
-
-async def test_options_flow_preserves_defaults(
-    hass: HomeAssistant,
-    mock_config_entry: ConfigEntry,
-    mock_climate_service,
-) -> None:
-    """Test that options flow shows current values as defaults."""
-    mock_config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
 
     assert result["type"] == FlowResultType.FORM
-    # The schema should have the current options as defaults
-    # This is implicitly tested by the form being shown correctly
-    assert result["step_id"] == "init"
+    assert result["step_id"] == "thermostat"
+
+    # Update the thermostat
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_THERMOSTAT: TEST_THERMOSTAT,
+        },
+    )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert mock_config_entry.data[CONF_THERMOSTAT] == TEST_THERMOSTAT
+
+
+async def test_options_flow_manage_areas_menu(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test navigating to the manage areas menu."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Select manage areas from menu
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "manage_areas"},
+    )
+
+    assert result["type"] == FlowResultType.MENU
+    assert result["step_id"] == "manage_areas"
+    # Should have area options
+    assert len(result["menu_options"]) >= 1
+
+
+async def test_options_flow_area_config(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test configuring a specific area."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Select manage areas from menu
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "manage_areas"},
+    )
+
+    # Select the living room area
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": f"area_{TEST_AREA_LIVING_ROOM}"},
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "area_config"
+
+    # Configure the area
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_AREA_ENABLED: True,
+            CONF_BINARY_SENSORS: [TEST_SENSOR_1],  # Only select one sensor
+            CONF_TEMPERATURE_SENSORS: [],
+            CONF_SENSORS: [],
+        },
+    )
+
+    # Should go back to manage areas menu
+    assert result["type"] == FlowResultType.MENU
+    assert result["step_id"] == "manage_areas"
+
+    # Verify the area config was updated
+    assert mock_config_entry.data[CONF_AREAS][TEST_AREA_LIVING_ROOM][CONF_BINARY_SENSORS] == [TEST_SENSOR_1]
+
+
+async def test_options_flow_disable_area(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test disabling an area."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Navigate to manage areas
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "manage_areas"},
+    )
+
+    # Select the bedroom area
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": f"area_{TEST_AREA_BEDROOM}"},
+    )
+
+    # Disable the area
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_AREA_ENABLED: False,
+            CONF_BINARY_SENSORS: [TEST_SENSOR_3],
+            CONF_TEMPERATURE_SENSORS: [],
+            CONF_SENSORS: [],
+        },
+    )
+
+    # Verify the area is disabled
+    assert mock_config_entry.data[CONF_AREAS][TEST_AREA_BEDROOM][CONF_AREA_ENABLED] is False
+
+
+async def test_options_flow_thermostat_required(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test that thermostat is required when updating."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Select thermostat from menu
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "thermostat"},
+    )
+
+    # Try to submit without thermostat
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_THERMOSTAT: "",
+        },
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"][CONF_THERMOSTAT] == "no_thermostat_selected"

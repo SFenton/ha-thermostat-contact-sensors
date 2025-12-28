@@ -6,9 +6,17 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    CONF_AREA_ENABLED,
+    CONF_AREA_ID,
+    CONF_AREAS,
+    CONF_BINARY_SENSORS,
     CONF_CONTACT_SENSORS,
+    CONF_SENSORS,
+    CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DOMAIN,
     PLATFORMS,
@@ -20,17 +28,75 @@ _LOGGER = logging.getLogger(__name__)
 type ThermostatContactSensorsConfigEntry = ConfigEntry[ThermostatContactSensorsCoordinator]
 
 
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate old entry to new version."""
+    _LOGGER.debug("Migrating from version %s", config_entry.version)
+
+    if config_entry.version == 1:
+        # Version 1 -> 2: Add areas configuration
+        new_data = {**config_entry.data}
+
+        # Build areas config from legacy contact sensors
+        legacy_sensors = new_data.get(CONF_CONTACT_SENSORS, [])
+
+        # Create a simple area config with all legacy sensors in an "uncategorized" area
+        # In practice, users should reconfigure after upgrade
+        new_data[CONF_AREAS] = {}
+
+        # Try to assign sensors to their actual areas
+        entity_reg = er.async_get(hass)
+        area_reg = ar.async_get(hass)
+
+        # Group sensors by area
+        sensors_by_area: dict[str, list[str]] = {}
+        for sensor_id in legacy_sensors:
+            entity = entity_reg.async_get(sensor_id)
+            if entity and entity.area_id:
+                if entity.area_id not in sensors_by_area:
+                    sensors_by_area[entity.area_id] = []
+                sensors_by_area[entity.area_id].append(sensor_id)
+
+        # Create area configs
+        for area_id, sensors in sensors_by_area.items():
+            new_data[CONF_AREAS][area_id] = {
+                CONF_AREA_ID: area_id,
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: sensors,
+                CONF_TEMPERATURE_SENSORS: [],
+                CONF_SENSORS: [],
+            }
+
+        hass.config_entries.async_update_entry(
+            config_entry, data=new_data, version=2
+        )
+
+        _LOGGER.info("Migration to version 2 successful")
+
+    return True
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ThermostatContactSensorsConfigEntry
 ) -> bool:
     """Set up Thermostat Contact Sensors from a config entry."""
     _LOGGER.debug("Setting up Thermostat Contact Sensors: %s", entry.title)
 
+    # Get contact sensors from legacy config or from areas config
+    contact_sensors = entry.data.get(CONF_CONTACT_SENSORS, [])
+
+    # If using new areas config, gather all binary sensors from enabled areas
+    areas_config = entry.data.get(CONF_AREAS, {})
+    if areas_config:
+        contact_sensors = []
+        for area_id, area_config in areas_config.items():
+            if area_config.get(CONF_AREA_ENABLED, True):
+                contact_sensors.extend(area_config.get(CONF_BINARY_SENSORS, []))
+
     # Create coordinator
     coordinator = ThermostatContactSensorsCoordinator(
         hass,
         config_entry_id=entry.entry_id,
-        contact_sensors=entry.data[CONF_CONTACT_SENSORS],
+        contact_sensors=contact_sensors,
         thermostat=entry.data[CONF_THERMOSTAT],
         options=dict(entry.options),
     )
@@ -71,4 +137,7 @@ async def async_update_options(
 ) -> None:
     """Handle options update."""
     _LOGGER.debug("Updating options for: %s", entry.title)
-    entry.runtime_data.update_options(dict(entry.options))
+
+    # When areas or thermostat change, we need to reload the integration
+    # to rebuild the coordinator with new sensors
+    await hass.config_entries.async_reload(entry.entry_id)
