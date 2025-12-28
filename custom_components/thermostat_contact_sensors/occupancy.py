@@ -20,7 +20,7 @@ from typing import Any
 
 from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -182,6 +182,7 @@ class RoomOccupancyTracker:
         self._min_occupancy_minutes = min_occupancy_minutes
         self._areas: dict[str, AreaOccupancyState] = {}
         self._unsub_state_change: callable | None = None
+        self._unsub_time_interval: callable | None = None
         self._update_callbacks: list[callable] = []
 
         # Build area tracking from config
@@ -295,17 +296,38 @@ class RoomOccupancyTracker:
                 self._async_sensor_state_changed,
             )
 
+        # Set up periodic timer to update active status as occupancy duration increases
+        # This ensures areas transition from occupied to active after min_occupancy_minutes
+        self._unsub_time_interval = async_track_time_interval(
+            self.hass,
+            self._async_periodic_update,
+            timedelta(seconds=30),
+        )
+
         _LOGGER.debug(
             "Occupancy tracker setup complete. Monitoring %d sensors across %d areas",
             len(all_sensors),
             len(self._areas),
         )
 
+    @callback
+    def _async_periodic_update(self, now: datetime) -> None:
+        """Periodically update active status for all areas.
+
+        This is called every 30 seconds to check if any occupied areas
+        have been occupied long enough to become active.
+        """
+        self.force_update_active_status()
+
     async def async_shutdown(self) -> None:
         """Shut down the occupancy tracker."""
         if self._unsub_state_change:
             self._unsub_state_change()
             self._unsub_state_change = None
+
+        if self._unsub_time_interval:
+            self._unsub_time_interval()
+            self._unsub_time_interval = None
 
         _LOGGER.debug("Occupancy tracker shut down")
 
