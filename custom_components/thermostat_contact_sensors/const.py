@@ -43,6 +43,9 @@ CONF_VENT_DEBOUNCE_SECONDS = "vent_debounce_seconds"
 CONF_AREA_MIN_VENTS_OPEN = "area_min_vents_open"
 CONF_AREA_VENT_OPEN_DELAY_SECONDS = "area_vent_open_delay_seconds"
 
+# User override behavior
+CONF_RESPECT_USER_OFF = "respect_user_off"
+
 # Defaults
 DEFAULT_OPEN_TIMEOUT = 5  # minutes
 DEFAULT_CLOSE_TIMEOUT = 5  # minutes
@@ -67,6 +70,7 @@ DEFAULT_NOTIFY_MESSAGE_RESUMED = (
     "Thermostat will resume normal operation (restored to {{ previous_mode }} mode)."
 )
 DEFAULT_NOTIFICATION_TAG = "thermostat_contact_sensors_notification"
+DEFAULT_RESPECT_USER_OFF = False  # Default: integration will always resume thermostat
 
 # Platforms
-PLATFORMS = ["binary_sensor", "sensor"]
+PLATFORMS = ["binary_sensor", "sensor", "switch"]

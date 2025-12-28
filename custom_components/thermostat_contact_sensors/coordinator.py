@@ -93,6 +93,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.previous_hvac_mode: str | None = None
         self.open_sensors: list[str] = []
         self.trigger_sensor: str | None = None
+        self.respect_user_off: bool = False  # Default: always resume thermostat
 
         # Timeout tracking
         self._open_timer: asyncio.TimerHandle | None = None
@@ -635,8 +636,25 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "Close timeout expired with all sensors closed. Resuming thermostat."
         )
 
-        # Restore previous HVAC mode
-        if self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
+        # Restore previous HVAC mode (unless respecting user's off choice)
+        should_restore = True
+        if self.previous_hvac_mode == HVACMode.OFF:
+            if self.respect_user_off:
+                _LOGGER.info(
+                    "Thermostat was off before pause and respect_user_off is enabled. "
+                    "Keeping thermostat off."
+                )
+                should_restore = False
+            else:
+                _LOGGER.info(
+                    "Thermostat was off before pause but respect_user_off is disabled. "
+                    "Will resume to last known active mode."
+                )
+                # Use the last known non-off mode if available
+                if self._last_known_hvac_mode and self._last_known_hvac_mode != HVACMode.OFF:
+                    self.previous_hvac_mode = self._last_known_hvac_mode
+
+        if should_restore and self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
             await self.hass.services.async_call(
                 CLIMATE_DOMAIN,
                 "set_hvac_mode",
