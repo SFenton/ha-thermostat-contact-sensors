@@ -27,8 +27,10 @@ from .const import (
     CONF_AREA_ENABLED,
     CONF_AREAS,
     CONF_BINARY_SENSORS,
+    CONF_GRACE_PERIOD_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
     CONF_SENSORS,
+    DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
 )
 
@@ -210,6 +212,7 @@ class RoomOccupancyTracker:
         hass: HomeAssistant,
         areas_config: dict[str, dict[str, Any]],
         min_occupancy_minutes: int = DEFAULT_MIN_OCCUPANCY_MINUTES,
+        grace_period_minutes: int = DEFAULT_GRACE_PERIOD_MINUTES,
     ) -> None:
         """Initialize the room occupancy tracker.
 
@@ -218,9 +221,12 @@ class RoomOccupancyTracker:
             areas_config: Configuration dict for areas (from config entry data).
             min_occupancy_minutes: Minutes of continuous occupancy required
                                    for a room to be considered "active".
+            grace_period_minutes: Minutes to wait before deactivating when an
+                                  active room becomes unoccupied. Minimum 2.
         """
         self.hass = hass
         self._min_occupancy_minutes = min_occupancy_minutes
+        self._grace_period_minutes = max(2, grace_period_minutes)
         self._areas: dict[str, AreaOccupancyState] = {}
         self._unsub_state_change: callable | None = None
         self._unsub_time_interval: callable | None = None
@@ -238,6 +244,18 @@ class RoomOccupancyTracker:
     def min_occupancy_minutes(self, value: int) -> None:
         """Set the minimum occupancy minutes threshold."""
         self._min_occupancy_minutes = value
+        # Re-evaluate active status for all areas
+        self._update_all_active_status()
+
+    @property
+    def grace_period_minutes(self) -> int:
+        """Return the grace period minutes threshold."""
+        return self._grace_period_minutes
+
+    @grace_period_minutes.setter
+    def grace_period_minutes(self, value: int) -> None:
+        """Set the grace period minutes threshold (minimum 2)."""
+        self._grace_period_minutes = max(2, value)
         # Re-evaluate active status for all areas
         self._update_all_active_status()
 
@@ -493,7 +511,7 @@ class RoomOccupancyTracker:
         elif area.is_in_grace_period:
             # Room is unoccupied but in grace period - check if grace period expired
             unoccupancy_minutes = area.get_unoccupancy_minutes(now)
-            if unoccupancy_minutes >= self._min_occupancy_minutes:
+            if unoccupancy_minutes >= self._grace_period_minutes:
                 # Grace period expired - deactivate
                 area.is_active = False
                 area.was_active_before_unoccupied = False
@@ -611,6 +629,7 @@ class RoomOccupancyTracker:
             "occupied_areas": len(self.occupied_areas),
             "active_areas": len(self.active_areas),
             "min_occupancy_minutes": self._min_occupancy_minutes,
+            "grace_period_minutes": self._grace_period_minutes,
             "areas": {
                 area_id: {
                     "name": area.area_name,

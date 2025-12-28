@@ -249,6 +249,26 @@ class TestRoomOccupancySensor:
 
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
 
+    async def test_grace_period_minutes_attribute(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test grace_period_minutes attribute is present."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entity_id = "sensor.test_thermostat_contact_sensors_living_room_occupancy"
+        state = hass.states.get(entity_id)
+
+        assert "grace_period_minutes" in state.attributes
+        # Default value should be 5
+        assert state.attributes.get("grace_period_minutes") == 5
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
     async def test_grace_period_attributes_when_not_in_grace_period(
         self,
         hass: HomeAssistant,

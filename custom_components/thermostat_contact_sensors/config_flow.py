@@ -23,6 +23,7 @@ from .const import (
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_GRACE_PERIOD_MINUTES,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
@@ -38,6 +39,7 @@ from .const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
@@ -330,6 +332,20 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1,
+                        max=60,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_GRACE_PERIOD_MINUTES,
+                    default=options.get(
+                        CONF_GRACE_PERIOD_MINUTES, DEFAULT_GRACE_PERIOD_MINUTES
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=2,
                         max=60,
                         step=1,
                         unit_of_measurement="minutes",

@@ -11,6 +11,10 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_AREAS,
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
+    CONF_GRACE_PERIOD_MINUTES,
+    CONF_MIN_CYCLE_OFF_MINUTES,
+    CONF_MIN_CYCLE_ON_MINUTES,
+    CONF_MIN_OCCUPANCY_MINUTES,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
     CONF_NOTIFY_MESSAGE_RESUMED,
@@ -19,15 +23,21 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_NOTIFY_TITLE_RESUMED,
     CONF_OPEN_TIMEOUT,
     CONF_SENSORS,
+    CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_GRACE_PERIOD_MINUTES,
+    DEFAULT_MIN_CYCLE_OFF_MINUTES,
+    DEFAULT_MIN_CYCLE_ON_MINUTES,
+    DEFAULT_MIN_OCCUPANCY_MINUTES,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
     DEFAULT_NOTIFY_MESSAGE_RESUMED,
     DEFAULT_NOTIFY_TITLE_PAUSED,
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
+    DEFAULT_TEMPERATURE_DEADBAND,
     DOMAIN,
 )
 
@@ -108,6 +118,52 @@ async def test_options_flow_global_settings(
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_OPEN_TIMEOUT] == 10
     assert result["data"][CONF_CLOSE_TIMEOUT] == 15
+
+
+async def test_options_flow_global_settings_grace_period(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test configuring the grace period in global settings."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Select global settings from menu
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "global_settings"},
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "global_settings"
+
+    # Update the settings with custom grace period
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MIN_OCCUPANCY_MINUTES: DEFAULT_MIN_OCCUPANCY_MINUTES,
+            CONF_GRACE_PERIOD_MINUTES: 10,  # Custom grace period
+            CONF_TEMPERATURE_DEADBAND: DEFAULT_TEMPERATURE_DEADBAND,
+            CONF_MIN_CYCLE_ON_MINUTES: DEFAULT_MIN_CYCLE_ON_MINUTES,
+            CONF_MIN_CYCLE_OFF_MINUTES: DEFAULT_MIN_CYCLE_OFF_MINUTES,
+            CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
+            CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
+            CONF_NOTIFY_SERVICE: "",
+            CONF_NOTIFY_TITLE_PAUSED: DEFAULT_NOTIFY_TITLE_PAUSED,
+            CONF_NOTIFY_MESSAGE_PAUSED: DEFAULT_NOTIFY_MESSAGE_PAUSED,
+            CONF_NOTIFY_TITLE_RESUMED: DEFAULT_NOTIFY_TITLE_RESUMED,
+            CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
+            CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
+        },
+    )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_GRACE_PERIOD_MINUTES] == 10
 
 
 async def test_options_flow_thermostat(

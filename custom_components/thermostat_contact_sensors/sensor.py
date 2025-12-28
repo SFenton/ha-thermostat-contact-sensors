@@ -189,6 +189,7 @@ class RoomOccupancySensor(CoordinatorEntity, SensorEntity):
 
         now = dt_util.utcnow()
         min_occupancy = self.coordinator.occupancy_tracker.min_occupancy_minutes
+        grace_period = self.coordinator.occupancy_tracker.grace_period_minutes
 
         attrs = {
             "is_occupied": area_state.is_occupied,
@@ -198,6 +199,7 @@ class RoomOccupancySensor(CoordinatorEntity, SensorEntity):
             "occupied_sensor_count": area_state.occupied_sensor_count,
             "total_sensor_count": area_state.total_sensor_count,
             "min_occupancy_minutes": min_occupancy,
+            "grace_period_minutes": grace_period,
         }
 
         # Add occupied sensors with friendly names
@@ -234,7 +236,7 @@ class RoomOccupancySensor(CoordinatorEntity, SensorEntity):
         if area_state.is_in_grace_period:
             # Calculate time until grace period expires and area becomes inactive
             unoccupancy_minutes = area_state.get_unoccupancy_minutes(now)
-            remaining = min_occupancy - unoccupancy_minutes
+            remaining = grace_period - unoccupancy_minutes
             attrs["time_until_inactive_minutes"] = round(max(0, remaining), 1)
             attrs["unoccupied_since"] = area_state.unoccupancy_start_time.isoformat() if area_state.unoccupancy_start_time else None
         else:

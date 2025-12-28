@@ -16,6 +16,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_BINARY_SENSORS,
     CONF_MIN_OCCUPANCY_MINUTES,
     CONF_SENSORS,
+    DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
 )
 from custom_components.thermostat_contact_sensors.occupancy import (
@@ -805,6 +806,127 @@ class TestRoomOccupancyTrackerActiveStatus:
 
         # Now should be active (7 >= 5)
         assert area.is_active is True
+
+        await tracker.async_shutdown()
+
+    async def test_init_with_default_grace_period(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test tracker initializes with default grace_period_minutes."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+        )
+        assert tracker.grace_period_minutes == DEFAULT_GRACE_PERIOD_MINUTES
+
+    async def test_init_with_custom_grace_period(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test tracker initializes with custom grace_period_minutes."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            grace_period_minutes=10,
+        )
+        assert tracker.grace_period_minutes == 10
+
+    async def test_grace_period_minimum_enforced_on_init(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test that grace_period_minutes is enforced to minimum of 2 on init."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            grace_period_minutes=1,
+        )
+        # Should be clamped to minimum of 2
+        assert tracker.grace_period_minutes == 2
+
+    async def test_grace_period_minimum_enforced_on_setter(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test that grace_period_minutes setter enforces minimum of 2."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            grace_period_minutes=5,
+        )
+        tracker.grace_period_minutes = 1
+        # Should be clamped to minimum of 2
+        assert tracker.grace_period_minutes == 2
+
+    async def test_grace_period_setter_updates_value(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test grace_period_minutes can be updated via setter."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            grace_period_minutes=5,
+        )
+        tracker.grace_period_minutes = 15
+        assert tracker.grace_period_minutes == 15
+
+    async def test_custom_grace_period_used_for_expiration(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test that custom grace period is used for expiration calculation."""
+        # Use a different grace period than min_occupancy
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            min_occupancy_minutes=5,
+            grace_period_minutes=3,  # Different from min_occupancy
+        )
+        await tracker.async_setup()
+
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+
+        # Set up area as in grace period
+        now = dt_util.utcnow()
+        area.is_active = True
+        area.was_active_before_unoccupied = True
+        area.unoccupancy_start_time = now - timedelta(minutes=2)  # Less than grace period
+
+        # Should still be active (only 2 min, grace period is 3)
+        tracker.force_update_active_status()
+        assert area.is_active is True
+        assert area.is_in_grace_period is True
+
+        # Now simulate being unoccupied for longer than grace period (3 min)
+        area.unoccupancy_start_time = now - timedelta(minutes=4)
+        tracker.force_update_active_status()
+
+        # Should now be inactive (4 min > 3 min grace period)
+        assert area.is_active is False
+        assert area.is_in_grace_period is False
+
+        await tracker.async_shutdown()
+
+    async def test_grace_period_independent_of_min_occupancy(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test that grace period and min_occupancy are truly independent."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            min_occupancy_minutes=10,  # Long time to become active
+            grace_period_minutes=2,     # Short grace period
+        )
+        await tracker.async_setup()
+
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+
+        # Set up area as in grace period
+        now = dt_util.utcnow()
+        area.is_active = True
+        area.was_active_before_unoccupied = True
+        area.unoccupancy_start_time = now - timedelta(minutes=2.5)
+
+        # Force update - should expire based on grace period (2 min), not min_occupancy (10 min)
+        tracker.force_update_active_status()
+        assert area.is_active is False  # Expired after 2 min grace period
+        assert area.is_in_grace_period is False
 
         await tracker.async_shutdown()
 

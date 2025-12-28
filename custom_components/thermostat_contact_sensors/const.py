@@ -24,6 +24,7 @@ CONF_SENSORS = "sensors"
 
 # Occupancy configuration keys
 CONF_MIN_OCCUPANCY_MINUTES = "min_occupancy_minutes"
+CONF_GRACE_PERIOD_MINUTES = "grace_period_minutes"
 
 # Thermostat control configuration keys
 CONF_TEMPERATURE_DEADBAND = "temperature_deadband"
@@ -34,6 +35,7 @@ CONF_MIN_CYCLE_OFF_MINUTES = "min_cycle_off_minutes"
 DEFAULT_OPEN_TIMEOUT = 5  # minutes
 DEFAULT_CLOSE_TIMEOUT = 5  # minutes
 DEFAULT_MIN_OCCUPANCY_MINUTES = 5  # minutes
+DEFAULT_GRACE_PERIOD_MINUTES = 5  # minutes (minimum 2)
 DEFAULT_TEMPERATURE_DEADBAND = 0.5  # degrees (precision: 0.1)
 DEFAULT_MIN_CYCLE_ON_MINUTES = 5  # minutes
 DEFAULT_MIN_CYCLE_OFF_MINUTES = 5  # minutes

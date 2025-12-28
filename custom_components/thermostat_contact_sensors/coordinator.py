@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_GRACE_PERIOD_MINUTES,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
@@ -30,6 +31,7 @@ from .const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
@@ -95,10 +97,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         min_occupancy = self._options.get(
             CONF_MIN_OCCUPANCY_MINUTES, DEFAULT_MIN_OCCUPANCY_MINUTES
         )
+        grace_period = self._options.get(
+            CONF_GRACE_PERIOD_MINUTES, DEFAULT_GRACE_PERIOD_MINUTES
+        )
         self.occupancy_tracker = RoomOccupancyTracker(
             hass=hass,
             areas_config=self._areas_config,
             min_occupancy_minutes=min_occupancy,
+            grace_period_minutes=grace_period,
         )
 
         # Thermostat controller
