@@ -14,12 +14,14 @@ from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
     CONF_GRACE_PERIOD_MINUTES,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
+    CONF_MIN_VENTS_OPEN,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
     CONF_NOTIFY_MESSAGE_RESUMED,
@@ -30,11 +32,17 @@ from .const import (
     CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
+    CONF_UNOCCUPIED_COOLING_THRESHOLD,
+    CONF_UNOCCUPIED_HEATING_THRESHOLD,
+    CONF_VENT_DEBOUNCE_SECONDS,
+    CONF_VENT_OPEN_DELAY_SECONDS,
+    CONF_VENTS,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
+    DEFAULT_MIN_VENTS_OPEN,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
     DEFAULT_NOTIFY_MESSAGE_RESUMED,
@@ -42,10 +50,15 @@ from .const import (
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
     DEFAULT_TEMPERATURE_DEADBAND,
+    DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
+    DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
+    DEFAULT_VENT_DEBOUNCE_SECONDS,
+    DEFAULT_VENT_OPEN_DELAY_SECONDS,
     DOMAIN,
 )
 from .occupancy import RoomOccupancyTracker
 from .thermostat_control import ThermostatController, ThermostatState
+from .vent_control import VentController, VentControlState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,7 +135,30 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             min_cycle_off_minutes=self._options.get(
                 CONF_MIN_CYCLE_OFF_MINUTES, DEFAULT_MIN_CYCLE_OFF_MINUTES
             ),
+            unoccupied_heating_threshold=self._options.get(
+                CONF_UNOCCUPIED_HEATING_THRESHOLD, DEFAULT_UNOCCUPIED_HEATING_THRESHOLD
+            ),
+            unoccupied_cooling_threshold=self._options.get(
+                CONF_UNOCCUPIED_COOLING_THRESHOLD, DEFAULT_UNOCCUPIED_COOLING_THRESHOLD
+            ),
         )
+
+        # Vent controller
+        self.vent_controller = VentController(
+            hass=hass,
+            min_vents_open=self._options.get(
+                CONF_MIN_VENTS_OPEN, DEFAULT_MIN_VENTS_OPEN
+            ),
+            vent_open_delay_seconds=self._options.get(
+                CONF_VENT_OPEN_DELAY_SECONDS, DEFAULT_VENT_OPEN_DELAY_SECONDS
+            ),
+            vent_debounce_seconds=self._options.get(
+                CONF_VENT_DEBOUNCE_SECONDS, DEFAULT_VENT_DEBOUNCE_SECONDS
+            ),
+        )
+
+        # Last vent control state
+        self._last_vent_control_state: VentControlState | None = None
 
         # Last thermostat state for sensors
         self._last_thermostat_state: ThermostatState | None = None
@@ -167,6 +203,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Return the last evaluated thermostat state."""
         return self._last_thermostat_state
 
+    @property
+    def last_vent_control_state(self) -> VentControlState | None:
+        """Return the last evaluated vent control state."""
+        return self._last_vent_control_state
+
     def get_area_temp_sensors(self) -> dict[str, list[str]]:
         """Get temperature sensors for each area.
 
@@ -180,14 +221,41 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 result[area_id] = list(temp_sensors)
         return result
 
+    def get_area_vents(self) -> dict[str, list[str]]:
+        """Get vents for each area.
+
+        Returns:
+            Dict of area_id -> list of vent entity IDs.
+        """
+        result = {}
+        for area_id, area_config in self._areas_config.items():
+            vents = area_config.get(CONF_VENTS, [])
+            if vents:
+                result[area_id] = list(vents)
+        return result
+
+    def get_area_vent_delays(self) -> dict[str, int]:
+        """Get per-area vent open delay overrides.
+
+        Returns:
+            Dict of area_id -> delay in seconds (only for areas with overrides).
+        """
+        result = {}
+        for area_id, area_config in self._areas_config.items():
+            delay = area_config.get(CONF_AREA_VENT_OPEN_DELAY_SECONDS)
+            if delay is not None:
+                result[area_id] = delay
+        return result
+
     def update_thermostat_state(self) -> ThermostatState | None:
         """Evaluate and update the current thermostat control state.
 
         Returns:
             The updated ThermostatState.
         """
-        # Get active areas from occupancy tracker
+        # Get active and inactive areas from occupancy tracker
         active_areas = self.occupancy_tracker.active_areas
+        inactive_areas = self.occupancy_tracker.inactive_areas
         area_temp_sensors = self.get_area_temp_sensors()
 
         # Update pause state on thermostat controller
@@ -197,6 +265,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._last_thermostat_state = self.thermostat_controller.evaluate_thermostat_action(
             active_areas=active_areas,
             area_temp_sensors=area_temp_sensors,
+            inactive_areas=inactive_areas,
         )
 
         return self._last_thermostat_state
@@ -219,6 +288,23 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         )
         self.thermostat_controller.min_cycle_off_minutes = options.get(
             CONF_MIN_CYCLE_OFF_MINUTES, DEFAULT_MIN_CYCLE_OFF_MINUTES
+        )
+        self.thermostat_controller.unoccupied_heating_threshold = options.get(
+            CONF_UNOCCUPIED_HEATING_THRESHOLD, DEFAULT_UNOCCUPIED_HEATING_THRESHOLD
+        )
+        self.thermostat_controller.unoccupied_cooling_threshold = options.get(
+            CONF_UNOCCUPIED_COOLING_THRESHOLD, DEFAULT_UNOCCUPIED_COOLING_THRESHOLD
+        )
+
+        # Update vent controller
+        self.vent_controller.min_vents_open = options.get(
+            CONF_MIN_VENTS_OPEN, DEFAULT_MIN_VENTS_OPEN
+        )
+        self.vent_controller.vent_open_delay_seconds = options.get(
+            CONF_VENT_OPEN_DELAY_SECONDS, DEFAULT_VENT_OPEN_DELAY_SECONDS
+        )
+        self.vent_controller.vent_debounce_seconds = options.get(
+            CONF_VENT_DEBOUNCE_SECONDS, DEFAULT_VENT_DEBOUNCE_SECONDS
         )
 
     async def async_setup(self) -> None:
@@ -262,6 +348,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Initial thermostat state evaluation
         self.update_thermostat_state()
 
+        # Initial vent control evaluation
+        await self.async_update_vents()
+
     async def async_shutdown(self) -> None:
         """Shut down the coordinator."""
         self._cancel_open_timer()
@@ -282,7 +371,53 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Handle occupancy state changes."""
         _LOGGER.debug("Occupancy changed, updating thermostat state")
         self.update_thermostat_state()
+        await self.async_update_vents()
         self.async_set_updated_data(None)
+
+    async def async_update_vents(self) -> VentControlState | None:
+        """Evaluate and execute vent control.
+
+        Returns:
+            The VentControlState with any pending commands executed.
+        """
+        area_vents = self.get_area_vents()
+        if not area_vents:
+            return None
+
+        # Get all occupied and active areas
+        active_areas = self.occupancy_tracker.active_areas
+        occupied_areas = self.occupancy_tracker.occupied_areas
+
+        # Get room temperature states from last thermostat state
+        room_temp_states = {}
+        if self._last_thermostat_state:
+            room_temp_states = self._last_thermostat_state.room_states
+
+        # Get per-area vent delay overrides
+        area_vent_delays = self.get_area_vent_delays()
+
+        # Evaluate all vents
+        control_state = self.vent_controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=active_areas,
+            occupied_areas=occupied_areas,
+            room_temp_states=room_temp_states,
+            area_vent_delays=area_vent_delays,
+        )
+
+        # Execute pending commands
+        if control_state.pending_commands:
+            executed = await self.vent_controller.async_execute_vent_commands(
+                control_state
+            )
+            _LOGGER.debug(
+                "Executed %d vent commands out of %d pending",
+                executed,
+                len(control_state.pending_commands),
+            )
+
+        self._last_vent_control_state = control_state
+        return control_state
 
     def _update_open_sensors(self) -> None:
         """Update the list of currently open sensors."""

@@ -39,9 +39,13 @@ from .const import (
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_TEMPERATURE_DEADBAND,
+    CONF_UNOCCUPIED_COOLING_THRESHOLD,
+    CONF_UNOCCUPIED_HEATING_THRESHOLD,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_TEMPERATURE_DEADBAND,
+    DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
+    DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
 )
 from .occupancy import AreaOccupancyState, RoomOccupancyTracker
 
@@ -85,9 +89,16 @@ class RoomTemperatureState:
     # Current readings (entity_id -> temperature)
     sensor_readings: dict[str, float] = field(default_factory=dict)
 
-    # Satiation state
+    # Satiation state (for active rooms)
     is_satiated: bool = False
     satiation_reason: SatiationReason = SatiationReason.NO_TEMP_SENSORS
+
+    # Critical state (for unoccupied rooms that are too cold/hot)
+    is_critical: bool = False
+    critical_reason: str | None = None
+
+    # Whether this room is active (occupied long enough)
+    is_active: bool = False
 
     # The sensor that determined satiation (closest to target)
     determining_sensor: str | None = None
@@ -145,13 +156,16 @@ class ThermostatState:
     target_temp_high: float | None = None  # For heat_cool mode (cooling target)
     target_temp_low: float | None = None  # For heat_cool mode (heating target)
 
-    # Room states
+    # Room states (includes both active and critical rooms)
     room_states: dict[str, RoomTemperatureState] = field(default_factory=dict)
 
     # Overall state
     all_active_rooms_satiated: bool = False
     active_room_count: int = 0
     satiated_room_count: int = 0
+
+    # Critical rooms (unoccupied but need conditioning)
+    critical_room_count: int = 0
 
     # Cycle protection
     last_on_time: datetime | None = None
@@ -311,6 +325,8 @@ class ThermostatController:
         temperature_deadband: float = DEFAULT_TEMPERATURE_DEADBAND,
         min_cycle_on_minutes: int = DEFAULT_MIN_CYCLE_ON_MINUTES,
         min_cycle_off_minutes: int = DEFAULT_MIN_CYCLE_OFF_MINUTES,
+        unoccupied_heating_threshold: float = DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
+        unoccupied_cooling_threshold: float = DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
     ) -> None:
         """Initialize the thermostat controller.
 
@@ -321,6 +337,10 @@ class ThermostatController:
             temperature_deadband: Temperature buffer to prevent cycling.
             min_cycle_on_minutes: Minimum time thermostat must stay on.
             min_cycle_off_minutes: Minimum time thermostat must stay off.
+            unoccupied_heating_threshold: Degrees below heat target that triggers
+                heating in unoccupied rooms.
+            unoccupied_cooling_threshold: Degrees above cool target that triggers
+                cooling in unoccupied rooms.
         """
         self.hass = hass
         self.thermostat_entity_id = thermostat_entity_id
@@ -329,6 +349,8 @@ class ThermostatController:
         self._temperature_deadband = temperature_deadband
         self._min_cycle_on_minutes = min_cycle_on_minutes
         self._min_cycle_off_minutes = min_cycle_off_minutes
+        self._unoccupied_heating_threshold = unoccupied_heating_threshold
+        self._unoccupied_cooling_threshold = unoccupied_cooling_threshold
 
         # State tracking
         self._is_paused_by_contact_sensors = False
@@ -370,6 +392,26 @@ class ThermostatController:
     def min_cycle_off_minutes(self, value: int) -> None:
         """Set minimum off-cycle time in minutes."""
         self._min_cycle_off_minutes = value
+
+    @property
+    def unoccupied_heating_threshold(self) -> float:
+        """Return the unoccupied heating threshold."""
+        return self._unoccupied_heating_threshold
+
+    @unoccupied_heating_threshold.setter
+    def unoccupied_heating_threshold(self, value: float) -> None:
+        """Set the unoccupied heating threshold."""
+        self._unoccupied_heating_threshold = value
+
+    @property
+    def unoccupied_cooling_threshold(self) -> float:
+        """Return the unoccupied cooling threshold."""
+        return self._unoccupied_cooling_threshold
+
+    @unoccupied_cooling_threshold.setter
+    def unoccupied_cooling_threshold(self, value: float) -> None:
+        """Set the unoccupied cooling threshold."""
+        self._unoccupied_cooling_threshold = value
 
     @property
     def is_paused_by_contact_sensors(self) -> bool:
@@ -563,6 +605,125 @@ class ThermostatController:
 
         return room_state
 
+    def evaluate_room_critical(
+        self,
+        area: AreaOccupancyState,
+        temperature_sensors: list[str],
+        hvac_mode: HVACMode,
+        target_temp: float | None,
+        target_temp_low: float | None,
+        target_temp_high: float | None,
+    ) -> RoomTemperatureState:
+        """Evaluate whether an unoccupied room is in a critical temperature state.
+
+        A room is critical when its temperature drops too far below the heating
+        target or rises too far above the cooling target, even though the room
+        is not actively occupied.
+
+        Args:
+            area: The area occupancy state.
+            temperature_sensors: List of temperature sensor entity IDs for this area.
+            hvac_mode: Current HVAC mode.
+            target_temp: Target temperature (for heat/cool modes).
+            target_temp_low: Low target (for heat_cool mode).
+            target_temp_high: High target (for heat_cool mode).
+
+        Returns:
+            RoomTemperatureState with critical evaluation.
+        """
+        room_state = RoomTemperatureState(
+            area_id=area.area_id,
+            area_name=area.area_name,
+            temperature_sensors=temperature_sensors,
+            is_active=False,  # This method is for inactive rooms
+        )
+
+        # Collect temperature readings from all sensors
+        for sensor_id in temperature_sensors:
+            state = self.hass.states.get(sensor_id)
+            temp = get_temperature_from_state(state)
+            if temp is not None:
+                room_state.sensor_readings[sensor_id] = temp
+
+        # Handle no valid readings
+        if not room_state.sensor_readings:
+            return room_state
+
+        # Find the sensor closest to the target for the current mode
+        if hvac_mode == HVACMode.HEAT:
+            if target_temp is None:
+                return room_state
+
+            # For heating, use the coldest sensor to check critical
+            coldest_sensor, coldest_temp = min(
+                room_state.sensor_readings.items(), key=lambda x: x[1]
+            )
+            critical_threshold = target_temp - self._unoccupied_heating_threshold
+
+            room_state.determining_sensor = coldest_sensor
+            room_state.determining_temperature = coldest_temp
+
+            if coldest_temp < critical_threshold:
+                room_state.is_critical = True
+                room_state.critical_reason = (
+                    f"Temperature {coldest_temp:.1f}° is {target_temp - coldest_temp:.1f}° "
+                    f"below heat target {target_temp:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
+                )
+
+        elif hvac_mode == HVACMode.COOL:
+            if target_temp is None:
+                return room_state
+
+            # For cooling, use the warmest sensor to check critical
+            warmest_sensor, warmest_temp = max(
+                room_state.sensor_readings.items(), key=lambda x: x[1]
+            )
+            critical_threshold = target_temp + self._unoccupied_cooling_threshold
+
+            room_state.determining_sensor = warmest_sensor
+            room_state.determining_temperature = warmest_temp
+
+            if warmest_temp > critical_threshold:
+                room_state.is_critical = True
+                room_state.critical_reason = (
+                    f"Temperature {warmest_temp:.1f}° is {warmest_temp - target_temp:.1f}° "
+                    f"above cool target {target_temp:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
+                )
+
+        elif hvac_mode == HVACMode.HEAT_COOL:
+            if target_temp_low is None or target_temp_high is None:
+                return room_state
+
+            # Check both heating and cooling thresholds
+            coldest_sensor, coldest_temp = min(
+                room_state.sensor_readings.items(), key=lambda x: x[1]
+            )
+            warmest_sensor, warmest_temp = max(
+                room_state.sensor_readings.items(), key=lambda x: x[1]
+            )
+
+            heat_critical_threshold = target_temp_low - self._unoccupied_heating_threshold
+            cool_critical_threshold = target_temp_high + self._unoccupied_cooling_threshold
+
+            if coldest_temp < heat_critical_threshold:
+                room_state.is_critical = True
+                room_state.determining_sensor = coldest_sensor
+                room_state.determining_temperature = coldest_temp
+                room_state.critical_reason = (
+                    f"Temperature {coldest_temp:.1f}° is {target_temp_low - coldest_temp:.1f}° "
+                    f"below heat target {target_temp_low:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
+                )
+            elif warmest_temp > cool_critical_threshold:
+                room_state.is_critical = True
+                room_state.determining_sensor = warmest_sensor
+                room_state.determining_temperature = warmest_temp
+                room_state.critical_reason = (
+                    f"Temperature {warmest_temp:.1f}° is {warmest_temp - target_temp_high:.1f}° "
+                    f"above cool target {target_temp_high:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
+                )
+
+        return room_state
+
     def can_turn_on(self, now: datetime | None = None) -> tuple[bool, str]:
         """Check if the thermostat can be turned on (cycle protection).
 
@@ -637,6 +798,7 @@ class ThermostatController:
         self,
         active_areas: list[AreaOccupancyState],
         area_temp_sensors: dict[str, list[str]],
+        inactive_areas: list[AreaOccupancyState] | None = None,
         now: datetime | None = None,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
@@ -645,11 +807,13 @@ class ThermostatController:
         - Whether we're paused by contact sensors
         - Current thermostat state and mode
         - Active room temperature satiation
+        - Inactive rooms with critical temperature levels
         - Cycle protection timers
 
         Args:
             active_areas: List of currently active areas from occupancy tracker.
             area_temp_sensors: Dict of area_id -> list of temperature sensor IDs.
+            inactive_areas: List of inactive areas to check for critical temps.
             now: Current time (defaults to utcnow).
 
         Returns:
@@ -657,6 +821,9 @@ class ThermostatController:
         """
         if now is None:
             now = dt_util.utcnow()
+
+        if inactive_areas is None:
+            inactive_areas = []
 
         # Get current thermostat state
         hvac_mode, is_on = self.get_thermostat_state()
@@ -685,7 +852,7 @@ class ThermostatController:
             thermostat_state.action_reason = "Thermostat is off (user choice)"
             return thermostat_state
 
-        # Evaluate each active room
+        # Evaluate each active room for satiation
         thermostat_state.active_room_count = len(active_areas)
         satiated_count = 0
 
@@ -699,6 +866,7 @@ class ThermostatController:
                 target_temp_low,
                 target_temp_high,
             )
+            room_state.is_active = True
             thermostat_state.room_states[area.area_id] = room_state
 
             if room_state.is_satiated:
@@ -709,21 +877,56 @@ class ThermostatController:
             len(active_areas) > 0 and satiated_count == len(active_areas)
         )
 
+        # Evaluate inactive rooms for critical temperatures
+        critical_count = 0
+        for area in inactive_areas:
+            # Skip if this area was already evaluated as active
+            if area.area_id in thermostat_state.room_states:
+                continue
+
+            temp_sensors = area_temp_sensors.get(area.area_id, [])
+            if not temp_sensors:
+                continue  # No sensors, can't evaluate
+
+            room_state = self.evaluate_room_critical(
+                area,
+                temp_sensors,
+                hvac_mode,
+                target_temp,
+                target_temp_low,
+                target_temp_high,
+            )
+            thermostat_state.room_states[area.area_id] = room_state
+
+            if room_state.is_critical:
+                critical_count += 1
+                _LOGGER.debug(
+                    "Inactive room %s is critical: %s",
+                    area.area_id,
+                    room_state.critical_reason,
+                )
+
+        thermostat_state.critical_room_count = critical_count
+
+        # Determine if we need conditioning (active unsatiated OR critical rooms)
+        unsatiated_active = len(active_areas) - satiated_count
+        needs_conditioning = unsatiated_active > 0 or critical_count > 0
+
         # Determine recommended action
-        if len(active_areas) == 0:
-            # No active rooms - this case is handled later (per user request)
+        if len(active_areas) == 0 and critical_count == 0:
+            # No active rooms and no critical rooms
             thermostat_state.recommended_action = ThermostatAction.NONE
-            thermostat_state.action_reason = "No active rooms"
+            thermostat_state.action_reason = "No active or critical rooms"
             return thermostat_state
 
-        if thermostat_state.all_active_rooms_satiated:
-            # All rooms satiated - should turn off
+        if not needs_conditioning:
+            # All active rooms satiated and no critical rooms - should turn off
             if is_on:
                 can_off, reason = self.can_turn_off(now)
                 if can_off:
                     thermostat_state.recommended_action = ThermostatAction.TURN_OFF
                     thermostat_state.action_reason = (
-                        f"All {satiated_count} active rooms satiated"
+                        f"All {satiated_count} active rooms satiated, no critical rooms"
                     )
                 else:
                     thermostat_state.recommended_action = ThermostatAction.WAIT_CYCLE_ON
@@ -732,39 +935,46 @@ class ThermostatController:
                 thermostat_state.recommended_action = ThermostatAction.NONE
                 thermostat_state.action_reason = "Already off, all rooms satiated"
         else:
-            # Some rooms not satiated - should turn on
-            unsatiated = len(active_areas) - satiated_count
+            # Some rooms need conditioning (active unsatiated or critical)
+            reason_parts = []
+            if unsatiated_active > 0:
+                reason_parts.append(f"{unsatiated_active} active rooms need conditioning")
+            if critical_count > 0:
+                reason_parts.append(f"{critical_count} critical rooms")
+
             if not is_on:
-                can_on, reason = self.can_turn_on(now)
+                can_on, cycle_reason = self.can_turn_on(now)
                 if can_on:
                     thermostat_state.recommended_action = ThermostatAction.TURN_ON
-                    thermostat_state.action_reason = (
-                        f"{unsatiated} of {len(active_areas)} rooms need conditioning"
-                    )
+                    thermostat_state.action_reason = " and ".join(reason_parts)
                 else:
                     thermostat_state.recommended_action = ThermostatAction.WAIT_CYCLE_OFF
-                    thermostat_state.action_reason = f"Want to turn on but {reason}"
+                    thermostat_state.action_reason = f"Want to turn on but {cycle_reason}"
             else:
                 thermostat_state.recommended_action = ThermostatAction.NONE
-                thermostat_state.action_reason = (
-                    f"Already on, {unsatiated} rooms need conditioning"
-                )
+                thermostat_state.action_reason = f"Already on, {' and '.join(reason_parts)}"
 
         return thermostat_state
 
     def get_summary(
-        self, active_areas: list[AreaOccupancyState], area_temp_sensors: dict[str, list[str]]
+        self,
+        active_areas: list[AreaOccupancyState],
+        area_temp_sensors: dict[str, list[str]],
+        inactive_areas: list[AreaOccupancyState] | None = None,
     ) -> dict[str, Any]:
         """Get a summary of the current thermostat control state.
 
         Args:
             active_areas: List of active areas.
             area_temp_sensors: Dict of area_id -> temperature sensor list.
+            inactive_areas: List of inactive areas to check for critical temps.
 
         Returns:
             Dict with summary information.
         """
-        state = self.evaluate_thermostat_action(active_areas, area_temp_sensors)
+        state = self.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas
+        )
 
         return {
             "thermostat_entity_id": state.thermostat_entity_id,
@@ -777,16 +987,22 @@ class ThermostatController:
             "is_paused_by_contact_sensors": self._is_paused_by_contact_sensors,
             "active_room_count": state.active_room_count,
             "satiated_room_count": state.satiated_room_count,
+            "critical_room_count": state.critical_room_count,
             "all_active_rooms_satiated": state.all_active_rooms_satiated,
             "recommended_action": state.recommended_action.value,
             "action_reason": state.action_reason,
             "min_cycle_on_minutes": self._min_cycle_on_minutes,
             "min_cycle_off_minutes": self._min_cycle_off_minutes,
+            "unoccupied_heating_threshold": self._unoccupied_heating_threshold,
+            "unoccupied_cooling_threshold": self._unoccupied_cooling_threshold,
             "rooms": {
                 area_id: {
                     "area_name": room.area_name,
+                    "is_active": room.is_active,
                     "is_satiated": room.is_satiated,
+                    "is_critical": room.is_critical,
                     "satiation_reason": room.satiation_reason.value,
+                    "critical_reason": room.critical_reason,
                     "determining_sensor": room.determining_sensor,
                     "determining_temperature": room.determining_temperature,
                     "sensor_readings": room.sensor_readings,

@@ -56,18 +56,22 @@
       },
       "area_config": {
         "title": "Configure {area_name}",
-        "description": "Select which sensors to use for this area.",
+        "description": "Select which sensors and vents to use for this area.",
         "data": {
           "enabled": "Enable this area",
           "binary_sensors": "Binary Sensors (motion, occupancy, door/window)",
           "temperature_sensors": "Temperature Sensors",
-          "sensors": "Other Sensors"
+          "sensors": "Other Sensors",
+          "vents": "Vents (cover entities)",
+          "area_vent_open_delay_seconds": "Vent Open Delay (seconds, optional override)"
         },
         "data_description": {
           "enabled": "When disabled, this area will be ignored by the integration",
           "binary_sensors": "Binary sensors in this area (motion, occupancy, contact sensors)",
           "temperature_sensors": "Temperature sensors in this area",
-          "sensors": "Other sensors in this area"
+          "sensors": "Other sensors in this area",
+          "vents": "Cover entities (vents) in this area. Can include individual vents or vent groups.",
+          "area_vent_open_delay_seconds": "Override the global vent open delay for this area. Leave empty to use global setting."
         }
       },
       "global_settings": {
@@ -79,6 +83,11 @@
           "temperature_deadband": "Temperature Deadband",
           "min_cycle_on_minutes": "Minimum Cycle On Time (minutes)",
           "min_cycle_off_minutes": "Minimum Cycle Off Time (minutes)",
+          "unoccupied_heating_threshold": "Unoccupied Heating Threshold",
+          "unoccupied_cooling_threshold": "Unoccupied Cooling Threshold",
+          "min_vents_open": "Minimum Vents Open",
+          "vent_open_delay_seconds": "Vent Open Delay (seconds)",
+          "vent_debounce_seconds": "Vent Debounce Time (seconds)",
           "open_timeout": "Open Timeout (minutes)",
           "close_timeout": "Close Timeout (minutes)",
           "notify_service": "Notification Service",
@@ -94,6 +103,11 @@
           "temperature_deadband": "Temperature tolerance for satiation. A room is considered satiated when its temperature is within this amount of the target. This prevents rapid on/off cycling.",
           "min_cycle_on_minutes": "Minimum time the thermostat must stay ON before it can be turned off. Protects HVAC equipment from rapid cycling.",
           "min_cycle_off_minutes": "Minimum time the thermostat must stay OFF before it can be turned on. Protects HVAC equipment from rapid cycling.",
+          "unoccupied_heating_threshold": "Degrees below heat target that triggers heating even in unoccupied rooms. Protects rooms from getting too cold when no one is there.",
+          "unoccupied_cooling_threshold": "Degrees above cool target that triggers cooling even in unoccupied rooms. Protects rooms from getting too hot when no one is there.",
+          "min_vents_open": "Minimum number of vents that must remain open to prevent HVAC back pressure. The system will keep this many vents open based on priority: active rooms, occupied rooms, then rooms furthest from target temperature.",
+          "vent_open_delay_seconds": "Seconds after a room becomes occupied before its vents open. Prevents vents from opening during brief pass-throughs.",
+          "vent_debounce_seconds": "Minimum time between vent state changes for the same vent. Prevents rapid open/close cycling.",
           "open_timeout": "Minutes a sensor must be open before pausing thermostat",
           "close_timeout": "Minutes all sensors must be closed before resuming thermostat",
           "notify_service": "Service to call for notifications (e.g., notify.mobile_app_phone). Leave empty to disable notifications.",

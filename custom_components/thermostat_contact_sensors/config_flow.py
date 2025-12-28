@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
@@ -19,6 +20,8 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_AREA_ENABLED,
     CONF_AREA_ID,
+    CONF_AREA_MIN_VENTS_OPEN,
+    CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_AREAS,
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
@@ -27,6 +30,7 @@ from .const import (
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
+    CONF_MIN_VENTS_OPEN,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
     CONF_NOTIFY_MESSAGE_RESUMED,
@@ -38,11 +42,17 @@ from .const import (
     CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
+    CONF_UNOCCUPIED_COOLING_THRESHOLD,
+    CONF_UNOCCUPIED_HEATING_THRESHOLD,
+    CONF_VENT_DEBOUNCE_SECONDS,
+    CONF_VENT_OPEN_DELAY_SECONDS,
+    CONF_VENTS,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
+    DEFAULT_MIN_VENTS_OPEN,
     DEFAULT_NOTIFICATION_TAG,
     DEFAULT_NOTIFY_MESSAGE_PAUSED,
     DEFAULT_NOTIFY_MESSAGE_RESUMED,
@@ -50,6 +60,10 @@ from .const import (
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
     DEFAULT_TEMPERATURE_DEADBAND,
+    DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
+    DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
+    DEFAULT_VENT_DEBOUNCE_SECONDS,
+    DEFAULT_VENT_OPEN_DELAY_SECONDS,
     DOMAIN,
 )
 
@@ -64,6 +78,7 @@ def get_areas_with_sensors(hass: HomeAssistant) -> dict[str, dict]:
         "binary_sensors": list of entity_ids,
         "temperature_sensors": list of entity_ids,
         "sensors": list of entity_ids (non-temperature),
+        "covers": list of entity_ids (cover domain entities),
     }
     """
     area_reg = ar.async_get(hass)
@@ -77,6 +92,7 @@ def get_areas_with_sensors(hass: HomeAssistant) -> dict[str, dict]:
             "binary_sensors": [],
             "temperature_sensors": [],
             "sensors": [],
+            "covers": [],
         }
 
     # Go through all entities and categorize them by area
@@ -103,6 +119,8 @@ def get_areas_with_sensors(hass: HomeAssistant) -> dict[str, dict]:
                 areas_data[entity.area_id]["temperature_sensors"].append(entity_id)
             else:
                 areas_data[entity.area_id]["sensors"].append(entity_id)
+        elif entity.domain == COVER_DOMAIN:
+            areas_data[entity.area_id]["covers"].append(entity_id)
 
     return areas_data
 
@@ -119,6 +137,7 @@ def build_default_areas_config(hass: HomeAssistant) -> dict[str, dict]:
             CONF_BINARY_SENSORS: area_info["binary_sensors"],
             CONF_TEMPERATURE_SENSORS: area_info["temperature_sensors"],
             CONF_SENSORS: area_info["sensors"],
+            CONF_VENTS: [],  # Vents are not auto-assigned
         }
 
     return areas_config
@@ -395,6 +414,36 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                     )
                 ),
                 vol.Optional(
+                    CONF_UNOCCUPIED_HEATING_THRESHOLD,
+                    default=options.get(
+                        CONF_UNOCCUPIED_HEATING_THRESHOLD,
+                        DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.5,
+                        max=10.0,
+                        step=0.1,
+                        unit_of_measurement="°",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_UNOCCUPIED_COOLING_THRESHOLD,
+                    default=options.get(
+                        CONF_UNOCCUPIED_COOLING_THRESHOLD,
+                        DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.5,
+                        max=10.0,
+                        step=0.1,
+                        unit_of_measurement="°",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
                     CONF_OPEN_TIMEOUT,
                     default=options.get(CONF_OPEN_TIMEOUT, DEFAULT_OPEN_TIMEOUT),
                 ): selector.NumberSelector(
@@ -466,6 +515,46 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(
                         type=selector.TextSelectorType.TEXT,
+                    )
+                ),
+                # Vent control settings
+                vol.Optional(
+                    CONF_MIN_VENTS_OPEN,
+                    default=options.get(CONF_MIN_VENTS_OPEN, DEFAULT_MIN_VENTS_OPEN),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=20,
+                        step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_VENT_OPEN_DELAY_SECONDS,
+                    default=options.get(
+                        CONF_VENT_OPEN_DELAY_SECONDS, DEFAULT_VENT_OPEN_DELAY_SECONDS
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=300,
+                        step=5,
+                        unit_of_measurement="seconds",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_VENT_DEBOUNCE_SECONDS,
+                    default=options.get(
+                        CONF_VENT_DEBOUNCE_SECONDS, DEFAULT_VENT_DEBOUNCE_SECONDS
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=5,
+                        max=300,
+                        step=5,
+                        unit_of_measurement="seconds",
+                        mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
             }
@@ -646,7 +735,18 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 CONF_BINARY_SENSORS: user_input.get(CONF_BINARY_SENSORS, []),
                 CONF_TEMPERATURE_SENSORS: user_input.get(CONF_TEMPERATURE_SENSORS, []),
                 CONF_SENSORS: user_input.get(CONF_SENSORS, []),
+                CONF_VENTS: user_input.get(CONF_VENTS, []),
             }
+
+            # Add per-area vent overrides if specified
+            if user_input.get(CONF_AREA_VENT_OPEN_DELAY_SECONDS) is not None:
+                areas_config[area_id][CONF_AREA_VENT_OPEN_DELAY_SECONDS] = user_input[
+                    CONF_AREA_VENT_OPEN_DELAY_SECONDS
+                ]
+            if user_input.get(CONF_AREA_MIN_VENTS_OPEN) is not None:
+                areas_config[area_id][CONF_AREA_MIN_VENTS_OPEN] = user_input[
+                    CONF_AREA_MIN_VENTS_OPEN
+                ]
 
             # Update config entry
             new_data = {
@@ -706,6 +806,46 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 selector.EntitySelectorConfig(
                     domain=SENSOR_DOMAIN,
                     multiple=True,
+                )
+            )
+
+        # Always show vents field so users can add vents
+        schema_dict[vol.Optional(
+            CONF_VENTS,
+            default=current_area_config.get(CONF_VENTS, []),
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=COVER_DOMAIN,
+                multiple=True,
+            )
+        )
+
+        # Per-area vent override options (optional - leave blank to use global)
+        # Use a special "not set" indicator since None can't be easily represented
+        current_delay = current_area_config.get(CONF_AREA_VENT_OPEN_DELAY_SECONDS)
+        if current_delay is not None:
+            schema_dict[vol.Optional(
+                CONF_AREA_VENT_OPEN_DELAY_SECONDS,
+                default=current_delay,
+            )] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=300,
+                    step=5,
+                    unit_of_measurement="seconds",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            )
+        else:
+            schema_dict[vol.Optional(
+                CONF_AREA_VENT_OPEN_DELAY_SECONDS,
+            )] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=300,
+                    step=5,
+                    unit_of_measurement="seconds",
+                    mode=selector.NumberSelectorMode.BOX,
                 )
             )
 

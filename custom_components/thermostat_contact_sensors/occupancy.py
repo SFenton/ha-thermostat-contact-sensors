@@ -344,6 +344,15 @@ class RoomOccupancyTracker:
         return [area for area in self._areas.values() if area.is_active]
 
     @property
+    def inactive_areas(self) -> list[AreaOccupancyState]:
+        """Return list of inactive areas (not active).
+
+        These are areas that are either unoccupied or haven't been
+        occupied long enough to become active.
+        """
+        return [area for area in self._areas.values() if not area.is_active]
+
+    @property
     def any_area_occupied(self) -> bool:
         """Return True if any area is currently occupied."""
         return len(self.occupied_areas) > 0

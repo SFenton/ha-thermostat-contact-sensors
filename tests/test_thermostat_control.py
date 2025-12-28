@@ -997,3 +997,596 @@ class TestHVACModes:
         assert state.target_temp_low == 20.0
         if state.active_room_count > 0:
             assert state.all_active_rooms_satiated is True
+
+
+# =============================================================================
+# Tests for Critical Temperature Logic
+# =============================================================================
+
+
+class TestCriticalTemperatureLogic:
+    """Tests for unoccupied room critical temperature detection."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock Home Assistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        return MagicMock(spec=RoomOccupancyTracker)
+
+    @pytest.fixture
+    def controller(self, mock_hass, mock_occupancy_tracker):
+        """Create a thermostat controller for testing."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            temperature_deadband=0.5,
+            min_cycle_on_minutes=5,
+            min_cycle_off_minutes=5,
+            unoccupied_heating_threshold=3.0,
+            unoccupied_cooling_threshold=3.0,
+        )
+
+    @pytest.fixture
+    def inactive_area(self):
+        """Create an inactive area for testing."""
+        return AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            binary_sensors=[],
+            sensors=[],
+        )
+
+    def test_evaluate_room_critical_heat_mode_critical(self, controller, mock_hass, inactive_area):
+        """Test that a room is critical when far below heat target."""
+        temp_sensors = [TEST_TEMP_SENSOR_1]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "17.0"  # 5 degrees below target of 22
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.HEAT,
+            target_temp=22.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is True
+        assert room_state.is_active is False
+        assert "17.0" in room_state.critical_reason
+        assert "below heat target" in room_state.critical_reason
+
+    def test_evaluate_room_critical_heat_mode_not_critical(self, controller, mock_hass, inactive_area):
+        """Test that a room is not critical when close to heat target."""
+        temp_sensors = [TEST_TEMP_SENSOR_1]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "20.0"  # 2 degrees below target of 22, within threshold
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.HEAT,
+            target_temp=22.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is False
+        assert room_state.critical_reason is None
+
+    def test_evaluate_room_critical_cool_mode_critical(self, controller, mock_hass, inactive_area):
+        """Test that a room is critical when far above cool target."""
+        temp_sensors = [TEST_TEMP_SENSOR_1]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "28.0"  # 4 degrees above target of 24
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.COOL,
+            target_temp=24.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is True
+        assert "28.0" in room_state.critical_reason
+        assert "above cool target" in room_state.critical_reason
+
+    def test_evaluate_room_critical_cool_mode_not_critical(self, controller, mock_hass, inactive_area):
+        """Test that a room is not critical when close to cool target."""
+        temp_sensors = [TEST_TEMP_SENSOR_1]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "26.0"  # 2 degrees above target, within threshold
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.COOL,
+            target_temp=24.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is False
+
+    def test_evaluate_room_critical_heat_cool_mode_too_cold(self, controller, mock_hass, inactive_area):
+        """Test heat_cool mode detects critical cold."""
+        temp_sensors = [TEST_TEMP_SENSOR_1]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "15.0"  # 5 degrees below low target of 20
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.HEAT_COOL,
+            target_temp=None,
+            target_temp_low=20.0,
+            target_temp_high=24.0,
+        )
+
+        assert room_state.is_critical is True
+        assert "below heat target" in room_state.critical_reason
+
+    def test_evaluate_room_critical_heat_cool_mode_too_hot(self, controller, mock_hass, inactive_area):
+        """Test heat_cool mode detects critical hot."""
+        temp_sensors = [TEST_TEMP_SENSOR_1]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "29.0"  # 5 degrees above high target of 24
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.HEAT_COOL,
+            target_temp=None,
+            target_temp_low=20.0,
+            target_temp_high=24.0,
+        )
+
+        assert room_state.is_critical is True
+        assert "above cool target" in room_state.critical_reason
+
+    def test_evaluate_room_critical_no_sensors(self, controller, mock_hass, inactive_area):
+        """Test no sensors returns non-critical state."""
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            [],
+            HVACMode.HEAT,
+            target_temp=22.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is False
+        assert len(room_state.sensor_readings) == 0
+
+    def test_evaluate_room_critical_uses_coldest_sensor_for_heat(self, controller, mock_hass, inactive_area):
+        """Test critical detection uses coldest sensor in heat mode."""
+        temp_sensors = [TEST_TEMP_SENSOR_1, "sensor.other_temp"]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "21.0"  # Warm, not critical
+                return mock_state
+            elif entity_id == "sensor.other_temp":
+                mock_state = MagicMock()
+                mock_state.state = "16.0"  # Cold, critical
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.HEAT,
+            target_temp=22.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is True
+        assert room_state.determining_temperature == 16.0
+
+    def test_evaluate_room_critical_uses_warmest_sensor_for_cool(self, controller, mock_hass, inactive_area):
+        """Test critical detection uses warmest sensor in cool mode."""
+        temp_sensors = [TEST_TEMP_SENSOR_1, "sensor.other_temp"]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "25.0"  # Warm but not critical
+                return mock_state
+            elif entity_id == "sensor.other_temp":
+                mock_state = MagicMock()
+                mock_state.state = "30.0"  # Hot, critical
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.COOL,
+            target_temp=24.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is True
+        assert room_state.determining_temperature == 30.0
+
+
+class TestEvaluateThermostatActionWithCriticalRooms:
+    """Tests for evaluate_thermostat_action with critical rooms."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock Home Assistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        return MagicMock(spec=RoomOccupancyTracker)
+
+    @pytest.fixture
+    def controller(self, mock_hass, mock_occupancy_tracker):
+        """Create a thermostat controller for testing."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            temperature_deadband=0.5,
+            min_cycle_on_minutes=5,
+            min_cycle_off_minutes=5,
+            unoccupied_heating_threshold=3.0,
+            unoccupied_cooling_threshold=3.0,
+        )
+
+    def test_critical_room_keeps_thermostat_on(self, controller, mock_hass):
+        """Test that a critical room keeps heating on when otherwise would turn off."""
+        inactive_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            binary_sensors=[],
+            sensors=[],
+        )
+        area_temp_sensors = {TEST_AREA_BEDROOM: [TEST_TEMP_SENSOR_1]}
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                mock_state = MagicMock()
+                mock_state.state = HVACMode.HEAT
+                mock_state.attributes = {"temperature": 22.0}
+                return mock_state
+            elif entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "16.0"  # 6 degrees below target - critical!
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[],  # No active rooms, would normally allow turn off
+            area_temp_sensors=area_temp_sensors,
+            inactive_areas=[inactive_area],
+        )
+
+        assert state.critical_room_count == 1
+        # Thermostat is on, and critical room needs it, so stays on
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "1 critical rooms" in state.action_reason
+        assert "Already on" in state.action_reason
+
+    def test_critical_room_with_satiated_active_room(self, controller, mock_hass):
+        """Test critical room keeps heating on even when active room is satiated."""
+        active_area = AreaOccupancyState(
+            area_id=TEST_AREA_LIVING_ROOM,
+            area_name="Living Room",
+            binary_sensors=[],
+            sensors=[],
+        )
+        inactive_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            binary_sensors=[],
+            sensors=[],
+        )
+        area_temp_sensors = {
+            TEST_AREA_LIVING_ROOM: ["sensor.living_temp"],
+            TEST_AREA_BEDROOM: [TEST_TEMP_SENSOR_1],
+        }
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                mock_state = MagicMock()
+                mock_state.state = HVACMode.HEAT
+                mock_state.attributes = {"temperature": 22.0}
+                return mock_state
+            elif entity_id == "sensor.living_temp":
+                mock_state = MagicMock()
+                mock_state.state = "22.0"  # At target - satiated
+                return mock_state
+            elif entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "16.0"  # 6 degrees below - critical
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[active_area],
+            area_temp_sensors=area_temp_sensors,
+            inactive_areas=[inactive_area],
+        )
+
+        assert state.critical_room_count == 1
+        assert state.all_active_rooms_satiated is True
+        # Thermostat stays on for critical room, even though active room is satiated
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "1 critical rooms" in state.action_reason
+
+    def test_no_critical_rooms_when_within_threshold(self, controller, mock_hass):
+        """Test no critical rooms when temperature is within threshold."""
+        inactive_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            binary_sensors=[],
+            sensors=[],
+        )
+        area_temp_sensors = {TEST_AREA_BEDROOM: [TEST_TEMP_SENSOR_1]}
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                mock_state = MagicMock()
+                mock_state.state = HVACMode.HEAT
+                mock_state.attributes = {"temperature": 22.0}
+                return mock_state
+            elif entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "20.0"  # Only 2 degrees below - within 3 degree threshold
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[],
+            area_temp_sensors=area_temp_sensors,
+            inactive_areas=[inactive_area],
+        )
+
+        assert state.critical_room_count == 0
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "No active or critical rooms" in state.action_reason
+
+    def test_critical_room_count_in_state(self, controller, mock_hass):
+        """Test that critical_room_count is properly tracked."""
+        inactive_areas = [
+            AreaOccupancyState(area_id="room1", area_name="Room 1", binary_sensors=[], sensors=[]),
+            AreaOccupancyState(area_id="room2", area_name="Room 2", binary_sensors=[], sensors=[]),
+            AreaOccupancyState(area_id="room3", area_name="Room 3", binary_sensors=[], sensors=[]),
+        ]
+        area_temp_sensors = {
+            "room1": ["sensor.temp1"],
+            "room2": ["sensor.temp2"],
+            "room3": ["sensor.temp3"],
+        }
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                mock_state = MagicMock()
+                mock_state.state = HVACMode.HEAT
+                mock_state.attributes = {"temperature": 22.0}
+                return mock_state
+            elif entity_id == "sensor.temp1":
+                mock_state = MagicMock()
+                mock_state.state = "15.0"  # Critical
+                return mock_state
+            elif entity_id == "sensor.temp2":
+                mock_state = MagicMock()
+                mock_state.state = "21.0"  # Not critical
+                return mock_state
+            elif entity_id == "sensor.temp3":
+                mock_state = MagicMock()
+                mock_state.state = "14.0"  # Critical
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[],
+            area_temp_sensors=area_temp_sensors,
+            inactive_areas=inactive_areas,
+        )
+
+        assert state.critical_room_count == 2  # room1 and room3 are critical
+
+    def test_room_states_include_critical_info(self, controller, mock_hass):
+        """Test that room_states includes critical information."""
+        inactive_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            binary_sensors=[],
+            sensors=[],
+        )
+        area_temp_sensors = {TEST_AREA_BEDROOM: [TEST_TEMP_SENSOR_1]}
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                mock_state = MagicMock()
+                mock_state.state = HVACMode.HEAT
+                mock_state.attributes = {"temperature": 22.0}
+                return mock_state
+            elif entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "16.0"
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[],
+            area_temp_sensors=area_temp_sensors,
+            inactive_areas=[inactive_area],
+        )
+
+        assert TEST_AREA_BEDROOM in state.room_states
+        room_state = state.room_states[TEST_AREA_BEDROOM]
+        assert room_state.is_critical is True
+        assert room_state.is_active is False
+        assert room_state.critical_reason is not None
+
+
+class TestUnoccupiedThresholdConfiguration:
+    """Tests for configuring unoccupied heating/cooling thresholds."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock Home Assistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        return MagicMock(spec=RoomOccupancyTracker)
+
+    def test_default_thresholds(self, mock_hass, mock_occupancy_tracker):
+        """Test default threshold values."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+        )
+
+        assert controller.unoccupied_heating_threshold == 3.0
+        assert controller.unoccupied_cooling_threshold == 3.0
+
+    def test_custom_thresholds(self, mock_hass, mock_occupancy_tracker):
+        """Test setting custom threshold values."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            unoccupied_heating_threshold=5.0,
+            unoccupied_cooling_threshold=4.0,
+        )
+
+        assert controller.unoccupied_heating_threshold == 5.0
+        assert controller.unoccupied_cooling_threshold == 4.0
+
+    def test_threshold_setter(self, mock_hass, mock_occupancy_tracker):
+        """Test updating thresholds via setters."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+        )
+
+        controller.unoccupied_heating_threshold = 6.0
+        controller.unoccupied_cooling_threshold = 5.5
+
+        assert controller.unoccupied_heating_threshold == 6.0
+        assert controller.unoccupied_cooling_threshold == 5.5
+
+    def test_larger_threshold_changes_critical_detection(self, mock_hass, mock_occupancy_tracker):
+        """Test that larger threshold makes rooms critical at higher temp difference."""
+        # With threshold of 5 degrees
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            unoccupied_heating_threshold=5.0,
+        )
+
+        inactive_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            binary_sensors=[],
+            sensors=[],
+        )
+        temp_sensors = [TEST_TEMP_SENSOR_1]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "18.0"  # 4 degrees below target of 22
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        # 4 degrees below with 5 degree threshold - NOT critical
+        room_state = controller.evaluate_room_critical(
+            inactive_area, temp_sensors, HVACMode.HEAT, 22.0, None, None
+        )
+        assert room_state.is_critical is False
+
+        # Now change threshold to 3 degrees
+        controller.unoccupied_heating_threshold = 3.0
+
+        # 4 degrees below with 3 degree threshold - IS critical
+        room_state = controller.evaluate_room_critical(
+            inactive_area, temp_sensors, HVACMode.HEAT, 22.0, None, None
+        )
+        assert room_state.is_critical is True

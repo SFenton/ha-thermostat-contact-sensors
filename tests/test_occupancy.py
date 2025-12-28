@@ -1243,6 +1243,45 @@ class TestRoomOccupancyTrackerProperties:
 
         await tracker.async_shutdown()
 
+    async def test_inactive_areas_property(
+        self, hass: HomeAssistant, setup_occupancy_entities
+    ) -> None:
+        """Test inactive_areas returns areas that are not active."""
+        tracker = RoomOccupancyTracker(
+            hass,
+            get_test_occupancy_areas_config(),
+            min_occupancy_minutes=5,
+        )
+        await tracker.async_setup()
+
+        # Initially all areas are inactive
+        assert len(tracker.inactive_areas) == 2
+        area_ids = {a.area_id for a in tracker.inactive_areas}
+        assert TEST_AREA_LIVING_ROOM in area_ids
+        assert TEST_AREA_BEDROOM in area_ids
+
+        # Set living room as active
+        area = tracker.get_area(TEST_AREA_LIVING_ROOM)
+        now = dt_util.utcnow()
+        area.occupied_binary_sensors = {TEST_BINARY_SENSOR_MOTION_1}
+        area.occupancy_start_time = now - timedelta(minutes=10)
+        tracker.force_update_active_status()
+
+        # Now only bedroom should be inactive
+        assert len(tracker.inactive_areas) == 1
+        assert tracker.inactive_areas[0].area_id == TEST_AREA_BEDROOM
+
+        # Set bedroom as active too
+        bedroom = tracker.get_area(TEST_AREA_BEDROOM)
+        bedroom.occupied_binary_sensors = {TEST_BINARY_SENSOR_OCCUPANCY}
+        bedroom.occupancy_start_time = now - timedelta(minutes=10)
+        tracker.force_update_active_status()
+
+        # No inactive areas
+        assert len(tracker.inactive_areas) == 0
+
+        await tracker.async_shutdown()
+
 
 class TestRoomOccupancyTrackerCallbacks:
     """Tests for RoomOccupancyTracker update callbacks."""
