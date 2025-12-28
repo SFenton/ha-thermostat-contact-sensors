@@ -42,7 +42,13 @@
       },
       "manage_areas": {
         "title": "Enable/Disable Areas",
-        "description": "Toggle areas on or off. Disabled areas will be ignored by the integration."
+        "description": "Select which areas to monitor. Unselected areas will be ignored.",
+        "data": {
+          "enabled_areas": "Enabled Areas"
+        },
+        "data_description": {
+          "enabled_areas": "Select the areas you want to monitor with this integration"
+        }
       },
       "configure_area_sensors": {
         "title": "Configure Area Sensors",

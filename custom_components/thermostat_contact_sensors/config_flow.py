@@ -393,7 +393,7 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
     async def async_step_manage_areas(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Show checkboxes for all areas to quickly enable/disable them."""
+        """Show multi-select for enabling/disabling areas."""
         # Get current areas config
         areas_config = dict(self.config_entry.data.get(CONF_AREAS, {}))
 
@@ -404,10 +404,12 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
             return self.async_abort(reason="no_areas_found")
 
         if user_input is not None:
+            # Get the list of enabled areas from the multi-select
+            enabled_area_ids = user_input.get("enabled_areas", [])
+
             # Update enabled state for each area
             for area_id, area_info in areas_data.items():
-                field_key = f"area_{area_id}"
-                is_enabled = user_input.get(field_key, True)
+                is_enabled = area_id in enabled_area_ids
 
                 if area_id not in areas_config:
                     # Create new area config
@@ -434,41 +436,46 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
 
             return self.async_create_entry(title="", data=self.config_entry.options)
 
-        # Build the form schema with a checkbox for each area
-        schema_dict = {}
+        # Build the list of options with area names and sensor counts
+        area_options = []
+        currently_enabled = []
+
         for area_id, area_info in areas_data.items():
             sensor_count = (
                 len(area_info["binary_sensors"])
                 + len(area_info["temperature_sensors"])
                 + len(area_info["sensors"])
             )
+            area_options.append(
+                selector.SelectOptionDict(
+                    value=area_id,
+                    label=f"{area_info['name']} ({sensor_count} sensors)",
+                )
+            )
+
+            # Check if currently enabled
             is_enabled = areas_config.get(area_id, {}).get(CONF_AREA_ENABLED, True)
-            field_key = f"area_{area_id}"
+            if is_enabled:
+                currently_enabled.append(area_id)
 
-            schema_dict[vol.Optional(
-                field_key,
-                default=is_enabled,
-                description={"suggested_value": is_enabled},
-            )] = selector.BooleanSelector()
-
-        data_schema = vol.Schema(schema_dict)
-
-        # Build description placeholders with area info
-        area_descriptions = []
-        for area_id, area_info in areas_data.items():
-            sensor_count = (
-                len(area_info["binary_sensors"])
-                + len(area_info["temperature_sensors"])
-                + len(area_info["sensors"])
-            )
-            area_descriptions.append(f"**{area_info['name']}**: {sensor_count} sensors")
+        data_schema = vol.Schema(
+            {
+                vol.Optional(
+                    "enabled_areas",
+                    default=currently_enabled,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=area_options,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+            }
+        )
 
         return self.async_show_form(
             step_id="manage_areas",
             data_schema=data_schema,
-            description_placeholders={
-                "area_info": "\n".join(area_descriptions),
-            },
         )
 
     async def async_step_configure_area_sensors(
