@@ -1161,11 +1161,16 @@ class ThermostatController:
 
         state_data = {
             "we_turned_off": self._we_turned_off,
+            "previous_hvac_mode": self._previous_hvac_mode,
             "saved_at": dt_util.utcnow().isoformat(),
         }
 
         await self._store.async_save(state_data)
-        _LOGGER.debug("Saved thermostat controller state: we_turned_off=%s", self._we_turned_off)
+        _LOGGER.debug(
+            "Saved thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s",
+            self._we_turned_off,
+            self._previous_hvac_mode,
+        )
 
     async def _async_restore_state(self) -> None:
         """Restore thermostat controller state from storage."""
@@ -1179,7 +1184,13 @@ class ThermostatController:
 
         if stored_data.get("we_turned_off"):
             self._we_turned_off = True
-            _LOGGER.debug(
-                "Restored thermostat controller state: we_turned_off=True (saved at %s)",
-                stored_data.get("saved_at", "unknown"),
-            )
+
+        if stored_data.get("previous_hvac_mode"):
+            self._previous_hvac_mode = stored_data["previous_hvac_mode"]
+
+        _LOGGER.debug(
+            "Restored thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s (saved at %s)",
+            self._we_turned_off,
+            self._previous_hvac_mode,
+            stored_data.get("saved_at", "unknown"),
+        )

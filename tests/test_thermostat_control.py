@@ -1843,14 +1843,20 @@ class TestThermostatControllerPersistence:
 
         # Mock the store's async_load
         controller._store.async_load = AsyncMock(
-            return_value={"we_turned_off": True, "saved_at": "2025-01-01T00:00:00"}
+            return_value={
+                "we_turned_off": True,
+                "previous_hvac_mode": "heat",
+                "saved_at": "2025-01-01T00:00:00",
+            }
         )
 
         assert controller._we_turned_off is False
+        assert controller._previous_hvac_mode is None
 
         await controller.async_setup()
 
         assert controller._we_turned_off is True
+        assert controller._previous_hvac_mode == "heat"
 
     @pytest.mark.asyncio
     async def test_async_shutdown_saves_state(
@@ -1866,12 +1872,14 @@ class TestThermostatControllerPersistence:
 
         controller._store.async_save = AsyncMock()
         controller._we_turned_off = True
+        controller._previous_hvac_mode = "cool"
 
         await controller.async_shutdown()
 
         controller._store.async_save.assert_called_once()
         saved_data = controller._store.async_save.call_args[0][0]
         assert saved_data["we_turned_off"] is True
+        assert saved_data["previous_hvac_mode"] == "cool"
         assert "saved_at" in saved_data
 
     @pytest.mark.asyncio
