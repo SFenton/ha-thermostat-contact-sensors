@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.climate import HVACMode
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import (
+    ATTR_TEMPERATURE,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -1617,3 +1623,286 @@ class TestUnoccupiedThresholdConfiguration:
             inactive_area, temp_sensors, HVACMode.HEAT, 22.0, None, None
         )
         assert room_state.is_critical is True
+
+
+# =============================================================================
+# Tests for integration vs user turn-off tracking
+# =============================================================================
+
+
+class TestWeTurnedOffFlag:
+    """Tests for _we_turned_off flag behavior."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock Home Assistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        hass.services = AsyncMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        tracker = MagicMock(spec=RoomOccupancyTracker)
+        tracker.active_areas = []
+        return tracker
+
+    @pytest.fixture
+    def controller(self, mock_hass, mock_occupancy_tracker):
+        """Create a ThermostatController for testing."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+        )
+
+    def test_we_turned_off_initially_false(self, controller):
+        """Test that _we_turned_off is initially False."""
+        assert controller._we_turned_off is False
+
+    def test_thermostat_off_treated_as_user_choice_when_flag_false(
+        self, controller, mock_hass
+    ):
+        """Test that thermostat OFF is treated as user choice when we didn't turn it off."""
+        mock_state = MagicMock()
+        mock_state.state = HVACMode.OFF
+        mock_state.attributes = {}
+        mock_hass.states.get.return_value = mock_state
+
+        # Ensure flag is False (user turned it off)
+        controller._we_turned_off = False
+
+        active_areas = [
+            AreaOccupancyState(
+                area_id=TEST_AREA_LIVING_ROOM,
+                area_name="Living Room",
+                is_active=True,
+            )
+        ]
+        area_temp_sensors = {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]}
+
+        state = controller.evaluate_thermostat_action(active_areas, area_temp_sensors)
+
+        assert state.hvac_mode == HVACMode.OFF
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "user choice" in state.action_reason.lower()
+
+    def test_thermostat_off_continues_evaluation_when_we_turned_off(
+        self, controller, mock_hass
+    ):
+        """Test that thermostat OFF continues evaluation when we turned it off."""
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                mock_state = MagicMock()
+                mock_state.state = HVACMode.OFF
+                mock_state.attributes = {
+                    ATTR_TEMPERATURE: 72.0,
+                }
+                return mock_state
+            elif entity_id == TEST_TEMP_SENSOR_1:
+                # Temperature below target - not satiated, should want to turn on
+                mock_state = MagicMock()
+                mock_state.state = "68.0"
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        # Set flag to True (we turned it off)
+        controller._we_turned_off = True
+
+        active_areas = [
+            AreaOccupancyState(
+                area_id=TEST_AREA_LIVING_ROOM,
+                area_name="Living Room",
+                is_active=True,
+            )
+        ]
+        area_temp_sensors = {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]}
+
+        state = controller.evaluate_thermostat_action(active_areas, area_temp_sensors)
+
+        # Should recommend turning on since room is not satiated
+        # (We don't treat our own turn-off as user choice)
+        assert state.recommended_action == ThermostatAction.TURN_ON
+
+    @pytest.mark.asyncio
+    async def test_execute_turn_off_sets_flag(self, controller, mock_hass):
+        """Test that executing TURN_OFF action sets _we_turned_off flag."""
+        # Set up thermostat state
+        mock_state = MagicMock()
+        mock_state.state = HVACMode.HEAT
+        mock_hass.states.get.return_value = mock_state
+
+        # Create a thermostat state with TURN_OFF action
+        from custom_components.thermostat_contact_sensors.thermostat_control import (
+            ThermostatState,
+        )
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.recommended_action = ThermostatAction.TURN_OFF
+        thermostat_state.action_reason = "All rooms satiated"
+
+        # Ensure flag starts False
+        controller._we_turned_off = False
+
+        # Execute the action
+        result = await controller.async_execute_action(thermostat_state)
+
+        assert result is True
+        assert controller._we_turned_off is True
+
+    @pytest.mark.asyncio
+    async def test_execute_turn_on_clears_flag(self, controller, mock_hass):
+        """Test that executing TURN_ON action clears _we_turned_off flag."""
+        mock_hass.states.get.return_value = None
+
+        # Create a thermostat state with TURN_ON action
+        from custom_components.thermostat_contact_sensors.thermostat_control import (
+            ThermostatState,
+        )
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.hvac_mode = HVACMode.OFF
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.action_reason = "Room needs heating"
+
+        # Set previous mode so we have something to restore to
+        controller._previous_hvac_mode = HVACMode.HEAT.value
+
+        # Set flag to True first
+        controller._we_turned_off = True
+
+        # Execute the action
+        result = await controller.async_execute_action(thermostat_state)
+
+        assert result is True
+        assert controller._we_turned_off is False
+
+    def test_we_turned_off_in_diagnostics(self, controller, mock_hass):
+        """Test that _we_turned_off appears in diagnostics output."""
+        mock_state = MagicMock()
+        mock_state.state = HVACMode.HEAT
+        mock_state.attributes = {ATTR_TEMPERATURE: 72.0}
+        mock_hass.states.get.return_value = mock_state
+
+        controller._we_turned_off = True
+
+        summary = controller.get_summary([], {})
+
+        assert "we_turned_off" in summary
+        assert summary["we_turned_off"] is True
+
+
+class TestThermostatControllerPersistence:
+    """Tests for thermostat controller state persistence."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock Home Assistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        tracker = MagicMock(spec=RoomOccupancyTracker)
+        return tracker
+
+    def test_controller_without_entry_id_has_no_store(
+        self, mock_hass, mock_occupancy_tracker
+    ):
+        """Test controller without entry_id has no storage."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+        )
+        assert controller._store is None
+
+    def test_controller_with_entry_id_has_store(
+        self, mock_hass, mock_occupancy_tracker
+    ):
+        """Test controller with entry_id creates storage."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            entry_id="test_entry_123",
+        )
+        assert controller._store is not None
+
+    @pytest.mark.asyncio
+    async def test_async_setup_restores_state(self, mock_hass, mock_occupancy_tracker):
+        """Test that async_setup restores state from storage."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            entry_id="test_entry_123",
+        )
+
+        # Mock the store's async_load
+        controller._store.async_load = AsyncMock(
+            return_value={"we_turned_off": True, "saved_at": "2025-01-01T00:00:00"}
+        )
+
+        assert controller._we_turned_off is False
+
+        await controller.async_setup()
+
+        assert controller._we_turned_off is True
+
+    @pytest.mark.asyncio
+    async def test_async_shutdown_saves_state(self, mock_hass, mock_occupancy_tracker):
+        """Test that async_shutdown saves state to storage."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            entry_id="test_entry_123",
+        )
+
+        controller._store.async_save = AsyncMock()
+        controller._we_turned_off = True
+
+        await controller.async_shutdown()
+
+        controller._store.async_save.assert_called_once()
+        saved_data = controller._store.async_save.call_args[0][0]
+        assert saved_data["we_turned_off"] is True
+        assert "saved_at" in saved_data
+
+    @pytest.mark.asyncio
+    async def test_async_setup_without_store_does_not_fail(
+        self, mock_hass, mock_occupancy_tracker
+    ):
+        """Test that async_setup works when there's no store."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            # No entry_id, so no store
+        )
+
+        # Should not raise
+        await controller.async_setup()
+        assert controller._we_turned_off is False
+
+    @pytest.mark.asyncio
+    async def test_async_shutdown_without_store_does_not_fail(
+        self, mock_hass, mock_occupancy_tracker
+    ):
+        """Test that async_shutdown works when there's no store."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            # No entry_id, so no store
+        )
+
+        # Should not raise
+        await controller.async_shutdown()
