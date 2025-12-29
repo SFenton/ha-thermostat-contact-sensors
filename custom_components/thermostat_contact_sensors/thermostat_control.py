@@ -362,6 +362,7 @@ class ThermostatController:
         self._last_off_time: datetime | None = None
         self._current_thermostat_on: bool = False
         self._we_turned_off: bool = False  # Track if integration turned off thermostat
+        self._previous_hvac_mode: str | None = None  # Track mode before we turned off
 
         # Storage for persisting state across restarts
         if entry_id:
