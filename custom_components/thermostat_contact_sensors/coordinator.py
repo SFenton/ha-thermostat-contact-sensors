@@ -648,6 +648,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_open_timeout_expired(self) -> None:
         """Handle open timeout expiration - pause the thermostat."""
+        # Save the trigger sensor before cancelling (cancel clears _pending_open_sensor)
+        trigger_sensor = self._pending_open_sensor
+
         # Cancel timer if still scheduled (e.g., when called manually in tests)
         self._cancel_open_timer()
 
@@ -663,8 +666,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         )
 
         # Store the trigger sensor for notifications
-        self.trigger_sensor = self._pending_open_sensor
-        self._pending_open_sensor = None
+        self.trigger_sensor = trigger_sensor
 
         # Get current HVAC mode before turning off
         climate_state = self.hass.states.get(self.thermostat)
