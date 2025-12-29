@@ -81,14 +81,14 @@ async def test_config_flow_no_thermostat_error(hass: HomeAssistant) -> None:
     When an empty string is provided, the schema validation rejects it before
     our custom validation runs.
     """
-    import voluptuous
+    from homeassistant.data_entry_flow import InvalidData
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": config_entries.SOURCE_USER},
     )
 
-    with pytest.raises(voluptuous.error.MultipleInvalid):
+    with pytest.raises(InvalidData):
         await hass.config_entries.flow.async_configure(
             result["flow_id"],
             user_input={

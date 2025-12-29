@@ -1,0 +1,76 @@
+Skip to content
+Navigation Menu
+SFenton
+ha-thermostat-contact-sensors
+
+Type / to search
+Code
+Issues
+Pull requests
+Actions
+Projects
+Wiki
+Security
+Insights
+Settings
+You only have a single verified email address. We recommend verifying at least one more email address to ensure you can recover your account if you lose access to your primary email.
+
+
+Tests
+v2.0.0: Thermostat action execution, per-room temp sensors, diagnosti… #1
+All jobs
+Run details
+Annotations
+7 errors
+test (3.12)
+failed 1 hour ago in 1m 30s
+Search logs
+1s
+1s
+0s
+49s
+36s
+Run pytest tests/ -v --tb=short --cov=custom_components/thermostat_contact_sensors --cov-report=xml
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.3.4, pluggy-1.6.0 -- /opt/hostedtoolcache/Python/3.12.12/x64/bin/python
+cachedir: .pytest_cache
+rootdir: /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors
+configfile: pytest.ini
+plugins: github-actions-annotate-failures-0.2.0, asyncio-0.24.0, socket-0.7.0, requests-mock-1.12.1, cov-6.0.0, xdist-3.6.1, anyio-4.12.0, respx-0.21.1, timeout-2.3.1, aiohttp-1.0.5, pytest_freezer-0.4.8, homeassistant-custom-component-0.13.205, picked-0.5.0, unordered-0.6.1, syrupy-4.8.0, sugar-1.0.0
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+collecting ... collected 342 items
+
+tests/test_binary_sensor.py::test_binary_sensor_creation PASSED          [  0%]
+tests/test_binary_sensor.py::test_binary_sensor_unique_id PASSED         [  0%]
+tests/test_binary_sensor.py::test_binary_sensor_state_when_paused PASSED [  0%]
+tests/test_binary_sensor.py::test_binary_sensor_attributes PASSED        [  1%]
+tests/test_binary_sensor.py::test_binary_sensor_triggered_by_attribute PASSED [  1%]
+tests/test_binary_sensor.py::test_binary_sensor_device_info PASSED       [  1%]
+tests/test_binary_sensor.py::test_binary_sensor_restores_state PASSED    [  2%]
+tests/test_config_flow.py::test_config_flow_user_init PASSED             [  2%]
+tests/test_config_flow.py::test_config_flow_user_success PASSED          [  2%]
+
+Error: test_config_flow_no_thermostat_error
+
+homeassistant.data_entry_flow.InvalidData: Schema validation failed @ data['thermostat']
+tests/test_config_flow.py::test_config_flow_no_thermostat_error FAILED   [  2%]
+tests/test_config_flow.py::test_config_flow_duplicate_thermostat PASSED  [  3%]
+tests/test_config_flow.py::test_config_flow_default_values PASSED        [  3%]
+tests/test_config_flow.py::test_config_flow_with_notification_service PASSED [  3%]
+tests/test_config_flow.py::test_config_flow_auto_discovers_areas PASSED  [  4%]
+tests/test_coordinator.py::TestCoordinatorSetup::test_coordinator_setup PASSED [  4%]
+tests/test_coordinator.py::TestCoordinatorSetup::test_coordinator_shutdown PASSED [  4%]
+tests/test_coordinator.py::TestCoordinatorSetup::test_coordinator_initial_open_sensors PASSED [  4%]
+tests/test_coordinator.py::TestSensorStateChanges::test_sensor_open_starts_timer PASSED [  5%]
+tests/test_coordinator.py::TestSensorStateChanges::test_sensor_close_before_timeout_cancels_timer PASSED [  5%]
+tests/test_coordinator.py::TestSensorStateChanges::test_multiple_sensors_open PASSED [  5%]
+tests/test_coordinator.py::TestSensorStateChanges::test_sensor_unavailable_ignored PASSED [  6%]
+tests/test_coordinator.py::TestThermostatPausing::test_thermostat_pauses_after_timeout PASSED [  6%]
+tests/test_coordinator.py::TestThermostatPausing::test_thermostat_stores_previous_mode PASSED [  6%]
+tests/test_coordinator.py::TestThermostatPausing::test_no_pause_if_sensor_closes_before_timeout PASSED [  7%]
+tests/test_coordinator.py::TestThermostatResuming::test_thermostat_resumes_after_all_closed PASSED [  7%]
+tests/test_coordinator.py::TestThermostatResuming::test_close_timer_cancelled_if_sensor_reopens PASSED [  7%]
+0s
+0s
+1s
+0s
