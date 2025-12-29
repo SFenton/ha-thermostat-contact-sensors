@@ -540,6 +540,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if new_state.state != HVACMode.OFF:
             self._last_known_hvac_mode = new_state.state
             _LOGGER.debug("Updated last known HVAC mode to: %s", self._last_known_hvac_mode)
+            # Clear the "we turned off" flag since thermostat is now on
+            # (either we turned it on, or user did)
+            self.thermostat_controller._we_turned_off = False
 
         # Handle manual overrides while paused
         if self.is_paused:

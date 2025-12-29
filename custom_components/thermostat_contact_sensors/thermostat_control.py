@@ -354,6 +354,7 @@ class ThermostatController:
         self._last_on_time: datetime | None = None
         self._last_off_time: datetime | None = None
         self._current_thermostat_on: bool = False
+        self._we_turned_off: bool = False  # Track if integration turned off thermostat
 
         # Listeners
         self._unsub_thermostat_state_change: callable | None = None
@@ -851,11 +852,17 @@ class ThermostatController:
             thermostat_state.action_reason = "Paused by open contact sensors"
             return thermostat_state
 
-        # If thermostat is off (by user choice), don't interfere
+        # If thermostat is off, check if it was us or the user
         if hvac_mode == HVACMode.OFF:
-            thermostat_state.recommended_action = ThermostatAction.NONE
-            thermostat_state.action_reason = "Thermostat is off (user choice)"
-            return thermostat_state
+            if self._we_turned_off:
+                # We turned it off - don't treat as user choice, continue evaluation
+                # to see if we should turn it back on
+                _LOGGER.debug("Thermostat is off (we turned it off) - continuing evaluation")
+            else:
+                # User turned it off - respect their choice
+                thermostat_state.recommended_action = ThermostatAction.NONE
+                thermostat_state.action_reason = "Thermostat is off (user choice)"
+                return thermostat_state
 
         # Evaluate each active room for satiation
         thermostat_state.active_room_count = len(active_areas)
@@ -990,6 +997,7 @@ class ThermostatController:
             "target_temp_high": state.target_temp_high,
             "temperature_deadband": self._temperature_deadband,
             "is_paused_by_contact_sensors": self._is_paused_by_contact_sensors,
+            "we_turned_off": self._we_turned_off,
             "active_room_count": state.active_room_count,
             "satiated_room_count": state.satiated_room_count,
             "critical_room_count": state.critical_room_count,
@@ -1068,8 +1076,9 @@ class ThermostatController:
                 blocking=True,
             )
 
-            # Update cycle tracking
+            # Update cycle tracking and clear our turn-off flag
             self._last_turn_on_time = dt_util.utcnow()
+            self._we_turned_off = False
             return True
 
         if thermostat_state.recommended_action == ThermostatAction.TURN_OFF:
@@ -1099,8 +1108,9 @@ class ThermostatController:
                 blocking=True,
             )
 
-            # Update cycle tracking
+            # Update cycle tracking and set our turn-off flag
             self._last_turn_off_time = dt_util.utcnow()
+            self._we_turned_off = True
             return True
 
         return False
