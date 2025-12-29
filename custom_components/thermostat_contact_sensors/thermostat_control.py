@@ -1053,7 +1053,7 @@ class ThermostatController:
 
             _LOGGER.info(
                 "Executing thermostat TURN_ON action: setting %s to %s. Reason: %s",
-                self._thermostat_entity_id,
+                self.thermostat_entity_id,
                 target_mode.value if hasattr(target_mode, 'value') else target_mode,
                 thermostat_state.action_reason,
             )
@@ -1062,7 +1062,7 @@ class ThermostatController:
                 "climate",
                 "set_hvac_mode",
                 {
-                    "entity_id": self._thermostat_entity_id,
+                    "entity_id": self.thermostat_entity_id,
                     "hvac_mode": target_mode.value if hasattr(target_mode, 'value') else target_mode,
                 },
                 blocking=True,
@@ -1075,12 +1075,12 @@ class ThermostatController:
         if thermostat_state.recommended_action == ThermostatAction.TURN_OFF:
             _LOGGER.info(
                 "Executing thermostat TURN_OFF action: setting %s to off. Reason: %s",
-                self._thermostat_entity_id,
+                self.thermostat_entity_id,
                 thermostat_state.action_reason,
             )
 
             # Store current mode before turning off
-            current_state = self.hass.states.get(self._thermostat_entity_id)
+            current_state = self.hass.states.get(self.thermostat_entity_id)
             if current_state and current_state.state not in (
                 STATE_UNAVAILABLE,
                 STATE_UNKNOWN,
@@ -1093,7 +1093,7 @@ class ThermostatController:
                 "climate",
                 "set_hvac_mode",
                 {
-                    "entity_id": self._thermostat_entity_id,
+                    "entity_id": self.thermostat_entity_id,
                     "hvac_mode": HVACMode.OFF.value,
                 },
                 blocking=True,
