@@ -870,11 +870,25 @@ class ThermostatController:
             return thermostat_state
 
         # If thermostat is off, check if it was us or the user
+        # Track which mode to use for satiation evaluation
+        evaluation_hvac_mode = hvac_mode
         if hvac_mode == HVACMode.OFF:
             if self._we_turned_off:
                 # We turned it off - don't treat as user choice, continue evaluation
-                # to see if we should turn it back on
+                # to see if we should turn it back on. Use previous mode for satiation.
                 _LOGGER.debug("Thermostat is off (we turned it off) - continuing evaluation")
+                if self._previous_hvac_mode and self._previous_hvac_mode != HVACMode.OFF.value:
+                    try:
+                        evaluation_hvac_mode = HVACMode(self._previous_hvac_mode)
+                        _LOGGER.debug("Using previous HVAC mode %s for satiation evaluation", evaluation_hvac_mode)
+                    except ValueError:
+                        # If previous mode is not a valid HVACMode, default to HEAT
+                        evaluation_hvac_mode = HVACMode.HEAT
+                        _LOGGER.debug("Previous mode invalid, defaulting to HEAT for satiation evaluation")
+                else:
+                    # No previous mode, default to HEAT
+                    evaluation_hvac_mode = HVACMode.HEAT
+                    _LOGGER.debug("No previous mode, defaulting to HEAT for satiation evaluation")
             else:
                 # User turned it off - respect their choice
                 thermostat_state.recommended_action = ThermostatAction.NONE
@@ -890,7 +904,7 @@ class ThermostatController:
             room_state = self.evaluate_room_satiation(
                 area,
                 temp_sensors,
-                hvac_mode,
+                evaluation_hvac_mode,
                 target_temp,
                 target_temp_low,
                 target_temp_high,
@@ -920,7 +934,7 @@ class ThermostatController:
             room_state = self.evaluate_room_critical(
                 area,
                 temp_sensors,
-                hvac_mode,
+                evaluation_hvac_mode,
                 target_temp,
                 target_temp_low,
                 target_temp_high,

@@ -1710,8 +1710,9 @@ class TestWeTurnedOffFlag:
 
         mock_hass.states.get.side_effect = get_state
 
-        # Set flag to True (we turned it off)
+        # Set flag to True (we turned it off) and previous mode
         controller._we_turned_off = True
+        controller._previous_hvac_mode = HVACMode.HEAT.value
 
         active_areas = [
             AreaOccupancyState(
@@ -1800,35 +1801,28 @@ class TestThermostatControllerPersistence:
     """Tests for thermostat controller state persistence."""
 
     @pytest.fixture
-    def mock_hass(self):
-        """Create a mock Home Assistant instance."""
-        hass = MagicMock(spec=HomeAssistant)
-        hass.states = MagicMock()
-        return hass
-
-    @pytest.fixture
     def mock_occupancy_tracker(self):
         """Create a mock occupancy tracker."""
         tracker = MagicMock(spec=RoomOccupancyTracker)
         return tracker
 
     def test_controller_without_entry_id_has_no_store(
-        self, mock_hass, mock_occupancy_tracker
+        self, hass: HomeAssistant, mock_occupancy_tracker
     ):
         """Test controller without entry_id has no storage."""
         controller = ThermostatController(
-            hass=mock_hass,
+            hass=hass,
             thermostat_entity_id=TEST_THERMOSTAT,
             occupancy_tracker=mock_occupancy_tracker,
         )
         assert controller._store is None
 
     def test_controller_with_entry_id_has_store(
-        self, mock_hass, mock_occupancy_tracker
+        self, hass: HomeAssistant, mock_occupancy_tracker
     ):
         """Test controller with entry_id creates storage."""
         controller = ThermostatController(
-            hass=mock_hass,
+            hass=hass,
             thermostat_entity_id=TEST_THERMOSTAT,
             occupancy_tracker=mock_occupancy_tracker,
             entry_id="test_entry_123",
@@ -1836,10 +1830,12 @@ class TestThermostatControllerPersistence:
         assert controller._store is not None
 
     @pytest.mark.asyncio
-    async def test_async_setup_restores_state(self, mock_hass, mock_occupancy_tracker):
+    async def test_async_setup_restores_state(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
         """Test that async_setup restores state from storage."""
         controller = ThermostatController(
-            hass=mock_hass,
+            hass=hass,
             thermostat_entity_id=TEST_THERMOSTAT,
             occupancy_tracker=mock_occupancy_tracker,
             entry_id="test_entry_123",
@@ -1857,10 +1853,12 @@ class TestThermostatControllerPersistence:
         assert controller._we_turned_off is True
 
     @pytest.mark.asyncio
-    async def test_async_shutdown_saves_state(self, mock_hass, mock_occupancy_tracker):
+    async def test_async_shutdown_saves_state(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
         """Test that async_shutdown saves state to storage."""
         controller = ThermostatController(
-            hass=mock_hass,
+            hass=hass,
             thermostat_entity_id=TEST_THERMOSTAT,
             occupancy_tracker=mock_occupancy_tracker,
             entry_id="test_entry_123",
@@ -1878,11 +1876,11 @@ class TestThermostatControllerPersistence:
 
     @pytest.mark.asyncio
     async def test_async_setup_without_store_does_not_fail(
-        self, mock_hass, mock_occupancy_tracker
+        self, hass: HomeAssistant, mock_occupancy_tracker
     ):
         """Test that async_setup works when there's no store."""
         controller = ThermostatController(
-            hass=mock_hass,
+            hass=hass,
             thermostat_entity_id=TEST_THERMOSTAT,
             occupancy_tracker=mock_occupancy_tracker,
             # No entry_id, so no store
@@ -1894,11 +1892,11 @@ class TestThermostatControllerPersistence:
 
     @pytest.mark.asyncio
     async def test_async_shutdown_without_store_does_not_fail(
-        self, mock_hass, mock_occupancy_tracker
+        self, hass: HomeAssistant, mock_occupancy_tracker
     ):
         """Test that async_shutdown works when there's no store."""
         controller = ThermostatController(
-            hass=mock_hass,
+            hass=hass,
             thermostat_entity_id=TEST_THERMOSTAT,
             occupancy_tracker=mock_occupancy_tracker,
             # No entry_id, so no store

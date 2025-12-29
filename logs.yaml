@@ -1,379 +1,952 @@
-Run ruff check custom_components/
-F401 `homeassistant.const.CONF_NAME` imported but unused
-  --> custom_components/thermostat_contact_sensors/__init__.py:8:33
-   |
- 7 | from homeassistant.config_entries import ConfigEntry
- 8 | from homeassistant.const import CONF_NAME
-   |                                 ^^^^^^^^^
- 9 | from homeassistant.core import HomeAssistant, ServiceCall, callback
-10 | from homeassistant.helpers import area_registry as ar
-   |
-help: Remove unused import: `homeassistant.const.CONF_NAME`
+Run python -m pip install --upgrade pip
+Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages (25.3)
+Collecting pytest>=7.0.0 (from -r requirements_test.txt (line 1))
+  Downloading pytest-9.0.2-py3-none-any.whl.metadata (7.6 kB)
+Collecting pytest-asyncio>=0.23.0 (from -r requirements_test.txt (line 2))
+  Downloading pytest_asyncio-1.3.0-py3-none-any.whl.metadata (4.1 kB)
+Collecting pytest-homeassistant-custom-component>=0.13.0 (from -r requirements_test.txt (line 3))
+  Downloading pytest_homeassistant_custom_component-0.13.205-py3-none-any.whl.metadata (5.3 kB)
+Collecting pytest-cov>=4.0.0 (from -r requirements_test.txt (line 4))
+  Downloading pytest_cov-7.0.0-py3-none-any.whl.metadata (31 kB)
+Collecting iniconfig>=1.0.1 (from pytest>=7.0.0->-r requirements_test.txt (line 1))
+  Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+Collecting packaging>=22 (from pytest>=7.0.0->-r requirements_test.txt (line 1))
+  Downloading packaging-25.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting pluggy<2,>=1.5 (from pytest>=7.0.0->-r requirements_test.txt (line 1))
+  Downloading pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+Collecting pygments>=2.7.2 (from pytest>=7.0.0->-r requirements_test.txt (line 1))
+  Downloading pygments-2.19.2-py3-none-any.whl.metadata (2.5 kB)
+Collecting typing-extensions>=4.12 (from pytest-asyncio>=0.23.0->-r requirements_test.txt (line 2))
+  Downloading typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting sqlalchemy (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading sqlalchemy-2.0.45-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (9.5 kB)
+Collecting coverage==7.6.8 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading coverage-7.6.8-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (8.2 kB)
+Collecting freezegun==1.5.1 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading freezegun-1.5.1-py3-none-any.whl.metadata (11 kB)
+Collecting license-expression==30.4.0 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading license_expression-30.4.0-py3-none-any.whl.metadata (12 kB)
+Collecting mock-open==1.4.0 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading mock-open-1.4.0.tar.gz (12 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting pydantic==2.10.4 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pydantic-2.10.4-py3-none-any.whl.metadata (29 kB)
+Collecting pylint-per-file-ignores==1.3.2 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pylint_per_file_ignores-1.3.2-py3-none-any.whl.metadata (2.0 kB)
+Collecting pipdeptree==2.23.4 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pipdeptree-2.23.4-py3-none-any.whl.metadata (15 kB)
+Collecting pytest-asyncio>=0.23.0 (from -r requirements_test.txt (line 2))
+  Downloading pytest_asyncio-0.24.0-py3-none-any.whl.metadata (3.9 kB)
+Collecting pytest-aiohttp==1.0.5 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_aiohttp-1.0.5-py3-none-any.whl.metadata (2.6 kB)
+Collecting pytest-cov>=4.0.0 (from -r requirements_test.txt (line 4))
+  Downloading pytest_cov-6.0.0-py3-none-any.whl.metadata (27 kB)
+Collecting pytest-freezer==0.4.8 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_freezer-0.4.8-py3-none-any.whl.metadata (2.4 kB)
+Collecting pytest-github-actions-annotate-failures==0.2.0 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_github_actions_annotate_failures-0.2.0-py3-none-any.whl.metadata (3.1 kB)
+Collecting pytest-socket==0.7.0 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_socket-0.7.0-py3-none-any.whl.metadata (6.7 kB)
+Collecting pytest-sugar==1.0.0 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_sugar-1.0.0-py3-none-any.whl.metadata (4.4 kB)
+Collecting pytest-timeout==2.3.1 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_timeout-2.3.1-py3-none-any.whl.metadata (20 kB)
+Collecting pytest-unordered==0.6.1 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_unordered-0.6.1-py3-none-any.whl.metadata (6.4 kB)
+Collecting pytest-picked==0.5.0 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_picked-0.5.0-py3-none-any.whl.metadata (4.1 kB)
+Collecting pytest-xdist==3.6.1 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytest_xdist-3.6.1-py3-none-any.whl.metadata (4.3 kB)
+Collecting pytest>=7.0.0 (from -r requirements_test.txt (line 1))
+  Downloading pytest-8.3.4-py3-none-any.whl.metadata (7.5 kB)
+Collecting requests-mock==1.12.1 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading requests_mock-1.12.1-py2.py3-none-any.whl.metadata (4.1 kB)
+Collecting respx==0.21.1 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading respx-0.21.1-py2.py3-none-any.whl.metadata (4.1 kB)
+Collecting syrupy==4.8.0 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading syrupy-4.8.0-py3-none-any.whl.metadata (36 kB)
+Collecting tqdm==4.66.5 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading tqdm-4.66.5-py3-none-any.whl.metadata (57 kB)
+Collecting homeassistant==2025.1.4 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading homeassistant-2025.1.4-py3-none-any.whl.metadata (4.8 kB)
+Collecting sqlalchemy (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading SQLAlchemy-2.0.36-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (9.7 kB)
+Collecting paho-mqtt==1.6.1 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading paho-mqtt-1.6.1.tar.gz (99 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting numpy==2.2.0 (from pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading numpy-2.2.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (62 kB)
+Collecting python-dateutil>=2.7 (from freezegun==1.5.1->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+Collecting aiodns==3.2.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiodns-3.2.0-py3-none-any.whl.metadata (4.0 kB)
+Collecting aiohasupervisor==0.2.2b5 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiohasupervisor-0.2.2b5-py3-none-any.whl.metadata (5.1 kB)
+Collecting aiohttp==3.11.11 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiohttp-3.11.11-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (7.7 kB)
+Collecting aiohttp-cors==0.7.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiohttp_cors-0.7.0-py3-none-any.whl.metadata (20 kB)
+Collecting aiohttp-fast-zlib==0.2.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiohttp_fast_zlib-0.2.0-py3-none-any.whl.metadata (5.6 kB)
+Collecting aiozoneinfo==0.2.1 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiozoneinfo-0.2.1-py3-none-any.whl.metadata (5.5 kB)
+Collecting astral==2.2 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading astral-2.2-py2.py3-none-any.whl.metadata (1.5 kB)
+Collecting async-interrupt==1.2.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading async_interrupt-1.2.0-py3-none-any.whl.metadata (4.9 kB)
+Collecting attrs==24.2.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading attrs-24.2.0-py3-none-any.whl.metadata (11 kB)
+Collecting atomicwrites-homeassistant==1.4.1 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading atomicwrites_homeassistant-1.4.1-py2.py3-none-any.whl.metadata (6.0 kB)
+Collecting awesomeversion==24.6.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading awesomeversion-24.6.0-py3-none-any.whl.metadata (9.0 kB)
+Collecting bcrypt==4.2.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading bcrypt-4.2.0-cp39-abi3-manylinux_2_28_x86_64.whl.metadata (9.6 kB)
+Collecting certifi>=2021.5.30 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading certifi-2025.11.12-py3-none-any.whl.metadata (2.5 kB)
+Collecting ciso8601==2.3.2 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading ciso8601-2.3.2-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (23 kB)
+Collecting cronsim==2.6 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading cronsim-2.6-py3-none-any.whl.metadata (6.9 kB)
+Collecting fnv-hash-fast==1.0.2 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading fnv_hash_fast-1.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux_2_5_x86_64.manylinux1_x86_64.manylinux2014_x86_64.whl.metadata (4.7 kB)
+Collecting hass-nabucasa==0.87.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading hass_nabucasa-0.87.0-py3-none-any.whl.metadata (1.8 kB)
+Collecting httpx==0.27.2 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading httpx-0.27.2-py3-none-any.whl.metadata (7.1 kB)
+Collecting home-assistant-bluetooth==1.13.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading home_assistant_bluetooth-1.13.0-py3-none-any.whl.metadata (5.4 kB)
+Collecting ifaddr==0.2.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading ifaddr-0.2.0-py3-none-any.whl.metadata (4.9 kB)
+Collecting Jinja2==3.1.5 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading jinja2-3.1.5-py3-none-any.whl.metadata (2.6 kB)
+Collecting lru-dict==1.3.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading lru_dict-1.3.0-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.5 kB)
+Collecting PyJWT==2.10.1 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading PyJWT-2.10.1-py3-none-any.whl.metadata (4.0 kB)
+Collecting cryptography==44.0.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading cryptography-44.0.0-cp39-abi3-manylinux_2_28_x86_64.whl.metadata (5.7 kB)
+Collecting Pillow==11.0.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pillow-11.0.0-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+Collecting propcache==0.2.1 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading propcache-0.2.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (9.2 kB)
+Collecting pyOpenSSL==24.3.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pyOpenSSL-24.3.0-py3-none-any.whl.metadata (15 kB)
+Collecting orjson==3.10.12 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading orjson-3.10.12-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (41 kB)
+Collecting psutil-home-assistant==0.0.1 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading psutil_home_assistant-0.0.1-py3-none-any.whl.metadata (882 bytes)
+Collecting python-slugify==8.0.4 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading python_slugify-8.0.4-py2.py3-none-any.whl.metadata (8.5 kB)
+Collecting PyYAML==6.0.2 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading PyYAML-6.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (2.1 kB)
+Collecting requests==2.32.3 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading requests-2.32.3-py3-none-any.whl.metadata (4.6 kB)
+Collecting securetar==2024.11.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading securetar-2024.11.0-py3-none-any.whl.metadata (2.0 kB)
+Collecting ulid-transform==1.0.2 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading ulid_transform-1.0.2-cp312-cp312-manylinux_2_36_x86_64.whl.metadata (5.4 kB)
+Collecting urllib3<2,>=1.26.5 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading urllib3-1.26.20-py2.py3-none-any.whl.metadata (50 kB)
+Collecting uv==0.5.8 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading uv-0.5.8-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (11 kB)
+Collecting voluptuous==0.15.2 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading voluptuous-0.15.2-py3-none-any.whl.metadata (20 kB)
+Collecting voluptuous-serialize==2.6.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading voluptuous_serialize-2.6.0-py3-none-any.whl.metadata (316 bytes)
+Collecting voluptuous-openapi==0.0.5 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading voluptuous_openapi-0.0.5-py3-none-any.whl.metadata (325 bytes)
+Collecting yarl==1.18.3 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading yarl-1.18.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (69 kB)
+Collecting webrtc-models==0.3.0 (from homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading webrtc_models-0.3.0-py3-none-any.whl.metadata (2.9 kB)
+Collecting pycares>=4.0.0 (from aiodns==3.2.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pycares-5.0.0-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (4.1 kB)
+Collecting mashumaro<4.0,>=3.11 (from aiohasupervisor==0.2.2b5->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading mashumaro-3.17-py3-none-any.whl.metadata (118 kB)
+Collecting aiohappyeyeballs>=2.3.0 (from aiohttp==3.11.11->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiohappyeyeballs-2.6.1-py3-none-any.whl.metadata (5.9 kB)
+Collecting aiosignal>=1.1.2 (from aiohttp==3.11.11->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiosignal-1.4.0-py3-none-any.whl.metadata (3.7 kB)
+Collecting frozenlist>=1.1.1 (from aiohttp==3.11.11->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading frozenlist-1.8.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (20 kB)
+Collecting multidict<7.0,>=4.5 (from aiohttp==3.11.11->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading multidict-6.7.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.3 kB)
+Collecting idna>=2.0 (from yarl==1.18.3->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading idna-3.11-py3-none-any.whl.metadata (8.4 kB)
+Collecting tzdata>=2024.1 (from aiozoneinfo==0.2.1->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading tzdata-2025.3-py2.py3-none-any.whl.metadata (1.4 kB)
+Collecting pytz (from astral==2.2->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pytz-2025.2-py2.py3-none-any.whl.metadata (22 kB)
+Collecting cffi>=1.12 (from cryptography==44.0.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading cffi-2.0.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.6 kB)
+Collecting fnvhash<0.2.0,>=0.1.0 (from fnv-hash-fast==1.0.2->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading fnvhash-0.1.0.tar.gz (1.9 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting acme==3.0.1 (from hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading acme-3.0.1-py3-none-any.whl.metadata (1.4 kB)
+Collecting pycognito==2024.5.1 (from hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pycognito-2024.5.1-py3-none-any.whl.metadata (24 kB)
+Collecting snitun==0.39.1 (from hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading snitun-0.39.1-py3-none-any.whl.metadata (4.5 kB)
+Collecting josepy<2,>=1.13.0 (from acme==3.0.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading josepy-1.15.0-py3-none-any.whl.metadata (1.7 kB)
+Collecting pyrfc3339 (from acme==3.0.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pyrfc3339-2.1.0-py3-none-any.whl.metadata (2.8 kB)
+Collecting setuptools>=41.6.0 (from acme==3.0.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Using cached setuptools-80.9.0-py3-none-any.whl.metadata (6.6 kB)
+Collecting habluetooth>=3.0 (from home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading habluetooth-5.8.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.3 kB)
+Collecting anyio (from httpx==0.27.2->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading anyio-4.12.0-py3-none-any.whl.metadata (4.3 kB)
+Collecting httpcore==1.* (from httpx==0.27.2->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+Collecting sniffio (from httpx==0.27.2->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+Collecting MarkupSafe>=2.0 (from Jinja2==3.1.5->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+Collecting boolean.py>=4.0 (from license-expression==30.4.0->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading boolean_py-5.0-py3-none-any.whl.metadata (2.3 kB)
+Requirement already satisfied: pip>=24.2 in /opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages (from pipdeptree==2.23.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3)) (25.3)
+Collecting psutil (from psutil-home-assistant==0.0.1->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading psutil-7.2.1-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl.metadata (22 kB)
+Collecting boto3>=1.10.49 (from pycognito==2024.5.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading boto3-1.42.18-py3-none-any.whl.metadata (6.8 kB)
+Collecting envs>=1.3 (from pycognito==2024.5.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading envs-1.4-py3-none-any.whl.metadata (842 bytes)
+Collecting annotated-types>=0.6.0 (from pydantic==2.10.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+Collecting pydantic-core==2.27.2 (from pydantic==2.10.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pydantic_core-2.27.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+Collecting termcolor>=2.1.0 (from pytest-sugar==1.0.0->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading termcolor-3.3.0-py3-none-any.whl.metadata (6.5 kB)
+Collecting execnet>=2.1 (from pytest-xdist==3.6.1->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading execnet-2.1.2-py3-none-any.whl.metadata (2.9 kB)
+Collecting text-unidecode>=1.3 (from python-slugify==8.0.4->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading text_unidecode-1.3-py2.py3-none-any.whl.metadata (2.4 kB)
+Collecting charset-normalizer<4,>=2 (from requests==2.32.3->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading charset_normalizer-3.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (37 kB)
+Collecting async-timeout>=3.0.1 (from snitun==0.39.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading async_timeout-5.0.1-py3-none-any.whl.metadata (5.1 kB)
+Collecting greenlet!=0.4.17 (from sqlalchemy->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading greenlet-3.3.0-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (4.1 kB)
+Collecting h11>=0.16 (from httpcore==1.*->httpx==0.27.2->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+Collecting botocore<1.43.0,>=1.42.18 (from boto3>=1.10.49->pycognito==2024.5.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading botocore-1.42.18-py3-none-any.whl.metadata (5.9 kB)
+Collecting jmespath<2.0.0,>=0.7.1 (from boto3>=1.10.49->pycognito==2024.5.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading jmespath-1.0.1-py3-none-any.whl.metadata (7.6 kB)
+Collecting s3transfer<0.17.0,>=0.16.0 (from boto3>=1.10.49->pycognito==2024.5.1->hass-nabucasa==0.87.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading s3transfer-0.16.0-py3-none-any.whl.metadata (1.7 kB)
+Collecting six>=1.5 (from python-dateutil>=2.7->freezegun==1.5.1->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+Collecting pycparser (from cffi>=1.12->cryptography==44.0.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading pycparser-2.23-py3-none-any.whl.metadata (993 bytes)
+Collecting bleak>=1.0.1 (from habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading bleak-2.1.0-py3-none-any.whl.metadata (5.2 kB)
+Collecting bleak-retry-connector>=4.2.0 (from habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading bleak_retry_connector-4.4.4-py3-none-any.whl.metadata (7.3 kB)
+Collecting bluetooth-adapters>=2.1.0 (from habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading bluetooth_adapters-2.1.1-py3-none-any.whl.metadata (5.3 kB)
+Collecting bluetooth-auto-recovery>=1.5.1 (from habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading bluetooth_auto_recovery-1.5.3-py3-none-any.whl.metadata (5.5 kB)
+Collecting bluetooth-data-tools>=1.28.0 (from habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading bluetooth_data_tools-1.28.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.2 kB)
+Collecting btsocket>=0.3.0 (from habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading btsocket-0.3.0-py2.py3-none-any.whl.metadata (7.0 kB)
+Collecting dbus-fast>=2.30.2 (from habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading dbus_fast-3.1.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (10 kB)
+Collecting aiooui>=0.1.1 (from bluetooth-adapters>=2.1.0->habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading aiooui-0.1.9-py3-none-any.whl.metadata (4.1 kB)
+Collecting uart-devices>=0.1.0 (from bluetooth-adapters>=2.1.0->habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading uart_devices-0.1.1-py3-none-any.whl.metadata (4.9 kB)
+Collecting usb-devices>=0.4.5 (from bluetooth-adapters>=2.1.0->habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading usb_devices-0.4.5-py3-none-any.whl.metadata (5.3 kB)
+Collecting PyRIC>=0.1.6.3 (from bluetooth-auto-recovery>=1.5.1->habluetooth>=3.0->home-assistant-bluetooth==1.13.0->homeassistant==2025.1.4->pytest-homeassistant-custom-component>=0.13.0->-r requirements_test.txt (line 3))
+  Downloading PyRIC-0.1.6.3.tar.gz (870 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 870.4/870.4 kB 48.7 MB/s  0:00:00
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Downloading pluggy-1.6.0-py3-none-any.whl (20 kB)
+Downloading pytest_homeassistant_custom_component-0.13.205-py3-none-any.whl (60 kB)
+Downloading pytest-8.3.4-py3-none-any.whl (343 kB)
+Downloading pytest_asyncio-0.24.0-py3-none-any.whl (18 kB)
+Downloading pytest_cov-6.0.0-py3-none-any.whl (22 kB)
+Downloading coverage-7.6.8-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (239 kB)
+Downloading freezegun-1.5.1-py3-none-any.whl (17 kB)
+Downloading homeassistant-2025.1.4-py3-none-any.whl (40.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 40.0/40.0 MB 116.3 MB/s  0:00:00
+Downloading aiodns-3.2.0-py3-none-any.whl (5.7 kB)
+Downloading aiohasupervisor-0.2.2b5-py3-none-any.whl (36 kB)
+Downloading aiohttp-3.11.11-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.7/1.7 MB 156.1 MB/s  0:00:00
+Downloading orjson-3.10.12-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (131 kB)
+Downloading yarl-1.18.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (336 kB)
+Downloading aiohttp_cors-0.7.0-py3-none-any.whl (27 kB)
+Downloading aiohttp_fast_zlib-0.2.0-py3-none-any.whl (8.4 kB)
+Downloading aiozoneinfo-0.2.1-py3-none-any.whl (8.0 kB)
+Downloading astral-2.2-py2.py3-none-any.whl (30 kB)
+Downloading async_interrupt-1.2.0-py3-none-any.whl (8.9 kB)
+Downloading atomicwrites_homeassistant-1.4.1-py2.py3-none-any.whl (7.1 kB)
+Downloading attrs-24.2.0-py3-none-any.whl (63 kB)
+Downloading awesomeversion-24.6.0-py3-none-any.whl (14 kB)
+Downloading bcrypt-4.2.0-cp39-abi3-manylinux_2_28_x86_64.whl (273 kB)
+Downloading ciso8601-2.3.2-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (40 kB)
+Downloading cronsim-2.6-py3-none-any.whl (13 kB)
+Downloading cryptography-44.0.0-cp39-abi3-manylinux_2_28_x86_64.whl (4.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.2/4.2 MB 106.6 MB/s  0:00:00
+Downloading fnv_hash_fast-1.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux_2_5_x86_64.manylinux1_x86_64.manylinux2014_x86_64.whl (154 kB)
+Downloading hass_nabucasa-0.87.0-py3-none-any.whl (56 kB)
+Downloading webrtc_models-0.3.0-py3-none-any.whl (7.5 kB)
+Downloading acme-3.0.1-py3-none-any.whl (95 kB)
+Downloading home_assistant_bluetooth-1.13.0-py3-none-any.whl (7.9 kB)
+Downloading httpx-0.27.2-py3-none-any.whl (76 kB)
+Downloading ifaddr-0.2.0-py3-none-any.whl (12 kB)
+Downloading jinja2-3.1.5-py3-none-any.whl (134 kB)
+Downloading license_expression-30.4.0-py3-none-any.whl (110 kB)
+Downloading lru_dict-1.3.0-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (32 kB)
+Downloading numpy-2.2.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.1/16.1 MB 165.3 MB/s  0:00:00
+Downloading pillow-11.0.0-cp312-cp312-manylinux_2_28_x86_64.whl (4.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.4/4.4 MB 160.7 MB/s  0:00:00
+Downloading pipdeptree-2.23.4-py3-none-any.whl (32 kB)
+Downloading propcache-0.2.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (243 kB)
+Downloading psutil_home_assistant-0.0.1-py3-none-any.whl (6.3 kB)
+Downloading pycognito-2024.5.1-py3-none-any.whl (26 kB)
+Downloading pydantic-2.10.4-py3-none-any.whl (431 kB)
+Downloading pydantic_core-2.27.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 171.2 MB/s  0:00:00
+Downloading PyJWT-2.10.1-py3-none-any.whl (22 kB)
+Downloading pylint_per_file_ignores-1.3.2-py3-none-any.whl (4.7 kB)
+Downloading pyOpenSSL-24.3.0-py3-none-any.whl (56 kB)
+Downloading pytest_aiohttp-1.0.5-py3-none-any.whl (8.5 kB)
+Downloading pytest_freezer-0.4.8-py3-none-any.whl (3.2 kB)
+Downloading pytest_github_actions_annotate_failures-0.2.0-py3-none-any.whl (5.5 kB)
+Downloading pytest_picked-0.5.0-py3-none-any.whl (6.6 kB)
+Downloading pytest_socket-0.7.0-py3-none-any.whl (6.8 kB)
+Downloading pytest_sugar-1.0.0-py3-none-any.whl (10 kB)
+Downloading pytest_timeout-2.3.1-py3-none-any.whl (14 kB)
+Downloading pytest_unordered-0.6.1-py3-none-any.whl (6.0 kB)
+Downloading pytest_xdist-3.6.1-py3-none-any.whl (46 kB)
+Downloading python_slugify-8.0.4-py2.py3-none-any.whl (10 kB)
+Downloading PyYAML-6.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (767 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 767.5/767.5 kB 120.9 MB/s  0:00:00
+Downloading requests-2.32.3-py3-none-any.whl (64 kB)
+Downloading requests_mock-1.12.1-py2.py3-none-any.whl (27 kB)
+Downloading respx-0.21.1-py2.py3-none-any.whl (25 kB)
+Downloading securetar-2024.11.0-py3-none-any.whl (9.4 kB)
+Downloading snitun-0.39.1-py3-none-any.whl (39 kB)
+Downloading SQLAlchemy-2.0.36-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.2/3.2 MB 123.3 MB/s  0:00:00
+Downloading syrupy-4.8.0-py3-none-any.whl (49 kB)
+Downloading tqdm-4.66.5-py3-none-any.whl (78 kB)
+Downloading ulid_transform-1.0.2-cp312-cp312-manylinux_2_36_x86_64.whl (170 kB)
+Downloading uv-0.5.8-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (14.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 14.8/14.8 MB 116.3 MB/s  0:00:00
+Downloading voluptuous-0.15.2-py3-none-any.whl (31 kB)
+Downloading voluptuous_openapi-0.0.5-py3-none-any.whl (8.6 kB)
+Downloading voluptuous_serialize-2.6.0-py3-none-any.whl (6.8 kB)
+Downloading charset_normalizer-3.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (153 kB)
+Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+Downloading idna-3.11-py3-none-any.whl (71 kB)
+Downloading josepy-1.15.0-py3-none-any.whl (32 kB)
+Downloading mashumaro-3.17-py3-none-any.whl (94 kB)
+Downloading multidict-6.7.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (256 kB)
+Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+Downloading urllib3-1.26.20-py2.py3-none-any.whl (144 kB)
+Downloading aiohappyeyeballs-2.6.1-py3-none-any.whl (15 kB)
+Downloading aiosignal-1.4.0-py3-none-any.whl (7.5 kB)
+Downloading annotated_types-0.7.0-py3-none-any.whl (13 kB)
+Downloading async_timeout-5.0.1-py3-none-any.whl (6.2 kB)
+Downloading boolean_py-5.0-py3-none-any.whl (26 kB)
+Downloading boto3-1.42.18-py3-none-any.whl (140 kB)
+Downloading botocore-1.42.18-py3-none-any.whl (14.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 14.5/14.5 MB 225.7 MB/s  0:00:00
+Downloading jmespath-1.0.1-py3-none-any.whl (20 kB)
+Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+Downloading s3transfer-0.16.0-py3-none-any.whl (86 kB)
+Downloading certifi-2025.11.12-py3-none-any.whl (159 kB)
+Downloading cffi-2.0.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (219 kB)
+Downloading envs-1.4-py3-none-any.whl (10 kB)
+Downloading execnet-2.1.2-py3-none-any.whl (40 kB)
+Downloading frozenlist-1.8.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (242 kB)
+Downloading greenlet-3.3.0-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (609 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 609.9/609.9 kB 104.7 MB/s  0:00:00
+Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+Downloading habluetooth-5.8.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (700 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 700.1/700.1 kB 97.4 MB/s  0:00:00
+Downloading bleak-2.1.0-py3-none-any.whl (141 kB)
+Downloading bleak_retry_connector-4.4.4-py3-none-any.whl (18 kB)
+Downloading bluetooth_adapters-2.1.1-py3-none-any.whl (20 kB)
+Downloading aiooui-0.1.9-py3-none-any.whl (367 kB)
+Downloading bluetooth_auto_recovery-1.5.3-py3-none-any.whl (11 kB)
+Downloading bluetooth_data_tools-1.28.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (414 kB)
+Downloading btsocket-0.3.0-py2.py3-none-any.whl (14 kB)
+Downloading dbus_fast-3.1.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (839 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 839.7/839.7 kB 127.7 MB/s  0:00:00
+Downloading markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+Downloading packaging-25.0-py3-none-any.whl (66 kB)
+Downloading pycares-5.0.0-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (223 kB)
+Downloading pytz-2025.2-py2.py3-none-any.whl (509 kB)
+Using cached setuptools-80.9.0-py3-none-any.whl (1.2 MB)
+Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+Downloading termcolor-3.3.0-py3-none-any.whl (7.7 kB)
+Downloading text_unidecode-1.3-py2.py3-none-any.whl (78 kB)
+Downloading tzdata-2025.3-py2.py3-none-any.whl (348 kB)
+Downloading uart_devices-0.1.1-py3-none-any.whl (4.8 kB)
+Downloading usb_devices-0.4.5-py3-none-any.whl (5.3 kB)
+Downloading anyio-4.12.0-py3-none-any.whl (113 kB)
+Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+Downloading psutil-7.2.1-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl (154 kB)
+Downloading pycparser-2.23-py3-none-any.whl (118 kB)
+Downloading pyrfc3339-2.1.0-py3-none-any.whl (6.8 kB)
+Downloading sniffio-1.3.1-py3-none-any.whl (10 kB)
+Building wheels for collected packages: mock-open, paho-mqtt, fnvhash, PyRIC
+  Building wheel for mock-open (pyproject.toml): started
+  Building wheel for mock-open (pyproject.toml): finished with status 'done'
+  Created wheel for mock-open: filename=mock_open-1.4.0-py3-none-any.whl size=14643 sha256=5fd94ef7a91366512b4ad6cee14c88a098f1156b23ba79096d2f0b6a5955a608
+  Stored in directory: /home/runner/.cache/pip/wheels/2d/cb/42/30f8e7ef326ebeeaac3942801463bafb76fb6573e8327eab99
+  Building wheel for paho-mqtt (pyproject.toml): started
+  Building wheel for paho-mqtt (pyproject.toml): finished with status 'done'
+  Created wheel for paho-mqtt: filename=paho_mqtt-1.6.1-py3-none-any.whl size=62199 sha256=0f8f9700983f420ca418cca07e70dc05a02a64abc028171542dc5203d38ad808
+  Stored in directory: /home/runner/.cache/pip/wheels/23/d5/af/1f3cbcc350dec9d8e95040f388e0163d132eff0c9a453db659
+  Building wheel for fnvhash (pyproject.toml): started
+  Building wheel for fnvhash (pyproject.toml): finished with status 'done'
+  Created wheel for fnvhash: filename=fnvhash-0.1.0-py3-none-any.whl size=2180 sha256=b786d07100fdff642f55a78ad3c0668085004758e1c1569ce838eaecad5af2db
+  Stored in directory: /home/runner/.cache/pip/wheels/f3/f2/c9/9d2b575fa41b9c1f8b35131e1db072490bc6ff034ceb66eaca
+  Building wheel for PyRIC (pyproject.toml): started
+  Building wheel for PyRIC (pyproject.toml): finished with status 'done'
+  Created wheel for PyRIC: filename=pyric-0.1.6.3-py2.py3-none-any.whl size=407978 sha256=5ceff054642a1068f9befc75a204d5192e70289ee143b291e23fd6aab87f99d1
+  Stored in directory: /home/runner/.cache/pip/wheels/71/5f/b2/33e36e10ea0e6b0dda30e364900611b0d428c72f9be83c3e38
+Successfully built mock-open paho-mqtt fnvhash PyRIC
+Installing collected packages: text-unidecode, pytz, PyRIC, paho-mqtt, mock-open, ifaddr, fnvhash, ciso8601, btsocket, boolean.py, voluptuous, uv, usb-devices, urllib3, ulid-transform, uart-devices, tzdata, typing-extensions, tqdm, termcolor, sniffio, six, setuptools, PyYAML, python-slugify, pyrfc3339, pylint-per-file-ignores, PyJWT, pycparser, psutil, propcache, pluggy, Pillow, packaging, orjson, numpy, multidict, MarkupSafe, lru-dict, license-expression, jmespath, iniconfig, idna, h11, greenlet, frozenlist, fnv-hash-fast, execnet, envs, dbus-fast, cronsim, coverage, charset-normalizer, certifi, bcrypt, awesomeversion, attrs, atomicwrites-homeassistant, async-timeout, async-interrupt, astral, annotated-types, aiooui, aiohappyeyeballs, yarl, voluptuous-serialize, voluptuous-openapi, sqlalchemy, requests, python-dateutil, pytest, pydantic-core, psutil-home-assistant, pipdeptree, mashumaro, Jinja2, httpcore, cffi, bleak, anyio, aiozoneinfo, aiosignal, webrtc-models, syrupy, requests-mock, pytest-xdist, pytest-u
+Successfully installed Jinja2-3.1.5 MarkupSafe-3.0.3 Pillow-11.0.0 PyJWT-2.10.1 PyRIC-0.1.6.3 PyYAML-6.0.2 acme-3.0.1 aiodns-3.2.0 aiohappyeyeballs-2.6.1 aiohasupervisor-0.2.2b5 aiohttp-3.11.11 aiohttp-cors-0.7.0 aiohttp-fast-zlib-0.2.0 aiooui-0.1.9 aiosignal-1.4.0 aiozoneinfo-0.2.1 annotated-types-0.7.0 anyio-4.12.0 astral-2.2 async-interrupt-1.2.0 async-timeout-5.0.1 atomicwrites-homeassistant-1.4.1 attrs-24.2.0 awesomeversion-24.6.0 bcrypt-4.2.0 bleak-2.1.0 bleak-retry-connector-4.4.4 bluetooth-adapters-2.1.1 bluetooth-auto-recovery-1.5.3 bluetooth-data-tools-1.28.4 boolean.py-5.0 boto3-1.42.18 botocore-1.42.18 btsocket-0.3.0 certifi-2025.11.12 cffi-2.0.0 charset-normalizer-3.4.4 ciso8601-2.3.2 coverage-7.6.8 cronsim-2.6 cryptography-44.0.0 dbus-fast-3.1.2 envs-1.4 execnet-2.1.2 fnv-hash-fast-1.0.2 fnvhash-0.1.0 freezegun-1.5.1 frozenlist-1.8.0 greenlet-3.3.0 h11-0.16.0 habluetooth-5.8.0 hass-nabucasa-0.87.0 home-assistant-bluetooth-1.13.0 homeassistant-2025.1.4 httpcore-1.0.9 httpx-0.27.2 idna-3.11 ifaddr
+36s
+Run pytest tests/ -v --tb=short --cov=custom_components/thermostat_contact_sensors --cov-report=xml
+  
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.3.4, pluggy-1.6.0 -- /opt/hostedtoolcache/Python/3.12.12/x64/bin/python
+cachedir: .pytest_cache
+rootdir: /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors
+configfile: pytest.ini
+plugins: github-actions-annotate-failures-0.2.0, asyncio-0.24.0, socket-0.7.0, requests-mock-1.12.1, cov-6.0.0, xdist-3.6.1, anyio-4.12.0, respx-0.21.1, timeout-2.3.1, aiohttp-1.0.5, pytest_freezer-0.4.8, homeassistant-custom-component-0.13.205, picked-0.5.0, unordered-0.6.1, syrupy-4.8.0, sugar-1.0.0
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+collecting ... collected 356 items
+tests/test_binary_sensor.py::test_binary_sensor_creation PASSED          [  0%]
+tests/test_binary_sensor.py::test_binary_sensor_unique_id PASSED         [  0%]
+tests/test_binary_sensor.py::test_binary_sensor_state_when_paused PASSED [  0%]
+tests/test_binary_sensor.py::test_binary_sensor_attributes PASSED        [  1%]
+tests/test_binary_sensor.py::test_binary_sensor_triggered_by_attribute PASSED [  1%]
+tests/test_binary_sensor.py::test_binary_sensor_device_info PASSED       [  1%]
+tests/test_binary_sensor.py::test_binary_sensor_restores_state PASSED    [  1%]
+tests/test_config_flow.py::test_config_flow_user_init PASSED             [  2%]
+tests/test_config_flow.py::test_config_flow_user_success PASSED          [  2%]
+tests/test_config_flow.py::test_config_flow_no_thermostat_error PASSED   [  2%]
+tests/test_config_flow.py::test_config_flow_duplicate_thermostat PASSED  [  3%]
+tests/test_config_flow.py::test_config_flow_default_values PASSED        [  3%]
+tests/test_config_flow.py::test_config_flow_with_notification_service PASSED [  3%]
+tests/test_config_flow.py::test_config_flow_auto_discovers_areas PASSED  [  3%]
+tests/test_coordinator.py::TestCoordinatorSetup::test_coordinator_setup PASSED [  4%]
+tests/test_coordinator.py::TestCoordinatorSetup::test_coordinator_shutdown PASSED [  4%]
+tests/test_coordinator.py::TestCoordinatorSetup::test_coordinator_initial_open_sensors PASSED [  4%]
+tests/test_coordinator.py::TestSensorStateChanges::test_sensor_open_starts_timer PASSED [  5%]
+tests/test_coordinator.py::TestSensorStateChanges::test_sensor_close_before_timeout_cancels_timer PASSED [  5%]
+tests/test_coordinator.py::TestSensorStateChanges::test_multiple_sensors_open PASSED [  5%]
+tests/test_coordinator.py::TestSensorStateChanges::test_sensor_unavailable_ignored PASSED [  5%]
+tests/test_coordinator.py::TestThermostatPausing::test_thermostat_pauses_after_timeout PASSED [  6%]
+tests/test_coordinator.py::TestThermostatPausing::test_thermostat_stores_previous_mode PASSED [  6%]
+tests/test_coordinator.py::TestThermostatPausing::test_no_pause_if_sensor_closes_before_timeout PASSED [  6%]
+tests/test_coordinator.py::TestThermostatResuming::test_thermostat_resumes_after_all_closed PASSED [  7%]
+tests/test_coordinator.py::TestThermostatResuming::test_close_timer_cancelled_if_sensor_reopens PASSED [  7%]
+tests/test_coordinator.py::TestThermostatResuming::test_resume_restores_previous_mode PASSED [  7%]
+tests/test_coordinator.py::TestNotifications::test_notification_sent_on_pause PASSED [  7%]
+tests/test_coordinator.py::TestNotifications::test_notification_sent_on_resume PASSED [  8%]
+tests/test_coordinator.py::TestNotifications::test_no_notification_when_disabled PASSED [  8%]
+tests/test_coordinator.py::TestOpenSensorCounts::test_open_count PASSED  [  8%]
+tests/test_coordinator.py::TestOpenSensorCounts::test_open_doors_count PASSED [  8%]
+tests/test_coordinator.py::TestOpenSensorCounts::test_open_windows_count PASSED [  9%]
+tests/test_coordinator.py::TestOptionsUpdate::test_update_options PASSED [  9%]
+tests/test_coordinator.py::TestManualOverride::test_manual_on_while_paused_clears_paused_state PASSED [  9%]
+tests/test_coordinator.py::TestManualOverride::test_manual_on_while_paused_cancels_close_timer PASSED [ 10%]
+tests/test_coordinator.py::TestManualOverride::test_manual_off_while_paused_updates_previous_mode PASSED [ 10%]
+tests/test_coordinator.py::TestManualOverride::test_tracks_last_known_hvac_mode PASSED [ 10%]
+tests/test_coordinator.py::TestManualOverride::test_respects_user_mode_change_for_restore PASSED [ 10%]
+tests/test_coordinator.py::TestTemperatureSensorStateChange::test_temp_sensor_listener_subscribed PASSED [ 11%]
+tests/test_coordinator.py::TestTemperatureSensorStateChange::test_temp_sensor_listener_cleanup PASSED [ 11%]
+tests/test_coordinator.py::TestTemperatureSensorStateChange::test_temp_sensor_change_triggers_update PASSED [ 11%]
+tests/test_coordinator.py::TestTemperatureSensorStateChange::test_temp_sensor_unavailable_ignored PASSED [ 12%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_returns_data PASSED [ 12%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_config_entry_info PASSED [ 12%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_coordinator_state PASSED [ 12%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_thermostat_info PASSED [ 13%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_contact_sensors PASSED [ 13%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_entities_list PASSED [ 13%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_redacts_notify_service PASSED [ 14%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_occupancy_state PASSED [ 14%]
+tests/test_init.py::test_setup_entry PASSED                              [ 14%]
+tests/test_init.py::test_unload_entry PASSED                             [ 14%]
+tests/test_init.py::test_reload_entry PASSED                             [ 15%]
+tests/test_init.py::test_runtime_data_created PASSED                     [ 15%]
+tests/test_init.py::test_platforms_setup PASSED                          [ 15%]
+tests/test_init.py::test_device_created PASSED                           [ 16%]
+tests/test_init.py::test_options_update_listener PASSED                  [ 16%]
+tests/test_init.py::test_multiple_config_entries PASSED                  [ 16%]
+tests/test_init.py::test_coordinator_cleanup_on_unload PASSED            [ 16%]
+tests/test_integration.py::TestContactSensorEffects::test_contact_open_pauses_thermostat_after_timeout PASSED [ 17%]
+tests/test_integration.py::TestContactSensorEffects::test_contact_close_resumes_thermostat_after_timeout PASSED [ 17%]
+tests/test_integration.py::TestContactSensorEffects::test_multiple_contacts_open_one_close_stays_paused PASSED [ 17%]
+tests/test_integration.py::TestOccupancyVentEffects::test_occupied_room_opens_vents_after_delay PASSED [ 17%]
+tests/test_integration.py::TestOccupancyVentEffects::test_occupied_room_below_delay_keeps_vents_closed PASSED [ 18%]
+tests/test_integration.py::TestOccupancyVentEffects::test_inactive_room_closes_vents PASSED [ 18%]
+tests/test_integration.py::TestTemperatureEffects::test_satiated_room_closes_vents PASSED [ 18%]
+tests/test_integration.py::TestTemperatureEffects::test_unsatiated_room_keeps_vents_open PASSED [ 19%]
+tests/test_integration.py::TestCriticalTemperatureEffects::test_critical_cold_room_opens_vents PASSED [ 19%]
+tests/test_integration.py::TestCriticalTemperatureEffects::test_critical_room_counts_toward_minimum_vents PASSED [ 19%]
+tests/test_integration.py::TestMinimumVentsOpen::test_minimum_vents_kept_open_when_all_inactive PASSED [ 19%]
+tests/test_integration.py::TestMinimumVentsOpen::test_vent_group_counts_as_multiple_vents PASSED [ 20%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_morning_wakeup PASSED [ 20%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_window_opened_during_heating PASSED [ 20%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_all_rooms_reach_temperature PASSED [ 21%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_mixed_room_states PASSED [ 21%]
+tests/test_integration.py::TestEdgeCases::test_thermostat_unavailable PASSED [ 21%]
+tests/test_integration.py::TestEdgeCases::test_temperature_sensor_unavailable PASSED [ 21%]
+tests/test_integration.py::TestEdgeCases::test_vent_unavailable PASSED   [ 22%]
+tests/test_integration.py::TestEdgeCases::test_empty_areas_config PASSED [ 22%]
+tests/test_integration.py::TestEdgeCases::test_rapid_occupancy_changes PASSED [ 22%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_none_state_returns_false PASSED [ 23%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_on_state_returns_true PASSED [ 23%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_off_state_returns_false PASSED [ 23%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_unavailable_state_returns_false PASSED [ 23%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_unknown_state_returns_false PASSED [ 24%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_none_state_returns_false PASSED [ 24%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_previous_valid_state_on_returns_true PASSED [ 24%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_previous_valid_state_off_returns_false PASSED [ 25%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_no_previous_valid_state_attribute_returns_false PASSED [ 25%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_unavailable_state_returns_false PASSED [ 25%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_unknown_state_returns_false PASSED [ 25%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_binary_sensor_on PASSED [ 26%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_binary_sensor_off PASSED [ 26%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_sensor_with_previous_valid_state_on PASSED [ 26%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_sensor_with_previous_valid_state_off PASSED [ 26%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_none_state_returns_false PASSED [ 27%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_is_occupied_with_no_sensors PASSED [ 27%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_is_occupied_with_binary_sensor PASSED [ 27%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_is_occupied_with_regular_sensor PASSED [ 28%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_is_occupied_with_both_sensor_types PASSED [ 28%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_all_sensors PASSED [ 28%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_occupied_sensor_count PASSED [ 28%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_total_sensor_count PASSED [ 29%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_get_occupancy_duration_when_not_occupied PASSED [ 29%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_get_occupancy_duration_when_occupied PASSED [ 29%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_get_occupancy_minutes PASSED [ 30%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_get_occupancy_minutes_when_not_occupied PASSED [ 30%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_init_with_default_min_occupancy PASSED [ 30%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_init_with_custom_min_occupancy PASSED [ 30%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_min_occupancy_minutes_setter PASSED [ 31%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_disabled_areas_are_not_tracked PASSED [ 31%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_all_tracked_sensors PASSED [ 31%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerSetupShutdown::test_setup_subscribes_to_state_changes PASSED [ 32%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerSetupShutdown::test_shutdown_unsubscribes PASSED [ 32%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerSetupShutdown::test_setup_scans_initial_sensor_states PASSED [ 32%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_binary_sensor_on_makes_area_occupied PASSED [ 32%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_sensor_previous_valid_state_on_makes_area_occupied PASSED [ 33%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_multiple_sensors_or_logic PASSED [ 33%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_continuous_occupancy_with_sensor_handoff PASSED [ 33%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_all_sensors_off_clears_occupancy PASSED [ 33%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_newly_occupied_area_is_not_active PASSED [ 34%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_area_becomes_active_after_threshold PASSED [ 34%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_area_not_active_before_threshold PASSED [ 34%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_changing_min_occupancy_updates_active_status PASSED [ 35%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_init_with_default_grace_period PASSED [ 35%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_init_with_custom_grace_period PASSED [ 35%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_minimum_enforced_on_init PASSED [ 35%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_minimum_enforced_on_setter PASSED [ 36%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_setter_updates_value PASSED [ 36%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_custom_grace_period_used_for_expiration PASSED [ 36%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_independent_of_min_occupancy PASSED [ 37%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_active_enters_grace_period_when_unoccupied PASSED [ 37%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_expires_after_threshold PASSED [ 37%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_reoccupancy_during_grace_period_remains_active PASSED [ 37%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_non_active_area_no_grace_period_when_unoccupied PASSED [ 38%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_not_expired_before_threshold PASSED [ 38%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_occupied_areas_property PASSED [ 38%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_active_areas_property PASSED [ 39%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_any_area_occupied_property PASSED [ 39%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_any_area_active_property PASSED [ 39%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_inactive_areas_property PASSED [ 39%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerCallbacks::test_register_update_callback PASSED [ 40%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerCallbacks::test_multiple_callbacks PASSED [ 40%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerConfigUpdate::test_update_config_rebuilds_tracking PASSED [ 40%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerSummary::test_get_summary PASSED [ 41%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerEdgeCases::test_sensor_state_unavailable PASSED [ 41%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerEdgeCases::test_get_area_returns_none_for_unknown_area PASSED [ 41%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerEdgeCases::test_empty_areas_config PASSED [ 41%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerEdgeCases::test_area_with_no_occupancy_sensors PASSED [ 42%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_to_storage_dict_empty_state PASSED [ 42%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_to_storage_dict_active_state PASSED [ 42%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_to_storage_dict_grace_period_state PASSED [ 42%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_restore_from_storage_empty_data PASSED [ 43%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_restore_from_storage_active_state PASSED [ 43%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_restore_from_storage_grace_period_state PASSED [ 43%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_restore_from_storage_invalid_timestamp PASSED [ 44%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_tracker_with_entry_id_has_store PASSED [ 44%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_tracker_without_entry_id_no_store PASSED [ 44%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_save_state_creates_data PASSED [ 44%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_restore_state_loads_data PASSED [ 45%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_restore_state_no_data PASSED [ 45%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_setup_restores_state PASSED [ 45%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_shutdown_saves_state PASSED [ 46%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_restore_ignores_unknown_areas PASSED [ 46%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_persist_grace_period_state PASSED [ 46%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_sensor_creation_per_area PASSED [ 46%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_sensor_unique_id PASSED [ 47%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_initial_state_inactive PASSED [ 47%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_state_becomes_occupied PASSED [ 47%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_occupied_sensors_attribute PASSED [ 48%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_time_until_active_attribute PASSED [ 48%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_state_becomes_inactive_when_unoccupied PASSED [ 48%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_area_attributes PASSED [ 48%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_min_occupancy_minutes_attribute PASSED [ 49%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_grace_period_minutes_attribute PASSED [ 49%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_grace_period_attributes_when_not_in_grace_period PASSED [ 49%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_active_area_enters_grace_period_when_unoccupied PASSED [ 50%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_reoccupancy_during_grace_period_clears_grace_period PASSED [ 50%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_sensor_creation PASSED [ 50%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_sensor_unique_id PASSED [ 50%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_initial_state_idle PASSED [ 51%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_thermostat_entity_id_attribute PASSED [ 51%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_paused_state PASSED [ 51%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_hvac_mode_attribute PASSED [ 51%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_room_count_attributes PASSED [ 52%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_cycle_protection_attributes PASSED [ 52%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_recommended_action_attribute PASSED [ 52%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_room_summary_attribute PASSED [ 53%]
+tests/test_occupancy_and_control_sensors.py::TestSensorIntegration::test_all_sensors_created PASSED [ 53%]
+tests/test_occupancy_and_control_sensors.py::TestSensorIntegration::test_sensors_share_device PASSED [ 53%]
+tests/test_options_flow.py::test_options_flow_shows_menu PASSED          [ 53%]
+tests/test_options_flow.py::test_options_flow_global_settings PASSED     [ 54%]
+tests/test_options_flow.py::test_options_flow_global_settings_grace_period PASSED [ 54%]
+tests/test_options_flow.py::test_options_flow_thermostat PASSED          [ 54%]
+tests/test_options_flow.py::test_options_flow_manage_areas_checkboxes PASSED [ 55%]
+tests/test_options_flow.py::test_options_flow_configure_area_sensors_menu PASSED [ 55%]
+tests/test_options_flow.py::test_options_flow_area_config PASSED         [ 55%]
+tests/test_options_flow.py::test_options_flow_disable_area PASSED        [ 55%]
+tests/test_options_flow.py::test_options_flow_thermostat_required PASSED [ 56%]
+tests/test_options_flow.py::test_options_flow_sensor_count_updates_after_adding PASSED [ 56%]
+tests/test_options_flow.py::test_options_flow_sensor_count_updates_after_removing PASSED [ 56%]
+tests/test_options_flow.py::test_options_flow_enable_disable_areas_shows_correct_count PASSED [ 57%]
+tests/test_sensor.py::test_sensor_creation PASSED                        [ 57%]
+tests/test_sensor.py::test_sensor_unique_id PASSED                       [ 57%]
+tests/test_sensor.py::test_sensor_count_updates PASSED                   [ 57%]
+tests/test_sensor.py::test_sensor_attributes_open_sensors PASSED         [ 58%]
+tests/test_sensor.py::test_sensor_attributes_door_window_counts PASSED   [ 58%]
+tests/test_sensor.py::test_sensor_attributes_monitored_sensors PASSED    [ 58%]
+tests/test_sensor.py::test_sensor_unit_of_measurement PASSED             [ 58%]
+tests/test_sensor.py::test_sensor_device_info PASSED                     [ 59%]
+tests/test_services.py::TestServiceRegistration::test_services_registered PASSED [ 59%]
+tests/test_services.py::TestServiceRegistration::test_services_registered_once PASSED [ 59%]
+tests/test_services.py::TestPauseService::test_pause_service_pauses_thermostat PASSED [ 60%]
+tests/test_services.py::TestPauseService::test_pause_service_already_paused PASSED [ 60%]
+tests/test_services.py::TestPauseService::test_pause_service_invalid_entry_id PASSED [ 60%]
+tests/test_services.py::TestResumeService::test_resume_service_resumes_thermostat PASSED [ 60%]
+tests/test_services.py::TestResumeService::test_resume_service_not_paused PASSED [ 61%]
+tests/test_services.py::TestResumeService::test_resume_service_invalid_entry_id PASSED [ 61%]
+tests/test_services.py::TestRecalculateService::test_recalculate_service PASSED [ 61%]
+tests/test_services.py::TestRecalculateService::test_recalculate_service_invalid_entry_id PASSED [ 62%]
+tests/test_switch.py::TestRespectUserOffSwitch::test_switch_default_state_is_off PASSED [ 62%]
+tests/test_switch.py::TestRespectUserOffSwitch::test_switch_turn_on PASSED [ 62%]
+tests/test_switch.py::TestRespectUserOffSwitch::test_switch_turn_off PASSED [ 62%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_thermostat_off_resumes_when_respect_off_disabled PASSED [ 63%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_thermostat_stays_off_when_respect_off_enabled PASSED [ 63%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_active_thermostat_always_resumes PASSED [ 63%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_switch_extra_state_attributes PASSED [ 64%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_valid_temperature PASSED [ 64%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_integer_temperature PASSED [ 64%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_unavailable_state PASSED [ 64%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_unknown_state PASSED [ 65%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_none_state PASSED [ 65%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_invalid_string_state PASSED [ 65%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_empty_string_state PASSED [ 66%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_negative_temperature PASSED [ 66%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_satiated_when_at_target PASSED [ 66%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_satiated_within_deadband PASSED [ 66%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_satiated_exactly_at_deadband_boundary PASSED [ 67%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_not_satiated_below_deadband PASSED [ 67%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_satiated_when_above_target PASSED [ 67%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_multiple_sensors_warmest_satiated PASSED [ 67%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_multiple_sensors_none_satiated PASSED [ 68%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_empty_readings PASSED [ 68%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_zero_deadband PASSED [ 68%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_satiated_when_at_target PASSED [ 69%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_satiated_within_deadband PASSED [ 69%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_satiated_exactly_at_deadband_boundary PASSED [ 69%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_not_satiated_above_deadband PASSED [ 69%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_satiated_when_below_target PASSED [ 70%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_multiple_sensors_coolest_satiated PASSED [ 70%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_multiple_sensors_none_satiated PASSED [ 70%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_empty_readings PASSED [ 71%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_satiated_when_in_range PASSED [ 71%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_satiated_near_low_boundary PASSED [ 71%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_satiated_near_high_boundary PASSED [ 71%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_not_satiated_too_cold PASSED [ 72%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_not_satiated_too_hot PASSED [ 72%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_multiple_sensors_one_satiated PASSED [ 72%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_empty_readings PASSED [ 73%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_has_valid_readings_true PASSED [ 73%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_has_valid_readings_false PASSED [ 73%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_available_sensor_count PASSED [ 73%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_get_closest_to_target_heat_mode PASSED [ 74%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_get_closest_to_target_cool_mode PASSED [ 74%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_get_closest_to_target_no_readings PASSED [ 74%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_target_temperature_field PASSED [ 75%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_target_temperature_default_none PASSED [ 75%]
+tests/test_thermostat_control.py::TestThermostatController::test_initialization PASSED [ 75%]
+tests/test_thermostat_control.py::TestThermostatController::test_update_cycle_time_on PASSED [ 75%]
+tests/test_thermostat_control.py::TestThermostatController::test_update_cycle_time_off PASSED [ 76%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_off_without_prior_on_time PASSED [ 76%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_off_after_min_on_time PASSED [ 76%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_off_before_min_on_time PASSED [ 76%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_on_without_prior_off_time PASSED [ 77%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_on_after_min_off_time PASSED [ 77%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_on_before_min_off_time PASSED [ 77%]
+tests/test_thermostat_control.py::TestContactSensorPriority::test_evaluate_returns_none_when_paused PASSED [ 78%]
+tests/test_thermostat_control.py::TestEdgeCases::test_no_active_rooms_returns_none PASSED [ 78%]
+tests/test_thermostat_control.py::TestEdgeCases::test_room_with_no_temp_sensors_ignored PASSED [ 78%]
+tests/test_thermostat_control.py::TestEdgeCases::test_unavailable_sensors_ignored PASSED [ 78%]
+tests/test_thermostat_control.py::TestEdgeCases::test_thermostat_off_mode_returns_none PASSED [ 79%]
+tests/test_thermostat_control.py::TestHVACModes::test_heat_mode_not_satiated PASSED [ 79%]
+tests/test_thermostat_control.py::TestHVACModes::test_heat_mode_satiated PASSED [ 79%]
+tests/test_thermostat_control.py::TestHVACModes::test_cool_mode_not_satiated PASSED [ 80%]
+tests/test_thermostat_control.py::TestHVACModes::test_cool_mode_satiated PASSED [ 80%]
+tests/test_thermostat_control.py::TestHVACModes::test_heat_cool_mode_uses_target_high_low PASSED [ 80%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_heat_mode_critical PASSED [ 80%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_heat_mode_not_critical PASSED [ 81%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_cool_mode_critical PASSED [ 81%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_cool_mode_not_critical PASSED [ 81%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_heat_cool_mode_too_cold PASSED [ 82%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_heat_cool_mode_too_hot PASSED [ 82%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_no_sensors PASSED [ 82%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_uses_warmest_sensor_for_heat PASSED [ 82%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_uses_coolest_sensor_for_cool PASSED [ 83%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_critical_room_keeps_thermostat_on PASSED [ 83%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_critical_room_with_satiated_active_room PASSED [ 83%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_no_critical_rooms_when_within_threshold PASSED [ 83%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_critical_room_count_in_state PASSED [ 84%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_room_states_include_critical_info PASSED [ 84%]
+tests/test_thermostat_control.py::TestUnoccupiedThresholdConfiguration::test_default_thresholds PASSED [ 84%]
+tests/test_thermostat_control.py::TestUnoccupiedThresholdConfiguration::test_custom_thresholds PASSED [ 85%]
+tests/test_thermostat_control.py::TestUnoccupiedThresholdConfiguration::test_threshold_setter PASSED [ 85%]
+tests/test_thermostat_control.py::TestUnoccupiedThresholdConfiguration::test_larger_threshold_changes_critical_detection PASSED [ 85%]
+tests/test_thermostat_control.py::TestWeTurnedOffFlag::test_we_turned_off_initially_false PASSED [ 85%]
+tests/test_thermostat_control.py::TestWeTurnedOffFlag::test_thermostat_off_treated_as_user_choice_when_flag_false PASSED [ 86%]
+Error: TestWeTurnedOffFlag.test_thermostat_off_continues_evaluation_when_we_turned_off
 
-F401 `homeassistant.core.callback` imported but unused
-  --> custom_components/thermostat_contact_sensors/__init__.py:9:60
-   |
- 7 | from homeassistant.config_entries import ConfigEntry
- 8 | from homeassistant.const import CONF_NAME
- 9 | from homeassistant.core import HomeAssistant, ServiceCall, callback
-   |                                                            ^^^^^^^^
-10 | from homeassistant.helpers import area_registry as ar
-11 | from homeassistant.helpers import entity_registry as er
-   |
-help: Remove unused import: `homeassistant.core.callback`
+AssertionError: assert <ThermostatAction.NONE: 'none'> == <ThermostatAction.TURN_ON: 'turn_on'>
+ +  where <ThermostatAction.NONE: 'none'> = ThermostatState(thermostat_entity_id='climate.test_thermostat', hvac_mode=<HVACMode.OFF: 'off'>, is_on=False, target_temperature=72.0, target_temp_high=None, target_temp_low=None, room_states={'living_room': RoomTemperatureState(area_id='living_room', area_name='Living Room', temperature_sensors=['sensor.living_room_temperature'], sensor_readings={'sensor.living_room_temperature': 68.0}, is_satiated=True, satiation_reason=<SatiationReason.SATIATED: 'satiated'>, is_critical=False, critical_reason=None, is_active=True, determining_sensor=None, determining_temperature=None, target_temperature=None)}, all_active_rooms_satiated=True, active_room_count=1, satiated_room_count=1, critical_room_count=0, last_on_time=None, last_off_time=None, recommended_action=<ThermostatAction.NONE: 'none'>,
+tests/test_thermostat_control.py::TestWeTurnedOffFlag::test_thermostat_off_continues_evaluation_when_we_turned_off FAILED [ 86%]
+tests/test_thermostat_control.py::TestWeTurnedOffFlag::test_execute_turn_off_sets_flag PASSED [ 86%]
+tests/test_thermostat_control.py::TestWeTurnedOffFlag::test_execute_turn_on_clears_flag PASSED [ 87%]
+tests/test_thermostat_control.py::TestWeTurnedOffFlag::test_we_turned_off_in_diagnostics PASSED [ 87%]
+tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_controller_without_entry_id_has_no_store PASSED [ 87%]
+Error: TestThermostatControllerPersistence.test_controller_with_entry_id_has_store
 
-F841 Local variable `area_reg` is assigned to but never used
-  --> custom_components/thermostat_contact_sensors/__init__.py:64:9
-   |
-62 |         # Try to assign sensors to their actual areas
-63 |         entity_reg = er.async_get(hass)
-64 |         area_reg = ar.async_get(hass)
-   |         ^^^^^^^^
-65 |
-66 |         # Group sensors by area
-   |
-help: Remove assignment to unused variable `area_reg`
+AttributeError: Mock object has no attribute 'data'
+tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_controller_with_entry_id_has_store FAILED [ 87%]
+Error: TestThermostatControllerPersistence.test_async_setup_restores_state
 
-F401 [*] `homeassistant.core.callback` imported but unused
-  --> custom_components/thermostat_contact_sensors/binary_sensor.py:12:47
-   |
-10 | from homeassistant.config_entries import ConfigEntry
-11 | from homeassistant.const import CONF_NAME
-12 | from homeassistant.core import HomeAssistant, callback
-   |                                               ^^^^^^^^
-13 | from homeassistant.helpers.entity_platform import AddEntitiesCallback
-14 | from homeassistant.helpers.restore_state import RestoreEntity
-   |
-help: Remove unused import: `homeassistant.core.callback`
+AttributeError: Mock object has no attribute 'data'
+tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_async_setup_restores_state FAILED [ 88%]
+Error: TestThermostatControllerPersistence.test_async_shutdown_saves_state
 
-F401 [*] `.const.CONF_THERMOSTAT` imported but unused
-  --> custom_components/thermostat_contact_sensors/binary_sensor.py:17:20
-   |
-15 | from homeassistant.helpers.update_coordinator import CoordinatorEntity
-16 |
-17 | from .const import CONF_THERMOSTAT, DOMAIN
-   |                    ^^^^^^^^^^^^^^^
-18 | from .coordinator import ThermostatContactSensorsCoordinator
-   |
-help: Remove unused import: `.const.CONF_THERMOSTAT`
-
-F401 [*] `datetime.timedelta` imported but unused
- --> custom_components/thermostat_contact_sensors/coordinator.py:5:22
-  |
-4 | import asyncio
-5 | from datetime import timedelta
-  |                      ^^^^^^^^^
-6 | import logging
-7 | from typing import Any
-  |
-help: Remove unused import: `datetime.timedelta`
-
-F401 [*] `.const.CONF_CONTACT_SENSORS` imported but unused
-  --> custom_components/thermostat_contact_sensors/coordinator.py:19:5
-   |
-17 |     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
-18 |     CONF_CLOSE_TIMEOUT,
-19 |     CONF_CONTACT_SENSORS,
-   |     ^^^^^^^^^^^^^^^^^^^^
-20 |     CONF_GRACE_PERIOD_MINUTES,
-21 |     CONF_MIN_CYCLE_OFF_MINUTES,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_THERMOSTAT` imported but unused
-  --> custom_components/thermostat_contact_sensors/coordinator.py:34:5
-   |
-32 |     CONF_TEMPERATURE_DEADBAND,
-33 |     CONF_TEMPERATURE_SENSORS,
-34 |     CONF_THERMOSTAT,
-   |     ^^^^^^^^^^^^^^^
-35 |     CONF_UNOCCUPIED_COOLING_THRESHOLD,
-36 |     CONF_UNOCCUPIED_HEATING_THRESHOLD,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_AREAS` imported but unused
-  --> custom_components/thermostat_contact_sensors/diagnostics.py:12:5
-   |
-11 | from .const import (
-12 |     CONF_AREAS,
-   |     ^^^^^^^^^^
-13 |     CONF_CONTACT_SENSORS,
-14 |     CONF_NOTIFY_SERVICE,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_CONTACT_SENSORS` imported but unused
-  --> custom_components/thermostat_contact_sensors/diagnostics.py:13:5
-   |
-11 | from .const import (
-12 |     CONF_AREAS,
-13 |     CONF_CONTACT_SENSORS,
-   |     ^^^^^^^^^^^^^^^^^^^^
-14 |     CONF_NOTIFY_SERVICE,
-15 |     CONF_THERMOSTAT,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_THERMOSTAT` imported but unused
-  --> custom_components/thermostat_contact_sensors/diagnostics.py:15:5
-   |
-13 |     CONF_CONTACT_SENSORS,
-14 |     CONF_NOTIFY_SERVICE,
-15 |     CONF_THERMOSTAT,
-   |     ^^^^^^^^^^^^^^^
-16 |     DOMAIN,
-17 | )
-   |
-help: Remove unused import
-
-F401 [*] `.const.DOMAIN` imported but unused
-  --> custom_components/thermostat_contact_sensors/diagnostics.py:16:5
-   |
-14 |     CONF_NOTIFY_SERVICE,
-15 |     CONF_THERMOSTAT,
-16 |     DOMAIN,
-   |     ^^^^^^
-17 | )
-18 | from .coordinator import ThermostatContactSensorsCoordinator
-   |
-help: Remove unused import
-
-F401 [*] `homeassistant.const.STATE_OFF` imported but unused
-  --> custom_components/thermostat_contact_sensors/occupancy.py:25:43
-   |
-23 | from typing import Any
-24 |
-25 | from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
-   |                                           ^^^^^^^^^
-26 | from homeassistant.core import HomeAssistant, State, callback
-27 | from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
-   |
-help: Remove unused import: `homeassistant.const.STATE_OFF`
-
-F401 [*] `.const.CONF_AREAS` imported but unused
-  --> custom_components/thermostat_contact_sensors/occupancy.py:33:5
-   |
-31 | from .const import (
-32 |     CONF_AREA_ENABLED,
-33 |     CONF_AREAS,
-   |     ^^^^^^^^^^
-34 |     CONF_BINARY_SENSORS,
-35 |     CONF_GRACE_PERIOD_MINUTES,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_GRACE_PERIOD_MINUTES` imported but unused
-  --> custom_components/thermostat_contact_sensors/occupancy.py:35:5
-   |
-33 |     CONF_AREAS,
-34 |     CONF_BINARY_SENSORS,
-35 |     CONF_GRACE_PERIOD_MINUTES,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
-36 |     CONF_MIN_OCCUPANCY_MINUTES,
-37 |     CONF_SENSORS,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_MIN_OCCUPANCY_MINUTES` imported but unused
-  --> custom_components/thermostat_contact_sensors/occupancy.py:36:5
-   |
-34 |     CONF_BINARY_SENSORS,
-35 |     CONF_GRACE_PERIOD_MINUTES,
-36 |     CONF_MIN_OCCUPANCY_MINUTES,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
-37 |     CONF_SENSORS,
-38 |     DEFAULT_GRACE_PERIOD_MINUTES,
-   |
-help: Remove unused import
-
-F402 Import `callback` from line 26 shadowed by loop variable
-   --> custom_components/thermostat_contact_sensors/occupancy.py:530:13
-    |
-528 |     def _notify_update(self) -> None:
-529 |         """Notify all registered callbacks of an update."""
-530 |         for callback in self._update_callbacks:
-    |             ^^^^^^^^
-531 |             try:
-532 |                 callback()
-    |
-
-F401 [*] `homeassistant.core.callback` imported but unused
-  --> custom_components/thermostat_contact_sensors/sensor.py:13:47
-   |
-11 | from homeassistant.config_entries import ConfigEntry
-12 | from homeassistant.const import CONF_NAME
-13 | from homeassistant.core import HomeAssistant, callback
-   |                                               ^^^^^^^^
-14 | from homeassistant.helpers.entity_platform import AddEntitiesCallback
-15 | from homeassistant.helpers.update_coordinator import CoordinatorEntity
-   |
-help: Remove unused import: `homeassistant.core.callback`
-
-F401 [*] `.const.CONF_MIN_OCCUPANCY_MINUTES` imported but unused
-  --> custom_components/thermostat_contact_sensors/sensor.py:20:5
-   |
-18 | from .const import (
-19 |     CONF_AREA_ENABLED,
-20 |     CONF_MIN_OCCUPANCY_MINUTES,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
-21 |     CONF_TEMPERATURE_SENSORS,
-22 |     DEFAULT_MIN_OCCUPANCY_MINUTES,
-   |
-help: Remove unused import
-
-F401 [*] `.const.DEFAULT_MIN_OCCUPANCY_MINUTES` imported but unused
-  --> custom_components/thermostat_contact_sensors/sensor.py:22:5
-   |
-20 |     CONF_MIN_OCCUPANCY_MINUTES,
-21 |     CONF_TEMPERATURE_SENSORS,
-22 |     DEFAULT_MIN_OCCUPANCY_MINUTES,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-23 |     DOMAIN,
-24 | )
-   |
-help: Remove unused import
-
-F401 [*] `.thermostat_control.ThermostatAction` imported but unused
-  --> custom_components/thermostat_contact_sensors/sensor.py:27:55
-   |
-25 | from .coordinator import ThermostatContactSensorsCoordinator
-26 | from .occupancy import AreaOccupancyState
-27 | from .thermostat_control import RoomTemperatureState, ThermostatAction, ThermostatState
-   |                                                       ^^^^^^^^^^^^^^^^
-28 |
-29 | _LOGGER = logging.getLogger(__name__)
-   |
-help: Remove unused import: `.thermostat_control.ThermostatAction`
-
-F401 [*] `homeassistant.core.callback` imported but unused
-  --> custom_components/thermostat_contact_sensors/thermostat_control.py:34:54
-   |
-32 |     STATE_UNKNOWN,
-33 | )
-34 | from homeassistant.core import HomeAssistant, State, callback
-   |                                                      ^^^^^^^^
-35 | from homeassistant.helpers.event import async_track_state_change_event
-36 | from homeassistant.util import dt as dt_util
-   |
-help: Remove unused import: `homeassistant.core.callback`
-
-F401 [*] `homeassistant.helpers.event.async_track_state_change_event` imported but unused
-  --> custom_components/thermostat_contact_sensors/thermostat_control.py:35:41
-   |
-33 | )
-34 | from homeassistant.core import HomeAssistant, State, callback
-35 | from homeassistant.helpers.event import async_track_state_change_event
-   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-36 | from homeassistant.util import dt as dt_util
-   |
-help: Remove unused import: `homeassistant.helpers.event.async_track_state_change_event`
-
-F401 [*] `.const.CONF_MIN_CYCLE_OFF_MINUTES` imported but unused
-  --> custom_components/thermostat_contact_sensors/thermostat_control.py:39:5
-   |
-38 | from .const import (
-39 |     CONF_MIN_CYCLE_OFF_MINUTES,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
-40 |     CONF_MIN_CYCLE_ON_MINUTES,
-41 |     CONF_TEMPERATURE_DEADBAND,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_MIN_CYCLE_ON_MINUTES` imported but unused
-  --> custom_components/thermostat_contact_sensors/thermostat_control.py:40:5
-   |
-38 | from .const import (
-39 |     CONF_MIN_CYCLE_OFF_MINUTES,
-40 |     CONF_MIN_CYCLE_ON_MINUTES,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
-41 |     CONF_TEMPERATURE_DEADBAND,
-42 |     CONF_UNOCCUPIED_COOLING_THRESHOLD,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_TEMPERATURE_DEADBAND` imported but unused
-  --> custom_components/thermostat_contact_sensors/thermostat_control.py:41:5
-   |
-39 |     CONF_MIN_CYCLE_OFF_MINUTES,
-40 |     CONF_MIN_CYCLE_ON_MINUTES,
-41 |     CONF_TEMPERATURE_DEADBAND,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
-42 |     CONF_UNOCCUPIED_COOLING_THRESHOLD,
-43 |     CONF_UNOCCUPIED_HEATING_THRESHOLD,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_UNOCCUPIED_COOLING_THRESHOLD` imported but unused
-  --> custom_components/thermostat_contact_sensors/thermostat_control.py:42:5
-   |
-40 |     CONF_MIN_CYCLE_ON_MINUTES,
-41 |     CONF_TEMPERATURE_DEADBAND,
-42 |     CONF_UNOCCUPIED_COOLING_THRESHOLD,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-43 |     CONF_UNOCCUPIED_HEATING_THRESHOLD,
-44 |     DEFAULT_MIN_CYCLE_OFF_MINUTES,
-   |
-help: Remove unused import
-
-F401 [*] `.const.CONF_UNOCCUPIED_HEATING_THRESHOLD` imported but unused
-  --> custom_components/thermostat_contact_sensors/thermostat_control.py:43:5
-   |
-41 |     CONF_TEMPERATURE_DEADBAND,
-42 |     CONF_UNOCCUPIED_COOLING_THRESHOLD,
-43 |     CONF_UNOCCUPIED_HEATING_THRESHOLD,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-44 |     DEFAULT_MIN_CYCLE_OFF_MINUTES,
-45 |     DEFAULT_MIN_CYCLE_ON_MINUTES,
-   |
-help: Remove unused import
-
-F401 [*] `asyncio` imported but unused
-  --> custom_components/thermostat_contact_sensors/vent_control.py:8:8
-   |
- 6 | from __future__ import annotations
- 7 |
- 8 | import asyncio
-   |        ^^^^^^^
- 9 | from dataclasses import dataclass, field
-10 | from datetime import datetime, timedelta
-   |
-help: Remove unused import: `asyncio`
-
-F401 [*] `datetime.timedelta` imported but unused
-  --> custom_components/thermostat_contact_sensors/vent_control.py:10:32
-   |
- 8 | import asyncio
- 9 | from dataclasses import dataclass, field
-10 | from datetime import datetime, timedelta
-   |                                ^^^^^^^^^
-11 | import logging
-12 | from typing import TYPE_CHECKING, Any
-   |
-help: Remove unused import: `datetime.timedelta`
-
-F401 [*] `homeassistant.components.group.DOMAIN` imported but unused
-  --> custom_components/thermostat_contact_sensors/vent_control.py:15:54
-   |
-14 | from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
-15 | from homeassistant.components.group import DOMAIN as GROUP_DOMAIN
-   |                                                      ^^^^^^^^^^^^
-16 | from homeassistant.const import (
-17 |     ATTR_ENTITY_ID,
-   |
-help: Remove unused import: `homeassistant.components.group.DOMAIN`
-
-F401 [*] `homeassistant.helpers.entity_registry` imported but unused
-  --> custom_components/thermostat_contact_sensors/vent_control.py:24:54
-   |
-22 | )
-23 | from homeassistant.core import HomeAssistant
-24 | from homeassistant.helpers import entity_registry as er
-   |                                                      ^^
-25 | from homeassistant.util import dt as dt_util
-   |
-help: Remove unused import: `homeassistant.helpers.entity_registry`
-
-Found 32 errors.
-[*] 28 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+AttributeError: Mock object has no attribute 'data'
+tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_async_shutdown_saves_state FAILED [ 88%]
+tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_async_setup_without_store_does_not_fail PASSED [ 88%]
+tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_async_shutdown_without_store_does_not_fail PASSED [ 89%]
+tests/test_vent_control.py::TestVentControllerInit::test_default_values PASSED [ 89%]
+tests/test_vent_control.py::TestVentControllerInit::test_custom_values PASSED [ 89%]
+tests/test_vent_control.py::TestVentControllerInit::test_setters PASSED  [ 89%]
+tests/test_vent_control.py::TestGroupDetection::test_single_vent_not_group PASSED [ 90%]
+tests/test_vent_control.py::TestGroupDetection::test_group_detected PASSED [ 90%]
+tests/test_vent_control.py::TestGroupDetection::test_none_state_returns_defaults PASSED [ 90%]
+tests/test_vent_control.py::TestVentCurrentState::test_open_state PASSED [ 91%]
+tests/test_vent_control.py::TestVentCurrentState::test_closed_state PASSED [ 91%]
+tests/test_vent_control.py::TestVentCurrentState::test_tilt_position_open PASSED [ 91%]
+tests/test_vent_control.py::TestVentCurrentState::test_tilt_position_closed PASSED [ 91%]
+tests/test_vent_control.py::TestVentCurrentState::test_unavailable_state PASSED [ 92%]
+tests/test_vent_control.py::TestVentCurrentState::test_none_state PASSED [ 92%]
+tests/test_vent_control.py::TestDebounce::test_no_previous_command PASSED [ 92%]
+tests/test_vent_control.py::TestDebounce::test_within_debounce_period PASSED [ 92%]
+tests/test_vent_control.py::TestDebounce::test_after_debounce_period PASSED [ 93%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_critical_room_vents_open PASSED [ 93%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_active_unsatiated_vents_open PASSED [ 93%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_active_satiated_but_occupied_past_delay_vents_open PASSED [ 94%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_satiated_not_occupied_vents_closed PASSED [ 94%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_occupied_past_delay_vents_open PASSED [ 94%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_occupied_before_delay_vents_closed PASSED [ 94%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_inactive_vents_closed PASSED [ 95%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_per_area_vent_delay_override PASSED [ 95%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_vent_group_member_count PASSED [ 95%]
+tests/test_vent_control.py::TestMinimumVentsOpen::test_minimum_vents_kept_open PASSED [ 96%]
+tests/test_vent_control.py::TestMinimumVentsOpen::test_group_counts_as_multiple_vents PASSED [ 96%]
+tests/test_vent_control.py::TestEvaluateAllVents::test_pending_commands_generated PASSED [ 96%]
+tests/test_vent_control.py::TestEvaluateAllVents::test_no_commands_when_state_matches PASSED [ 96%]
+tests/test_vent_control.py::TestExecuteVentCommands::test_open_command_executed PASSED [ 97%]
+tests/test_vent_control.py::TestExecuteVentCommands::test_close_command_executed PASSED [ 97%]
+tests/test_vent_control.py::TestExecuteVentCommands::test_multiple_commands_executed PASSED [ 97%]
+tests/test_vent_control.py::TestExecuteVentCommands::test_command_error_handled PASSED [ 98%]
+tests/test_vent_control.py::TestGetSummary::test_summary_structure PASSED [ 98%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_distance_from_target_uses_target_temperature PASSED [ 98%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_distance_from_target_zero_when_satiated PASSED [ 98%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_distance_from_target_zero_when_no_target PASSED [ 99%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_distance_priority_for_minimum_vents PASSED [ 99%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_heat_mode_prioritizes_coldest_rooms PASSED [ 99%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_cool_mode_prioritizes_hottest_rooms PASSED [100%]
+=================================== FAILURES ===================================
+_ TestWeTurnedOffFlag.test_thermostat_off_continues_evaluation_when_we_turned_off _
+tests/test_thermostat_control.py:1729: in test_thermostat_off_continues_evaluation_when_we_turned_off
+    assert state.recommended_action == ThermostatAction.TURN_ON
+E   AssertionError: assert <ThermostatAction.NONE: 'none'> == <ThermostatAction.TURN_ON: 'turn_on'>
+E    +  where <ThermostatAction.NONE: 'none'> = ThermostatState(thermostat_entity_id='climate.test_thermostat', hvac_mode=<HVACMode.OFF: 'off'>, is_on=False, target_temperature=72.0, target_temp_high=None, target_temp_low=None, room_states={'living_room': RoomTemperatureState(area_id='living_room', area_name='Living Room', temperature_sensors=['sensor.living_room_temperature'], sensor_readings={'sensor.living_room_temperature': 68.0}, is_satiated=True, satiation_reason=<SatiationReason.SATIATED: 'satiated'>, is_critical=False, critical_reason=None, is_active=True, determining_sensor=None, determining_temperature=None, target_temperature=None)}, all_active_rooms_satiated=True, active_room_count=1, satiated_room_count=1, critical_room_count=0, last_on_time=None, last_off_time=None, recommended_action=<ThermostatAction.NONE: 'none'>, action_reason='Already off, all rooms satiated').recommended_action
+E    +  and   <ThermostatAction.TURN_ON: 'turn_on'> = ThermostatAction.TURN_ON
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+----------------------------- Captured stderr call -----------------------------
+DEBUG:custom_components.thermostat_contact_sensors.thermostat_control:Thermostat is off (we turned it off) - continuing evaluation
+------------------------------ Captured log call -------------------------------
+DEBUG    custom_components.thermostat_contact_sensors.thermostat_control:thermostat_control.py:877 Thermostat is off (we turned it off) - continuing evaluation
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_ TestThermostatControllerPersistence.test_controller_with_entry_id_has_store __
+tests/test_thermostat_control.py:1830: in test_controller_with_entry_id_has_store
+    controller = ThermostatController(
+custom_components/thermostat_contact_sensors/thermostat_control.py:368: in __init__
+    self._store: Store | None = Store(
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/homeassistant/helpers/storage.py:261: in __init__
+    self._manager = get_internal_store_manager(hass)
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/homeassistant/helpers/storage.py:100: in get_internal_store_manager
+    if STORAGE_MANAGER not in hass.data:
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/unittest/mock.py:660: in __getattr__
+    raise AttributeError("Mock object has no attribute %r" % name)
+E   AttributeError: Mock object has no attribute 'data'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_____ TestThermostatControllerPersistence.test_async_setup_restores_state ______
+tests/test_thermostat_control.py:1841: in test_async_setup_restores_state
+    controller = ThermostatController(
+custom_components/thermostat_contact_sensors/thermostat_control.py:368: in __init__
+    self._store: Store | None = Store(
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/homeassistant/helpers/storage.py:261: in __init__
+    self._manager = get_internal_store_manager(hass)
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/homeassistant/helpers/storage.py:100: in get_internal_store_manager
+    if STORAGE_MANAGER not in hass.data:
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/unittest/mock.py:660: in __getattr__
+    raise AttributeError("Mock object has no attribute %r" % name)
+E   AttributeError: Mock object has no attribute 'data'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_____ TestThermostatControllerPersistence.test_async_shutdown_saves_state ______
+tests/test_thermostat_control.py:1862: in test_async_shutdown_saves_state
+    controller = ThermostatController(
+custom_components/thermostat_contact_sensors/thermostat_control.py:368: in __init__
+    self._store: Store | None = Store(
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/homeassistant/helpers/storage.py:261: in __init__
+    self._manager = get_internal_store_manager(hass)
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/homeassistant/helpers/storage.py:100: in get_internal_store_manager
+    if STORAGE_MANAGER not in hass.data:
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/unittest/mock.py:660: in __getattr__
+    raise AttributeError("Mock object has no attribute %r" % name)
+E   AttributeError: Mock object has no attribute 'data'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+---------- coverage: platform linux, python 3.12.12-final-0 ----------
+Coverage XML written to file coverage.xml
+=========================== short test summary info ============================
+FAILED tests/test_thermostat_control.py::TestWeTurnedOffFlag::test_thermostat_off_continues_evaluation_when_we_turned_off - AssertionError: assert <ThermostatAction.NONE: 'none'> == <ThermostatAction.TURN_ON: 'turn_on'>
+ +  where <ThermostatAction.NONE: 'none'> = ThermostatState(thermostat_entity_id='climate.test_thermostat', hvac_mode=<HVACMode.OFF: 'off'>, is_on=False, target_temperature=72.0, target_temp_high=None, target_temp_low=None, room_states={'living_room': RoomTemperatureState(area_id='living_room', area_name='Living Room', temperature_sensors=['sensor.living_room_temperature'], sensor_readings={'sensor.living_room_temperature': 68.0}, is_satiated=True, satiation_reason=<SatiationReason.SATIATED: 'satiated'>, is_critical=False, critical_reason=None, is_active=True, determining_sensor=None, determining_temperature=None, target_temperature=None)}, all_active_rooms_satiated=True, active_room_count=1, satiated_room_count=1, critical_room_count=0, last_on_time=None, last_off_time=None, recommended_action=<ThermostatAction.NONE: 'none'>, action_reason='Already off, all rooms satiated').recommended_action
+ +  and   <ThermostatAction.TURN_ON: 'turn_on'> = ThermostatAction.TURN_ON
+FAILED tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_controller_with_entry_id_has_store - AttributeError: Mock object has no attribute 'data'
+FAILED tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_async_setup_restores_state - AttributeError: Mock object has no attribute 'data'
+FAILED tests/test_thermostat_control.py::TestThermostatControllerPersistence::test_async_shutdown_saves_state - AttributeError: Mock object has no attribute 'data'
+======================== 4 failed, 352 passed in 32.71s ========================
 Error: Process completed with exit code 1.
