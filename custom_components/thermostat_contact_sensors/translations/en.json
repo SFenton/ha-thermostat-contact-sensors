@@ -145,5 +145,42 @@
         "name": "Open Sensors"
       }
     }
+  },
+  "exceptions": {
+    "entry_not_found": {
+      "message": "Config entry not found: {entry_id}"
+    }
+  },
+  "services": {
+    "pause": {
+      "name": "Pause",
+      "description": "Manually pause the thermostat (as if a window was opened).",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Config entry ID of the integration."
+        }
+      }
+    },
+    "resume": {
+      "name": "Resume",
+      "description": "Manually resume the thermostat (as if all windows were closed).",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Config entry ID of the integration."
+        }
+      }
+    },
+    "recalculate": {
+      "name": "Recalculate",
+      "description": "Force recalculation of thermostat state and vent positions.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Config entry ID of the integration."
+        }
+      }
+    }
   }
 }

@@ -106,6 +106,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Listener cleanup
         self._unsub_state_change: callable | None = None
         self._unsub_thermostat_state_change: callable | None = None
+        self._unsub_temp_sensor_state_change: callable | None = None
 
         # Occupancy tracker
         min_occupancy = self._options.get(
@@ -271,6 +272,36 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         return self._last_thermostat_state
 
+    async def async_update_thermostat_state(self) -> ThermostatState | None:
+        """Evaluate, update, and execute thermostat control actions.
+
+        This is the async version that also executes the recommended action.
+
+        Returns:
+            The updated ThermostatState.
+        """
+        # First evaluate the state
+        state = self.update_thermostat_state()
+
+        if state is None:
+            return None
+
+        # Don't execute actions if paused by contact sensors
+        # (the contact sensor logic handles turning off/on)
+        if self.is_paused:
+            _LOGGER.debug("Skipping thermostat action execution - paused by contact sensors")
+            return state
+
+        # Execute the recommended action
+        executed = await self.thermostat_controller.async_execute_action(state)
+        if executed:
+            _LOGGER.debug(
+                "Thermostat action executed: %s",
+                state.recommended_action.value if state.recommended_action else "none",
+            )
+
+        return state
+
     def update_options(self, options: dict[str, Any]) -> None:
         """Update options from config entry."""
         self._options = options
@@ -340,14 +371,25 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self._async_thermostat_state_changed,
         )
 
+        # Subscribe to temperature sensor state changes for vent control updates
+        all_temp_sensors = []
+        for area_config in self._areas_config.values():
+            all_temp_sensors.extend(area_config.get(CONF_TEMPERATURE_SENSORS, []))
+        if all_temp_sensors:
+            self._unsub_temp_sensor_state_change = async_track_state_change_event(
+                self.hass,
+                all_temp_sensors,
+                self._async_temp_sensor_state_changed,
+            )
+
         _LOGGER.debug(
             "Coordinator setup complete. Monitoring %d sensors for thermostat %s",
             len(self.contact_sensors),
             self.thermostat,
         )
 
-        # Initial thermostat state evaluation
-        self.update_thermostat_state()
+        # Initial thermostat state evaluation and action execution
+        await self.async_update_thermostat_state()
 
         # Initial vent control evaluation
         await self.async_update_vents()
@@ -365,13 +407,45 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self._unsub_thermostat_state_change()
             self._unsub_thermostat_state_change = None
 
+        if self._unsub_temp_sensor_state_change:
+            self._unsub_temp_sensor_state_change()
+            self._unsub_temp_sensor_state_change = None
+
         # Shut down occupancy tracker
         await self.occupancy_tracker.async_shutdown()
 
     async def _async_occupancy_changed(self) -> None:
         """Handle occupancy state changes."""
         _LOGGER.debug("Occupancy changed, updating thermostat state")
-        self.update_thermostat_state()
+        await self.async_update_thermostat_state()
+        await self.async_update_vents()
+        self.async_set_updated_data(None)
+
+    @callback
+    def _async_temp_sensor_state_changed(self, event) -> None:
+        """Handle temperature sensor state changes."""
+        entity_id = event.data.get("entity_id")
+        new_state = event.data.get("new_state")
+
+        if new_state is None:
+            return
+
+        # Ignore unavailable/unknown states
+        if new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+
+        _LOGGER.debug(
+            "Temperature sensor %s changed to %s",
+            entity_id,
+            new_state.state,
+        )
+
+        # Update thermostat state and vents (async tasks from callback)
+        self.hass.async_create_task(self._async_handle_temp_change())
+
+    async def _async_handle_temp_change(self) -> None:
+        """Handle temperature change - evaluate and execute thermostat actions."""
+        await self.async_update_thermostat_state()
         await self.async_update_vents()
         self.async_set_updated_data(None)
 

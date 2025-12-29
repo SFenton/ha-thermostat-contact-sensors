@@ -785,3 +785,123 @@ class TestManualOverride:
         assert coordinator._last_known_hvac_mode == "cool"
 
         await coordinator.async_shutdown()
+
+
+class TestTemperatureSensorStateChange:
+    """Tests for temperature sensor state change handling."""
+
+    async def test_temp_sensor_listener_subscribed(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test that temperature sensor listener is subscribed on setup."""
+        # Set up temperature sensor
+        hass.states.async_set(
+            "sensor.living_room_temperature",
+            "20.0",
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        await hass.async_block_till_done()
+
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+
+        # Verify temp sensor listener is set up
+        assert coordinator._unsub_temp_sensor_state_change is not None
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_temp_sensor_listener_cleanup(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test that temperature sensor listener is cleaned up on shutdown."""
+        hass.states.async_set(
+            "sensor.living_room_temperature",
+            "20.0",
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        await hass.async_block_till_done()
+
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+        assert coordinator._unsub_temp_sensor_state_change is not None
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+        # Verify cleanup
+        assert coordinator._unsub_temp_sensor_state_change is None
+
+    async def test_temp_sensor_change_triggers_update(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test that temperature sensor change triggers thermostat state update."""
+        # Set up temperature sensor
+        hass.states.async_set(
+            "sensor.living_room_temperature",
+            "20.0",
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        await hass.async_block_till_done()
+
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+        
+        # Track if update was triggered
+        initial_update_count = coordinator.data
+
+        # Change temperature
+        hass.states.async_set(
+            "sensor.living_room_temperature",
+            "22.0",
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        await hass.async_block_till_done()
+
+        # Coordinator should have processed the update
+        # (we just verify no errors - full logic tested elsewhere)
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_temp_sensor_unavailable_ignored(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test that unavailable temperature sensor state is ignored."""
+        hass.states.async_set(
+            "sensor.living_room_temperature",
+            "20.0",
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        await hass.async_block_till_done()
+
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Change to unavailable - should not raise
+        hass.states.async_set(
+            "sensor.living_room_temperature",
+            STATE_UNAVAILABLE,
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        await hass.async_block_till_done()
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)

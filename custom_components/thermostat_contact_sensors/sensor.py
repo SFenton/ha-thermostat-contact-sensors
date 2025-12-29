@@ -18,12 +18,13 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_AREA_ENABLED,
     CONF_MIN_OCCUPANCY_MINUTES,
+    CONF_TEMPERATURE_SENSORS,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
     DOMAIN,
 )
 from .coordinator import ThermostatContactSensorsCoordinator
 from .occupancy import AreaOccupancyState
-from .thermostat_control import ThermostatAction, ThermostatState
+from .thermostat_control import RoomTemperatureState, ThermostatAction, ThermostatState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,12 +42,18 @@ async def async_setup_entry(
         ThermostatControlSensor(coordinator, entry),
     ]
 
-    # Create a sensor for each enabled area
+    # Create sensors for each enabled area
     for area_id, area_config in coordinator.areas_config.items():
         if area_config.get(CONF_AREA_ENABLED, True):
+            # Occupancy sensor
             entities.append(
                 RoomOccupancySensor(coordinator, entry, area_id)
             )
+            # Temperature/satiation sensor (only if area has temp sensors)
+            if area_config.get(CONF_TEMPERATURE_SENSORS):
+                entities.append(
+                    RoomTemperatureSensor(coordinator, entry, area_id)
+                )
 
     async_add_entities(entities)
 
@@ -390,5 +397,139 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
             if room_state.determining_temperature is not None:
                 room_summary[area_id]["determining_temperature"] = room_state.determining_temperature
         attrs["room_summary"] = room_summary
+
+        return attrs
+
+
+class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing temperature and satiation status for a room/area."""
+
+    _attr_has_entity_name = True
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "°"
+    _attr_icon = "mdi:thermometer"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+        area_id: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._area_id = area_id
+        self._attr_unique_id = f"{entry.entry_id}_{area_id}_temperature"
+
+        # Get area name from config
+        area_config = coordinator.areas_config.get(area_id, {})
+        self._area_name = area_config.get("name", area_id.replace("_", " ").title())
+        self._attr_name = f"{self._area_name} Temperature"
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get("name", "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    def _get_room_state(self) -> RoomTemperatureState | None:
+        """Get the room temperature state from the last thermostat evaluation."""
+        thermostat_state = self.coordinator.last_thermostat_state
+        if thermostat_state is None:
+            return None
+        return thermostat_state.room_states.get(self._area_id)
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the determining temperature for this room."""
+        room_state = self._get_room_state()
+        if room_state is None:
+            return None
+        return room_state.determining_temperature
+
+    @property
+    def icon(self) -> str:
+        """Return the icon based on satiation state."""
+        room_state = self._get_room_state()
+        if room_state is None:
+            return "mdi:thermometer"
+
+        if room_state.is_satiated:
+            return "mdi:thermometer-check"
+        elif room_state.is_critical:
+            return "mdi:thermometer-alert"
+        else:
+            return "mdi:thermometer"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        room_state = self._get_room_state()
+        thermostat_state = self.coordinator.last_thermostat_state
+
+        attrs: dict[str, Any] = {
+            "area_id": self._area_id,
+            "area_name": self._area_name,
+        }
+
+        if room_state is None:
+            attrs["is_satiated"] = None
+            attrs["satiation_reason"] = None
+            attrs["has_valid_readings"] = False
+            return attrs
+
+        # Satiation status
+        attrs["is_satiated"] = room_state.is_satiated
+        attrs["satiation_reason"] = (
+            room_state.satiation_reason.value if room_state.satiation_reason else None
+        )
+        attrs["is_active"] = room_state.is_active
+        attrs["is_critical"] = room_state.is_critical
+        attrs["critical_reason"] = room_state.critical_reason
+
+        # Temperature details
+        attrs["has_valid_readings"] = room_state.has_valid_readings
+        attrs["sensor_readings"] = room_state.sensor_readings
+        attrs["determining_sensor"] = room_state.determining_sensor
+        attrs["determining_temperature"] = room_state.determining_temperature
+        attrs["target_temperature"] = room_state.target_temperature
+
+        # Distance from target
+        if (
+            room_state.determining_temperature is not None
+            and room_state.target_temperature is not None
+        ):
+            attrs["distance_from_target"] = round(
+                abs(room_state.determining_temperature - room_state.target_temperature),
+                2,
+            )
+        else:
+            attrs["distance_from_target"] = None
+
+        # Sensor friendly names
+        sensor_names = {}
+        for sensor_id in room_state.temperature_sensors:
+            state = self.hass.states.get(sensor_id)
+            if state:
+                sensor_names[sensor_id] = state.attributes.get("friendly_name", sensor_id)
+            else:
+                sensor_names[sensor_id] = sensor_id
+        attrs["sensor_names"] = sensor_names
+
+        # Target temps from thermostat
+        if thermostat_state:
+            attrs["hvac_mode"] = (
+                thermostat_state.hvac_mode.value if thermostat_state.hvac_mode else None
+            )
+            if thermostat_state.target_temperature is not None:
+                attrs["thermostat_target"] = thermostat_state.target_temperature
+            if thermostat_state.target_temp_low is not None:
+                attrs["thermostat_target_low"] = thermostat_state.target_temp_low
+            if thermostat_state.target_temp_high is not None:
+                attrs["thermostat_target_high"] = thermostat_state.target_temp_high
 
         return attrs

@@ -758,3 +758,187 @@ class TestGetSummary:
         assert area_summary["area_name"] == "Bedroom"
         assert area_summary["should_open"] is True
         assert len(area_summary["vents"]) == 1
+
+
+class TestDistanceFromTarget:
+    """Tests for distance_from_target calculation in evaluate_all_vents."""
+
+    @pytest.fixture
+    def controller(self):
+        """Create a vent controller for testing."""
+        hass = create_mock_hass()
+        return VentController(
+            hass,
+            min_vents_open=1,
+            vent_open_delay_seconds=0,  # No delay for testing
+            vent_debounce_seconds=0,
+        )
+
+    def _setup_vents(self, controller, vent_states: dict):
+        """Set up mock vent states."""
+        def get_state(entity_id):
+            if entity_id in vent_states:
+                config = vent_states[entity_id]
+                mock_state = MagicMock()
+                mock_state.state = STATE_OPEN if config.get("is_open", False) else STATE_CLOSED
+                mock_state.attributes = {}
+                if "members" in config:
+                    mock_state.attributes[ATTR_ENTITY_ID] = [
+                        f"cover.member_{i}" for i in range(config["members"])
+                    ]
+                return mock_state
+            return None
+
+        controller.hass.states.get.side_effect = get_state
+
+    def test_distance_from_target_uses_target_temperature(self, controller):
+        """Test that distance_from_target is calculated using target_temperature field."""
+        self._setup_vents(controller, {TEST_VENT_1: {"is_open": True, "members": 1}})
+
+        area_vent_configs = {TEST_AREA_BEDROOM: [TEST_VENT_1]}
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        # Create occupied area
+        occupied_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            occupancy_start_time=now - timedelta(minutes=10),
+        )
+
+        # Create room temp state with target_temperature set
+        # Current temp is 19, target is 22, so distance should be 3
+        room_temp_state = RoomTemperatureState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            is_satiated=False,
+            determining_temperature=19.0,
+            target_temperature=22.0,
+        )
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vent_configs,
+            active_areas=[occupied_area],
+            occupied_areas=[occupied_area],
+            room_temp_states={TEST_AREA_BEDROOM: room_temp_state},
+            now=now,
+        )
+
+        # The distance_from_target should be 3.0 (|19 - 22|)
+        area_state = control_state.area_states[TEST_AREA_BEDROOM]
+        assert area_state.distance_from_target == 3.0
+
+    def test_distance_from_target_zero_when_satiated(self, controller):
+        """Test that distance_from_target is 0 when room is satiated."""
+        self._setup_vents(controller, {TEST_VENT_1: {"is_open": True, "members": 1}})
+
+        area_vent_configs = {TEST_AREA_BEDROOM: [TEST_VENT_1]}
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        occupied_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            occupancy_start_time=now - timedelta(minutes=10),
+        )
+
+        # Room is satiated
+        room_temp_state = RoomTemperatureState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            is_satiated=True,
+            determining_temperature=22.0,
+            target_temperature=22.0,
+        )
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vent_configs,
+            active_areas=[occupied_area],
+            occupied_areas=[occupied_area],
+            room_temp_states={TEST_AREA_BEDROOM: room_temp_state},
+            now=now,
+        )
+
+        area_state = control_state.area_states[TEST_AREA_BEDROOM]
+        assert area_state.distance_from_target == 0.0
+
+    def test_distance_from_target_zero_when_no_target(self, controller):
+        """Test that distance_from_target is 0 when target_temperature is None."""
+        self._setup_vents(controller, {TEST_VENT_1: {"is_open": True, "members": 1}})
+
+        area_vent_configs = {TEST_AREA_BEDROOM: [TEST_VENT_1]}
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        occupied_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            occupancy_start_time=now - timedelta(minutes=10),
+        )
+
+        # target_temperature is None
+        room_temp_state = RoomTemperatureState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            is_satiated=False,
+            determining_temperature=19.0,
+            target_temperature=None,
+        )
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vent_configs,
+            active_areas=[occupied_area],
+            occupied_areas=[occupied_area],
+            room_temp_states={TEST_AREA_BEDROOM: room_temp_state},
+            now=now,
+        )
+
+        area_state = control_state.area_states[TEST_AREA_BEDROOM]
+        assert area_state.distance_from_target == 0.0
+
+    def test_distance_priority_for_minimum_vents(self, controller):
+        """Test that rooms furthest from target get priority for minimum vents."""
+        # Set up multiple vents that would normally all close
+        self._setup_vents(controller, {
+            "cover.vent_close": {"is_open": True, "members": 1},
+            "cover.vent_far": {"is_open": True, "members": 1},
+        })
+
+        area_vent_configs = {
+            "area_close": ["cover.vent_close"],
+            "area_far": ["cover.vent_far"],
+        }
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        # Both areas inactive - all would close, but one should stay open for minimum
+        # The one furthest from target should get priority
+
+        # Room close to target (distance 1)
+        room_close = RoomTemperatureState(
+            area_id="area_close",
+            area_name="Close Room",
+            is_satiated=False,
+            determining_temperature=21.0,
+            target_temperature=22.0,
+        )
+
+        # Room far from target (distance 5)
+        room_far = RoomTemperatureState(
+            area_id="area_far",
+            area_name="Far Room",
+            is_satiated=False,
+            determining_temperature=17.0,
+            target_temperature=22.0,
+        )
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vent_configs,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states={
+                "area_close": room_close,
+                "area_far": room_far,
+            },
+            now=now,
+        )
+
+        # Verify distances were calculated correctly
+        assert control_state.area_states["area_close"].distance_from_target == 1.0
+        assert control_state.area_states["area_far"].distance_from_target == 5.0

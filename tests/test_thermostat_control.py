@@ -520,6 +520,23 @@ class TestRoomTemperatureState:
         assert sensor is None
         assert temp is None
 
+    def test_target_temperature_field(self):
+        """Test that target_temperature field is stored correctly."""
+        room = RoomTemperatureState(
+            area_id="test_area",
+            area_name="Test Area",
+            target_temperature=22.5,
+        )
+        assert room.target_temperature == 22.5
+
+    def test_target_temperature_default_none(self):
+        """Test that target_temperature defaults to None."""
+        room = RoomTemperatureState(
+            area_id="test_area",
+            area_name="Test Area",
+        )
+        assert room.target_temperature is None
+
 
 # =============================================================================
 # Tests for ThermostatController

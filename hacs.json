@@ -1,6 +1,6 @@
 {
   "name": "Thermostat Contact Sensors",
   "render_readme": true,
-  "domains": ["binary_sensor", "sensor"],
+  "domains": ["binary_sensor", "sensor", "switch"],
   "homeassistant": "2024.1.0"
 }

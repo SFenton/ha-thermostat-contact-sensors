@@ -104,6 +104,9 @@ class RoomTemperatureState:
     determining_sensor: str | None = None
     determining_temperature: float | None = None
 
+    # Target temperature for distance calculations
+    target_temperature: float | None = None
+
     @property
     def has_valid_readings(self) -> bool:
         """Return True if at least one sensor has a valid reading."""
@@ -561,6 +564,7 @@ class ThermostatController:
             room_state.is_satiated = is_sat
             room_state.determining_sensor = sensor
             room_state.determining_temperature = temp
+            room_state.target_temperature = target_temp
             room_state.satiation_reason = (
                 SatiationReason.SATIATED if is_sat else SatiationReason.NOT_SATIATED
             )
@@ -576,6 +580,7 @@ class ThermostatController:
             room_state.is_satiated = is_sat
             room_state.determining_sensor = sensor
             room_state.determining_temperature = temp
+            room_state.target_temperature = target_temp
             room_state.satiation_reason = (
                 SatiationReason.SATIATED if is_sat else SatiationReason.NOT_SATIATED
             )
@@ -594,6 +599,8 @@ class ThermostatController:
             room_state.is_satiated = is_sat
             room_state.determining_sensor = sensor
             room_state.determining_temperature = temp
+            # For heat_cool, use the midpoint as target for distance calculations
+            room_state.target_temperature = (target_temp_low + target_temp_high) / 2
             room_state.satiation_reason = (
                 SatiationReason.SATIATED if is_sat else SatiationReason.NOT_SATIATED
             )
@@ -1010,3 +1017,92 @@ class ThermostatController:
                 for area_id, room in state.room_states.items()
             },
         }
+
+    async def async_execute_action(
+        self,
+        thermostat_state: ThermostatState,
+    ) -> bool:
+        """Execute the recommended thermostat action.
+
+        Args:
+            thermostat_state: The evaluated thermostat state with recommended_action.
+
+        Returns:
+            True if an action was executed, False otherwise.
+        """
+        if thermostat_state.recommended_action == ThermostatAction.NONE:
+            return False
+
+        if thermostat_state.recommended_action in (
+            ThermostatAction.WAIT_CYCLE_ON,
+            ThermostatAction.WAIT_CYCLE_OFF,
+        ):
+            _LOGGER.debug(
+                "Thermostat action %s - waiting for cycle protection: %s",
+                thermostat_state.recommended_action.value,
+                thermostat_state.action_reason,
+            )
+            return False
+
+        if thermostat_state.recommended_action == ThermostatAction.TURN_ON:
+            # Get the previous HVAC mode to restore
+            previous_mode = self._previous_hvac_mode
+            if previous_mode and previous_mode != HVACMode.OFF:
+                target_mode = previous_mode
+            else:
+                # Default to heat if no previous mode
+                target_mode = HVACMode.HEAT
+
+            _LOGGER.info(
+                "Executing thermostat TURN_ON action: setting %s to %s. Reason: %s",
+                self._thermostat_entity_id,
+                target_mode.value if hasattr(target_mode, 'value') else target_mode,
+                thermostat_state.action_reason,
+            )
+
+            await self.hass.services.async_call(
+                "climate",
+                "set_hvac_mode",
+                {
+                    "entity_id": self._thermostat_entity_id,
+                    "hvac_mode": target_mode.value if hasattr(target_mode, 'value') else target_mode,
+                },
+                blocking=True,
+            )
+
+            # Update cycle tracking
+            self._last_turn_on_time = dt_util.utcnow()
+            return True
+
+        if thermostat_state.recommended_action == ThermostatAction.TURN_OFF:
+            _LOGGER.info(
+                "Executing thermostat TURN_OFF action: setting %s to off. Reason: %s",
+                self._thermostat_entity_id,
+                thermostat_state.action_reason,
+            )
+
+            # Store current mode before turning off
+            current_state = self.hass.states.get(self._thermostat_entity_id)
+            if current_state and current_state.state not in (
+                STATE_UNAVAILABLE,
+                STATE_UNKNOWN,
+                HVACMode.OFF.value,
+                "off",
+            ):
+                self._previous_hvac_mode = current_state.state
+
+            await self.hass.services.async_call(
+                "climate",
+                "set_hvac_mode",
+                {
+                    "entity_id": self._thermostat_entity_id,
+                    "hvac_mode": HVACMode.OFF.value,
+                },
+                blocking=True,
+            )
+
+            # Update cycle tracking
+            self._last_turn_off_time = dt_util.utcnow()
+            return True
+
+        return False

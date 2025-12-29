@@ -1,12 +1,12 @@
 {
   "domain": "thermostat_contact_sensors",
   "name": "Thermostat Contact Sensors",
-  "codeowners": [],
+  "codeowners": ["@sfentress"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/your-repo/ha-thermostat-contact-sensors",
+  "documentation": "https://github.com/sfentress/ha-thermostat-contact-sensors",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/your-repo/ha-thermostat-contact-sensors/issues",
+  "issue_tracker": "https://github.com/sfentress/ha-thermostat-contact-sensors/issues",
   "requirements": [],
   "version": "2.0.0"
 }

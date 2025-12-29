@@ -1,0 +1,35 @@
+pause:
+  name: Pause
+  description: Manually pause the thermostat (as if a window was opened).
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry ID of the thermostat contact sensors integration.
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+
+resume:
+  name: Resume
+  description: Manually resume the thermostat (as if all windows were closed).
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry ID of the thermostat contact sensors integration.
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+
+recalculate:
+  name: Recalculate
+  description: Force recalculation of thermostat state and vent positions.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry ID of the thermostat contact sensors integration.
+      required: true
+      example: "abc123def456"
+      selector:
+        text:

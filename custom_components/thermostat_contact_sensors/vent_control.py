@@ -450,11 +450,13 @@ class VentController:
                 # Calculate distance from target for prioritization
                 if temp_state.is_satiated:
                     distance_from_target = 0.0
-                else:
+                elif temp_state.target_temperature is not None:
                     distance_from_target = abs(
                         temp_state.determining_temperature
-                        - (temp_state.determining_temperature or 0)
+                        - temp_state.target_temperature
                     )
+                else:
+                    distance_from_target = 0.0
 
             # Get area name from first occupied/active area match
             area_name = area_id
