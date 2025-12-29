@@ -13,7 +13,12 @@ from custom_components.thermostat_contact_sensors import (
     SERVICE_RECALCULATE,
     SERVICE_RESUME,
 )
-from custom_components.thermostat_contact_sensors.const import DOMAIN
+from custom_components.thermostat_contact_sensors.const import (
+    CONF_AREAS,
+    CONF_CONTACT_SENSORS,
+    CONF_THERMOSTAT,
+    DOMAIN,
+)
 
 from .conftest import TEST_THERMOSTAT
 
@@ -66,9 +71,9 @@ class TestServiceRegistration:
             version=2,
             data={
                 "name": "Second Config",
-                "contact_sensors": ["binary_sensor.front_door_contact"],
-                "thermostat": "climate.second_thermostat",
-                "areas": {},
+                CONF_CONTACT_SENSORS: ["binary_sensor.front_door_contact"],
+                CONF_THERMOSTAT: "climate.second_thermostat",
+                CONF_AREAS: {},
             },
             options={
                 "min_occupancy_minutes": 5,

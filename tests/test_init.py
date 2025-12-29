@@ -8,6 +8,7 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.thermostat_contact_sensors.const import (
+    CONF_AREAS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
     CONF_NOTIFICATION_TAG,
@@ -205,10 +206,12 @@ async def test_multiple_config_entries(
     second_entry = MockConfigEntry(
         domain=DOMAIN,
         title="Second Thermostat Config",
+        version=2,  # Must match current config version to skip migration
         data={
             "name": "Second Thermostat Config",
             CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
             CONF_THERMOSTAT: "climate.second_thermostat",
+            CONF_AREAS: {},  # Required for v2
         },
         options={
             CONF_OPEN_TIMEOUT: 2,

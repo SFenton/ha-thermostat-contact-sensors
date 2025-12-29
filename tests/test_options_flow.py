@@ -344,7 +344,7 @@ async def test_options_flow_thermostat_required(
     The EntitySelector validates that the thermostat must be a valid entity ID.
     When an empty string is provided, the schema validation rejects it.
     """
-    import voluptuous
+    from homeassistant.data_entry_flow import InvalidData
 
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -360,7 +360,7 @@ async def test_options_flow_thermostat_required(
     )
 
     # Try to submit without thermostat - should raise schema validation error
-    with pytest.raises(voluptuous.error.MultipleInvalid):
+    with pytest.raises(InvalidData):
         await hass.config_entries.options.async_configure(
             result["flow_id"],
             user_input={

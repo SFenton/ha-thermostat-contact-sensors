@@ -163,26 +163,14 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         """Handle the pause service call."""
         entry_id = call.data[ATTR_ENTRY_ID]
         coordinator = _get_coordinator_by_entry_id(hass, entry_id)
-
-        if coordinator.is_paused:
-            _LOGGER.info("Thermostat already paused")
-            return
-
-        # Manually trigger pause
-        await coordinator._async_open_timeout_expired()
+        await coordinator.async_pause()
         _LOGGER.info("Thermostat paused via service call")
 
     async def async_handle_resume(call: ServiceCall) -> None:
         """Handle the resume service call."""
         entry_id = call.data[ATTR_ENTRY_ID]
         coordinator = _get_coordinator_by_entry_id(hass, entry_id)
-
-        if not coordinator.is_paused:
-            _LOGGER.info("Thermostat not paused")
-            return
-
-        # Manually trigger resume
-        await coordinator._async_close_timeout_expired()
+        await coordinator.async_resume()
         _LOGGER.info("Thermostat resumed via service call")
 
     async def async_handle_recalculate(call: ServiceCall) -> None:

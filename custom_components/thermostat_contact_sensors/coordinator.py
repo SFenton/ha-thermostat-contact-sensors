@@ -750,6 +750,73 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info("Thermostat resumed to mode: %s", self.previous_hvac_mode)
 
+    async def async_pause(self) -> None:
+        """Pause the thermostat via service call (bypasses sensor checks)."""
+        if self.is_paused:
+            _LOGGER.info("Thermostat already paused")
+            return
+
+        _LOGGER.info("Pausing thermostat via service call")
+
+        # Get current HVAC mode before turning off
+        climate_state = self.hass.states.get(self.thermostat)
+        if climate_state:
+            self.previous_hvac_mode = climate_state.state
+        else:
+            self.previous_hvac_mode = HVACMode.AUTO
+
+        # Turn off the thermostat
+        await self.hass.services.async_call(
+            CLIMATE_DOMAIN,
+            "set_hvac_mode",
+            {
+                "entity_id": self.thermostat,
+                "hvac_mode": HVACMode.OFF,
+            },
+            blocking=True,
+        )
+
+        self.is_paused = True
+
+        # Send notification
+        await self._async_send_notification(paused=True)
+
+        # Notify listeners
+        self.async_set_updated_data(None)
+
+        _LOGGER.info("Thermostat paused via service. Previous mode: %s", self.previous_hvac_mode)
+
+    async def async_resume(self) -> None:
+        """Resume the thermostat via service call (bypasses sensor checks)."""
+        if not self.is_paused:
+            _LOGGER.info("Thermostat not paused")
+            return
+
+        _LOGGER.info("Resuming thermostat via service call")
+
+        # Restore previous HVAC mode
+        if self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
+            await self.hass.services.async_call(
+                CLIMATE_DOMAIN,
+                "set_hvac_mode",
+                {
+                    "entity_id": self.thermostat,
+                    "hvac_mode": self.previous_hvac_mode,
+                },
+                blocking=True,
+            )
+
+        # Send notification
+        await self._async_send_notification(paused=False)
+
+        self.is_paused = False
+        self.trigger_sensor = None
+
+        # Notify listeners
+        self.async_set_updated_data(None)
+
+        _LOGGER.info("Thermostat resumed via service to mode: %s", self.previous_hvac_mode)
+
     async def _async_send_notification(self, paused: bool) -> None:
         """Send a notification about thermostat state change."""
         notify_service = self.notify_service
