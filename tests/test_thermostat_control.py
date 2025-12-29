@@ -1226,18 +1226,22 @@ class TestCriticalTemperatureLogic:
         assert room_state.is_critical is False
         assert len(room_state.sensor_readings) == 0
 
-    def test_evaluate_room_critical_uses_coldest_sensor_for_heat(self, controller, mock_hass, inactive_area):
-        """Test critical detection uses coldest sensor in heat mode."""
+    def test_evaluate_room_critical_uses_warmest_sensor_for_heat(self, controller, mock_hass, inactive_area):
+        """Test critical detection uses warmest sensor (most favorable) in heat mode.
+        
+        With warmest sensor at 21°, the room is NOT critical because the warmest
+        spot is close enough to target. Only critical if even the warmest spot is too cold.
+        """
         temp_sensors = [TEST_TEMP_SENSOR_1, "sensor.other_temp"]
 
         def get_state(entity_id):
             if entity_id == TEST_TEMP_SENSOR_1:
                 mock_state = MagicMock()
-                mock_state.state = "21.0"  # Warm, not critical
+                mock_state.state = "21.0"  # Warm, most favorable
                 return mock_state
             elif entity_id == "sensor.other_temp":
                 mock_state = MagicMock()
-                mock_state.state = "16.0"  # Cold, critical
+                mock_state.state = "16.0"  # Cold spot
                 return mock_state
             return None
 
@@ -1252,21 +1256,26 @@ class TestCriticalTemperatureLogic:
             target_temp_high=None,
         )
 
-        assert room_state.is_critical is True
-        assert room_state.determining_temperature == 16.0
+        # NOT critical because warmest sensor (21°) is within threshold of target (22°)
+        assert room_state.is_critical is False
+        assert room_state.determining_temperature == 21.0
 
-    def test_evaluate_room_critical_uses_warmest_sensor_for_cool(self, controller, mock_hass, inactive_area):
-        """Test critical detection uses warmest sensor in cool mode."""
+    def test_evaluate_room_critical_uses_coolest_sensor_for_cool(self, controller, mock_hass, inactive_area):
+        """Test critical detection uses coolest sensor (most favorable) in cool mode.
+        
+        With coolest sensor at 25°, the room is NOT critical because the coolest
+        spot is close enough to target. Only critical if even the coolest spot is too hot.
+        """
         temp_sensors = [TEST_TEMP_SENSOR_1, "sensor.other_temp"]
 
         def get_state(entity_id):
             if entity_id == TEST_TEMP_SENSOR_1:
                 mock_state = MagicMock()
-                mock_state.state = "25.0"  # Warm but not critical
+                mock_state.state = "25.0"  # Cool, most favorable
                 return mock_state
             elif entity_id == "sensor.other_temp":
                 mock_state = MagicMock()
-                mock_state.state = "30.0"  # Hot, critical
+                mock_state.state = "30.0"  # Hot spot
                 return mock_state
             return None
 
@@ -1281,8 +1290,9 @@ class TestCriticalTemperatureLogic:
             target_temp_high=None,
         )
 
-        assert room_state.is_critical is True
-        assert room_state.determining_temperature == 30.0
+        # NOT critical because coolest sensor (25°) is within threshold of target (24°)
+        assert room_state.is_critical is False
+        assert room_state.determining_temperature == 25.0
 
 
 class TestEvaluateThermostatActionWithCriticalRooms:
