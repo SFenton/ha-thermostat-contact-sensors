@@ -32,6 +32,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -44,6 +45,10 @@ from .const import (
 from .occupancy import AreaOccupancyState, RoomOccupancyTracker
 
 _LOGGER = logging.getLogger(__name__)
+
+# Storage version for thermostat controller state persistence
+THERMOSTAT_STORAGE_VERSION = 1
+THERMOSTAT_STORAGE_KEY = "thermostat_contact_sensors.thermostat_controller"
 
 # Climate entity attributes
 ATTR_TARGET_TEMP_HIGH = "target_temp_high"
@@ -319,6 +324,7 @@ class ThermostatController:
         hass: HomeAssistant,
         thermostat_entity_id: str,
         occupancy_tracker: RoomOccupancyTracker,
+        entry_id: str | None = None,
         temperature_deadband: float = DEFAULT_TEMPERATURE_DEADBAND,
         min_cycle_on_minutes: int = DEFAULT_MIN_CYCLE_ON_MINUTES,
         min_cycle_off_minutes: int = DEFAULT_MIN_CYCLE_OFF_MINUTES,
@@ -331,6 +337,7 @@ class ThermostatController:
             hass: The Home Assistant instance.
             thermostat_entity_id: Entity ID of the thermostat to control.
             occupancy_tracker: RoomOccupancyTracker instance for occupancy data.
+            entry_id: Config entry ID for storage key uniqueness.
             temperature_deadband: Temperature buffer to prevent cycling.
             min_cycle_on_minutes: Minimum time thermostat must stay on.
             min_cycle_off_minutes: Minimum time thermostat must stay off.
@@ -355,6 +362,16 @@ class ThermostatController:
         self._last_off_time: datetime | None = None
         self._current_thermostat_on: bool = False
         self._we_turned_off: bool = False  # Track if integration turned off thermostat
+
+        # Storage for persisting state across restarts
+        if entry_id:
+            self._store: Store | None = Store(
+                hass,
+                THERMOSTAT_STORAGE_VERSION,
+                f"{THERMOSTAT_STORAGE_KEY}.{entry_id}",
+            )
+        else:
+            self._store = None
 
         # Listeners
         self._unsub_thermostat_state_change: callable | None = None
@@ -1114,3 +1131,41 @@ class ThermostatController:
             return True
 
         return False
+
+    async def async_setup(self) -> None:
+        """Set up the thermostat controller and restore state from storage."""
+        await self._async_restore_state()
+
+    async def async_shutdown(self) -> None:
+        """Shut down the thermostat controller and save state."""
+        await self._async_save_state()
+
+    async def _async_save_state(self) -> None:
+        """Save thermostat controller state to storage."""
+        if self._store is None:
+            return
+
+        state_data = {
+            "we_turned_off": self._we_turned_off,
+            "saved_at": dt_util.utcnow().isoformat(),
+        }
+
+        await self._store.async_save(state_data)
+        _LOGGER.debug("Saved thermostat controller state: we_turned_off=%s", self._we_turned_off)
+
+    async def _async_restore_state(self) -> None:
+        """Restore thermostat controller state from storage."""
+        if self._store is None:
+            return
+
+        stored_data = await self._store.async_load()
+        if stored_data is None:
+            _LOGGER.debug("No stored thermostat controller state found")
+            return
+
+        if stored_data.get("we_turned_off"):
+            self._we_turned_off = True
+            _LOGGER.debug(
+                "Restored thermostat controller state: we_turned_off=True (saved at %s)",
+                stored_data.get("saved_at", "unknown"),
+            )

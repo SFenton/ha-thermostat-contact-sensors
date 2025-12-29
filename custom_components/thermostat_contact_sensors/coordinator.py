@@ -125,6 +125,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             hass=hass,
             thermostat_entity_id=thermostat,
             occupancy_tracker=self.occupancy_tracker,
+            entry_id=config_entry_id,
             temperature_deadband=self._options.get(
                 CONF_TEMPERATURE_DEADBAND, DEFAULT_TEMPERATURE_DEADBAND
             ),
@@ -349,6 +350,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Set up occupancy tracker
         await self.occupancy_tracker.async_setup()
 
+        # Set up thermostat controller (restores state)
+        await self.thermostat_controller.async_setup()
+
         # Register callback for occupancy changes to trigger coordinator updates
         self.occupancy_tracker.register_update_callback(
             lambda: self.hass.async_create_task(self._async_occupancy_changed())
@@ -407,6 +411,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self._unsub_temp_sensor_state_change:
             self._unsub_temp_sensor_state_change()
             self._unsub_temp_sensor_state_change = None
+
+        # Shut down thermostat controller (saves state)
+        await self.thermostat_controller.async_shutdown()
 
         # Shut down occupancy tracker
         await self.occupancy_tracker.async_shutdown()
