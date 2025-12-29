@@ -168,8 +168,17 @@ class AreaOccupancyState:
                 if parsed.tzinfo is None:
                     parsed = parsed.replace(tzinfo=dt_util.UTC)
                 self.occupancy_start_time = parsed
-            except (ValueError, TypeError):
-                pass
+                _LOGGER.debug(
+                    "Restored occupancy_start_time for area %s: %s",
+                    self.area_id,
+                    self.occupancy_start_time,
+                )
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    "Failed to restore occupancy_start_time for area %s: %s",
+                    self.area_id,
+                    e,
+                )
 
         if data.get("was_active_before_unoccupied"):
             self.was_active_before_unoccupied = True
@@ -560,6 +569,16 @@ class RoomOccupancyTracker:
         """
         was_occupied = area.is_occupied
         had_restored_occupancy_start = area.occupancy_start_time is not None
+        
+        _LOGGER.debug(
+            "Area %s scan starting: was_occupied=%s, had_restored_occupancy_start=%s, "
+            "is_active=%s, occupancy_start_time=%s",
+            area.area_id,
+            was_occupied,
+            had_restored_occupancy_start,
+            area.is_active,
+            area.occupancy_start_time,
+        )
 
         # Check all binary sensors
         area.occupied_binary_sensors = set()
