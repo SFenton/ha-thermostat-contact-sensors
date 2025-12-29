@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 
+from homeassistant.components.climate import HVACMode
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     STATE_OPEN,
@@ -894,7 +895,11 @@ class TestDistanceFromTarget:
         assert area_state.distance_from_target == 0.0
 
     def test_distance_priority_for_minimum_vents(self, controller):
-        """Test that rooms furthest from target get priority for minimum vents."""
+        """Test that rooms are prioritized by temperature based on HVAC mode.
+        
+        For HEAT mode: coldest rooms get priority (they need the heat most).
+        For COOL mode: hottest rooms get priority (they need the cooling most).
+        """
         # Set up multiple vents that would normally all close
         self._setup_vents(controller, {
             "cover.vent_close": {"is_open": True, "members": 1},
@@ -908,9 +913,9 @@ class TestDistanceFromTarget:
         now = datetime(2024, 1, 1, 12, 0, 0)
 
         # Both areas inactive - all would close, but one should stay open for minimum
-        # The one furthest from target should get priority
+        # For HEAT mode: the coldest room (area_far at 17°) should get priority
 
-        # Room close to target (distance 1)
+        # Room close to target (warmer - 21°)
         room_close = RoomTemperatureState(
             area_id="area_close",
             area_name="Close Room",
@@ -919,7 +924,7 @@ class TestDistanceFromTarget:
             target_temperature=22.0,
         )
 
-        # Room far from target (distance 5)
+        # Room far from target (colder - 17°)
         room_far = RoomTemperatureState(
             area_id="area_far",
             area_name="Far Room",
@@ -936,9 +941,118 @@ class TestDistanceFromTarget:
                 "area_close": room_close,
                 "area_far": room_far,
             },
+            hvac_mode=HVACMode.HEAT,
             now=now,
         )
 
         # Verify distances were calculated correctly
         assert control_state.area_states["area_close"].distance_from_target == 1.0
         assert control_state.area_states["area_far"].distance_from_target == 5.0
+
+        # Verify determining temperatures were passed through
+        assert control_state.area_states["area_close"].determining_temperature == 21.0
+        assert control_state.area_states["area_far"].determining_temperature == 17.0
+
+    def test_heat_mode_prioritizes_coldest_rooms(self, controller):
+        """Test that in HEAT mode, coldest rooms get priority for minimum vents."""
+        controller._min_vents_open = 1  # Only keep one vent open
+        
+        self._setup_vents(controller, {
+            "cover.vent_hot": {"is_open": True, "members": 1},
+            "cover.vent_cold": {"is_open": True, "members": 1},
+        })
+
+        area_vent_configs = {
+            "area_hot": ["cover.vent_hot"],
+            "area_cold": ["cover.vent_cold"],
+        }
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        # Hot room (way above target - should NOT get priority for heating)
+        room_hot = RoomTemperatureState(
+            area_id="area_hot",
+            area_name="Hot Room",
+            is_satiated=True,  # Already satiated
+            determining_temperature=85.0,  # Very hot
+            target_temperature=70.0,
+        )
+
+        # Cold room (below target - SHOULD get priority for heating)
+        room_cold = RoomTemperatureState(
+            area_id="area_cold",
+            area_name="Cold Room",
+            is_satiated=False,
+            determining_temperature=65.0,  # Cold
+            target_temperature=70.0,
+        )
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vent_configs,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states={
+                "area_hot": room_hot,
+                "area_cold": room_cold,
+            },
+            hvac_mode=HVACMode.HEAT,
+            now=now,
+        )
+
+        # The cold room should have its vent kept open for minimum vents
+        cold_vent = control_state.area_states["area_cold"].vents[0]
+        hot_vent = control_state.area_states["area_hot"].vents[0]
+        
+        assert cold_vent.should_be_open is True, "Cold room vent should stay open in HEAT mode"
+        assert hot_vent.should_be_open is False, "Hot room vent should close in HEAT mode"
+
+    def test_cool_mode_prioritizes_hottest_rooms(self, controller):
+        """Test that in COOL mode, hottest rooms get priority for minimum vents."""
+        controller._min_vents_open = 1  # Only keep one vent open
+        
+        self._setup_vents(controller, {
+            "cover.vent_hot": {"is_open": True, "members": 1},
+            "cover.vent_cold": {"is_open": True, "members": 1},
+        })
+
+        area_vent_configs = {
+            "area_hot": ["cover.vent_hot"],
+            "area_cold": ["cover.vent_cold"],
+        }
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        # Hot room (above target - SHOULD get priority for cooling)
+        room_hot = RoomTemperatureState(
+            area_id="area_hot",
+            area_name="Hot Room",
+            is_satiated=False,
+            determining_temperature=85.0,  # Very hot
+            target_temperature=72.0,
+        )
+
+        # Cold room (way below target - should NOT get priority for cooling)
+        room_cold = RoomTemperatureState(
+            area_id="area_cold",
+            area_name="Cold Room",
+            is_satiated=True,  # Already satiated
+            determining_temperature=65.0,  # Cold
+            target_temperature=72.0,
+        )
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vent_configs,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states={
+                "area_hot": room_hot,
+                "area_cold": room_cold,
+            },
+            hvac_mode=HVACMode.COOL,
+            now=now,
+        )
+
+        # The hot room should have its vent kept open for minimum vents
+        cold_vent = control_state.area_states["area_cold"].vents[0]
+        hot_vent = control_state.area_states["area_hot"].vents[0]
+        
+        assert hot_vent.should_be_open is True, "Hot room vent should stay open in COOL mode"
+        assert cold_vent.should_be_open is False, "Cold room vent should close in COOL mode"

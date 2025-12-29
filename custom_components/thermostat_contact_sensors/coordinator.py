@@ -462,8 +462,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Get room temperature states from last thermostat state
         room_temp_states = {}
+        hvac_mode = None
         if self._last_thermostat_state:
             room_temp_states = self._last_thermostat_state.room_states
+            hvac_mode = self._last_thermostat_state.hvac_mode
 
         # Get per-area vent delay overrides
         area_vent_delays = self.get_area_vent_delays()
@@ -475,6 +477,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             occupied_areas=occupied_areas,
             room_temp_states=room_temp_states,
             area_vent_delays=area_vent_delays,
+            hvac_mode=hvac_mode,
         )
 
         # Execute pending commands

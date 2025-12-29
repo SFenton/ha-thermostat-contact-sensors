@@ -10,6 +10,7 @@ from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.components.climate import HVACMode
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -59,6 +60,7 @@ class AreaVentState:
     open_reason: str | None = None
     occupancy_start_time: datetime | None = None
     distance_from_target: float | None = None  # How far from target temp
+    determining_temperature: float | None = None  # Actual temperature for priority sorting
 
 
 @dataclass
@@ -229,6 +231,7 @@ class VentController:
         is_critical: bool,
         occupancy_start_time: datetime | None,
         distance_from_target: float | None,
+        determining_temperature: float | None = None,
         area_vent_open_delay: int | None = None,
         now: datetime | None = None,
     ) -> AreaVentState:
@@ -244,6 +247,7 @@ class VentController:
             is_critical: Whether the room is critically cold/hot.
             occupancy_start_time: When the room became occupied.
             distance_from_target: How far from target temperature (for prioritization).
+            determining_temperature: Actual temperature for HVAC-aware priority sorting.
             area_vent_open_delay: Per-area override for vent open delay.
             now: Current time (optional, for testing).
 
@@ -264,6 +268,7 @@ class VentController:
             area_name=area_name,
             occupancy_start_time=occupancy_start_time,
             distance_from_target=distance_from_target,
+            determining_temperature=determining_temperature,
         )
 
         # Determine if vents should be open for this area
@@ -335,17 +340,18 @@ class VentController:
     def calculate_minimum_vents_priority(
         self,
         area_states: dict[str, AreaVentState],
+        hvac_mode: HVACMode | None = None,
     ) -> list[tuple[str, str, int, float]]:
         """Calculate priority order for keeping minimum vents open.
 
-        Priority order:
-        1. Critical rooms (highest - safety)
-        2. Active rooms
-        3. Occupied rooms
-        4. Rooms furthest from target temperature (tiebreaker)
+        When we need to keep vents open for back pressure prevention, we prioritize:
+        - For HEAT mode: coldest rooms first (they need the heat most)
+        - For COOL mode: hottest rooms first (they need the cooling most)
+        - Fallback: absolute distance from target
 
         Args:
             area_states: Dict of area_id -> AreaVentState.
+            hvac_mode: Current HVAC mode for temperature-aware sorting.
 
         Returns:
             List of (area_id, vent_entity_id, member_count, priority_score).
@@ -369,11 +375,24 @@ class VentController:
                 elif area_state.should_open and "Critical" in (area_state.open_reason or ""):
                     priority_score += 2000.0
 
-                # Add distance from target as tiebreaker
-                # Rooms further from target get higher priority
-                if area_state.distance_from_target is not None:
-                    # Scale distance to be meaningful but not override categories
-                    # e.g., 5°C from target = +50 priority points
+                # Temperature-based priority for non-active/occupied/critical rooms
+                # For minimum vent selection, we want rooms that actually need conditioning
+                if area_state.determining_temperature is not None:
+                    if hvac_mode == HVACMode.HEAT:
+                        # For heating: coldest rooms get priority (lower temp = higher priority)
+                        # Invert so that colder rooms score higher
+                        # e.g., 60°F -> +200, 70°F -> +100, 80°F -> +0
+                        priority_score += max(0, (80.0 - area_state.determining_temperature) * 10.0)
+                    elif hvac_mode == HVACMode.COOL:
+                        # For cooling: hottest rooms get priority (higher temp = higher priority)
+                        # e.g., 80°F -> +200, 70°F -> +100, 60°F -> +0
+                        priority_score += max(0, (area_state.determining_temperature - 60.0) * 10.0)
+                    else:
+                        # Fallback for heat_cool or unknown: use absolute distance
+                        if area_state.distance_from_target is not None:
+                            priority_score += area_state.distance_from_target * 10.0
+                elif area_state.distance_from_target is not None:
+                    # No temperature reading, fall back to distance
                     priority_score += area_state.distance_from_target * 10.0
 
                 priority_list.append(
@@ -391,6 +410,7 @@ class VentController:
         occupied_areas: list["AreaOccupancyState"],
         room_temp_states: dict[str, "RoomTemperatureState"] | None = None,
         area_vent_delays: dict[str, int] | None = None,
+        hvac_mode: HVACMode | None = None,
         now: datetime | None = None,
     ) -> VentControlState:
         """Evaluate all vents and determine which should be open.
@@ -401,6 +421,7 @@ class VentController:
             occupied_areas: List of occupied AreaOccupancyState objects.
             room_temp_states: Dict of area_id -> RoomTemperatureState.
             area_vent_delays: Dict of area_id -> per-area vent open delay override.
+            hvac_mode: Current HVAC mode for temperature-aware vent priority.
             now: Current time (optional, for testing).
 
         Returns:
@@ -442,8 +463,10 @@ class VentController:
             is_satiated = temp_state.is_satiated if temp_state else False
             is_critical = temp_state.is_critical if temp_state else False
             distance_from_target = None
+            determining_temperature = None
 
             if temp_state and temp_state.determining_temperature is not None:
+                determining_temperature = temp_state.determining_temperature
                 # Calculate distance from target for prioritization
                 if temp_state.is_satiated:
                     distance_from_target = 0.0
@@ -472,6 +495,7 @@ class VentController:
                 is_critical=is_critical,
                 occupancy_start_time=occupancy_times.get(area_id),
                 distance_from_target=distance_from_target,
+                determining_temperature=determining_temperature,
                 area_vent_open_delay=area_vent_delays.get(area_id),
                 now=now,
             )
@@ -500,7 +524,8 @@ class VentController:
 
             # Get priority list for vents that would otherwise close
             priority_list = self.calculate_minimum_vents_priority(
-                control_state.area_states
+                control_state.area_states,
+                hvac_mode=hvac_mode,
             )
 
             # Keep vents open in priority order until we hit minimum
