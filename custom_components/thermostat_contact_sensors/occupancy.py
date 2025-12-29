@@ -163,7 +163,11 @@ class AreaOccupancyState:
 
         if data.get("occupancy_start_time"):
             try:
-                self.occupancy_start_time = datetime.fromisoformat(data["occupancy_start_time"])
+                parsed = datetime.fromisoformat(data["occupancy_start_time"])
+                # Ensure timezone-aware (assume UTC if naive)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=dt_util.UTC)
+                self.occupancy_start_time = parsed
             except (ValueError, TypeError):
                 pass
 
@@ -172,7 +176,17 @@ class AreaOccupancyState:
 
         if data.get("unoccupancy_start_time"):
             try:
-                self.unoccupancy_start_time = datetime.fromisoformat(data["unoccupancy_start_time"])
+                parsed = datetime.fromisoformat(data["unoccupancy_start_time"])
+                # Ensure timezone-aware (assume UTC if naive)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=dt_util.UTC)
+                self.unoccupancy_start_time = parsed
+                _LOGGER.debug(
+                    "Restored unoccupancy_start_time for area %s: %s (tzinfo=%s)",
+                    self.area_id,
+                    self.unoccupancy_start_time,
+                    self.unoccupancy_start_time.tzinfo,
+                )
             except (ValueError, TypeError):
                 pass
 
@@ -634,6 +648,17 @@ class RoomOccupancyTracker:
         elif area.is_in_grace_period:
             # Room is unoccupied but in grace period - check if grace period expired
             unoccupancy_minutes = area.get_unoccupancy_minutes(now)
+            _LOGGER.debug(
+                "Area %s grace period check: unoccupancy_minutes=%.2f, grace_period=%d, "
+                "unoccupancy_start=%s (tz=%s), now=%s (tz=%s)",
+                area.area_id,
+                unoccupancy_minutes,
+                self._grace_period_minutes,
+                area.unoccupancy_start_time,
+                getattr(area.unoccupancy_start_time, 'tzinfo', 'N/A') if area.unoccupancy_start_time else 'N/A',
+                now,
+                getattr(now, 'tzinfo', 'N/A'),
+            )
             if unoccupancy_minutes >= self._grace_period_minutes:
                 # Grace period expired - deactivate
                 area.is_active = False
