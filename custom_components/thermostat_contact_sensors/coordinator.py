@@ -648,7 +648,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_open_timeout_expired(self) -> None:
         """Handle open timeout expiration - pause the thermostat."""
-        self._open_timer = None
+        # Cancel timer if still scheduled (e.g., when called manually in tests)
+        self._cancel_open_timer()
 
         # Check if sensors are still open
         self._update_open_sensors()
@@ -695,7 +696,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_close_timeout_expired(self) -> None:
         """Handle close timeout expiration - resume the thermostat."""
-        self._close_timer = None
+        # Cancel timer if still scheduled (e.g., when called manually in tests)
+        self._cancel_close_timer()
 
         # Double-check all sensors are still closed
         self._update_open_sensors()

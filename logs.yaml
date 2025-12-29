@@ -1,35 +1,3 @@
-Skip to content
-Navigation Menu
-SFenton
-ha-thermostat-contact-sensors
-
-Type / to search
-Code
-Issues
-Pull requests
-Actions
-Projects
-Wiki
-Security
-Insights
-Settings
-You only have a single verified email address. We recommend verifying at least one more email address to ensure you can recover your account if you lose access to your primary email.
-
-
-Tests
-v2.0.0: Thermostat action execution, per-room temp sensors, diagnosti… #1
-All jobs
-Run details
-Annotations
-7 errors
-test (3.12)
-failed 1 hour ago in 1m 30s
-Search logs
-1s
-1s
-0s
-49s
-36s
 Run pytest tests/ -v --tb=short --cov=custom_components/thermostat_contact_sensors --cov-report=xml
 ============================= test session starts ==============================
 platform linux -- Python 3.12.12, pytest-8.3.4, pluggy-1.6.0 -- /opt/hostedtoolcache/Python/3.12.12/x64/bin/python
@@ -39,7 +7,6 @@ configfile: pytest.ini
 plugins: github-actions-annotate-failures-0.2.0, asyncio-0.24.0, socket-0.7.0, requests-mock-1.12.1, cov-6.0.0, xdist-3.6.1, anyio-4.12.0, respx-0.21.1, timeout-2.3.1, aiohttp-1.0.5, pytest_freezer-0.4.8, homeassistant-custom-component-0.13.205, picked-0.5.0, unordered-0.6.1, syrupy-4.8.0, sugar-1.0.0
 asyncio: mode=Mode.AUTO, default_loop_scope=function
 collecting ... collected 342 items
-
 tests/test_binary_sensor.py::test_binary_sensor_creation PASSED          [  0%]
 tests/test_binary_sensor.py::test_binary_sensor_unique_id PASSED         [  0%]
 tests/test_binary_sensor.py::test_binary_sensor_state_when_paused PASSED [  0%]
@@ -49,11 +16,7 @@ tests/test_binary_sensor.py::test_binary_sensor_device_info PASSED       [  1%]
 tests/test_binary_sensor.py::test_binary_sensor_restores_state PASSED    [  2%]
 tests/test_config_flow.py::test_config_flow_user_init PASSED             [  2%]
 tests/test_config_flow.py::test_config_flow_user_success PASSED          [  2%]
-
-Error: test_config_flow_no_thermostat_error
-
-homeassistant.data_entry_flow.InvalidData: Schema validation failed @ data['thermostat']
-tests/test_config_flow.py::test_config_flow_no_thermostat_error FAILED   [  2%]
+tests/test_config_flow.py::test_config_flow_no_thermostat_error PASSED   [  2%]
 tests/test_config_flow.py::test_config_flow_duplicate_thermostat PASSED  [  3%]
 tests/test_config_flow.py::test_config_flow_default_values PASSED        [  3%]
 tests/test_config_flow.py::test_config_flow_with_notification_service PASSED [  3%]
@@ -70,7 +33,961 @@ tests/test_coordinator.py::TestThermostatPausing::test_thermostat_stores_previou
 tests/test_coordinator.py::TestThermostatPausing::test_no_pause_if_sensor_closes_before_timeout PASSED [  7%]
 tests/test_coordinator.py::TestThermostatResuming::test_thermostat_resumes_after_all_closed PASSED [  7%]
 tests/test_coordinator.py::TestThermostatResuming::test_close_timer_cancelled_if_sensor_reopens PASSED [  7%]
-0s
-0s
-1s
-0s
+tests/test_coordinator.py::TestThermostatResuming::test_resume_restores_previous_mode PASSED [  7%]
+tests/test_coordinator.py::TestNotifications::test_notification_sent_on_pause PASSED [  8%]
+tests/test_coordinator.py::TestNotifications::test_notification_sent_on_resume PASSED [  8%]
+tests/test_coordinator.py::TestNotifications::test_no_notification_when_disabled PASSED [  8%]
+tests/test_coordinator.py::TestOpenSensorCounts::test_open_count PASSED  [  9%]
+tests/test_coordinator.py::TestOpenSensorCounts::test_open_doors_count PASSED [  9%]
+tests/test_coordinator.py::TestOpenSensorCounts::test_open_windows_count PASSED [  9%]
+tests/test_coordinator.py::TestOptionsUpdate::test_update_options PASSED [  9%]
+tests/test_coordinator.py::TestManualOverride::test_manual_on_while_paused_clears_paused_state PASSED [ 10%]
+tests/test_coordinator.py::TestManualOverride::test_manual_on_while_paused_cancels_close_timer PASSED [ 10%]
+tests/test_coordinator.py::TestManualOverride::test_manual_off_while_paused_updates_previous_mode PASSED [ 10%]
+tests/test_coordinator.py::TestManualOverride::test_tracks_last_known_hvac_mode PASSED [ 11%]
+tests/test_coordinator.py::TestManualOverride::test_respects_user_mode_change_for_restore PASSED [ 11%]
+tests/test_coordinator.py::TestTemperatureSensorStateChange::test_temp_sensor_listener_subscribed PASSED [ 11%]
+tests/test_coordinator.py::TestTemperatureSensorStateChange::test_temp_sensor_listener_cleanup PASSED [ 11%]
+tests/test_coordinator.py::TestTemperatureSensorStateChange::test_temp_sensor_change_triggers_update PASSED [ 12%]
+tests/test_coordinator.py::TestTemperatureSensorStateChange::test_temp_sensor_unavailable_ignored PASSED [ 12%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_returns_data PASSED [ 12%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_config_entry_info PASSED [ 13%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_coordinator_state PASSED [ 13%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_thermostat_info PASSED [ 13%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_contact_sensors PASSED [ 14%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_entities_list PASSED [ 14%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_redacts_notify_service PASSED [ 14%]
+tests/test_diagnostics.py::TestDiagnostics::test_diagnostics_occupancy_state PASSED [ 14%]
+tests/test_init.py::test_setup_entry PASSED                              [ 15%]
+tests/test_init.py::test_unload_entry PASSED                             [ 15%]
+tests/test_init.py::test_reload_entry PASSED                             [ 15%]
+tests/test_init.py::test_runtime_data_created PASSED                     [ 16%]
+tests/test_init.py::test_platforms_setup PASSED                          [ 16%]
+tests/test_init.py::test_device_created PASSED                           [ 16%]
+tests/test_init.py::test_options_update_listener PASSED                  [ 16%]
+tests/test_init.py::test_multiple_config_entries PASSED                  [ 17%]
+tests/test_init.py::test_coordinator_cleanup_on_unload PASSED            [ 17%]
+tests/test_integration.py::TestContactSensorEffects::test_contact_open_pauses_thermostat_after_timeout PASSED [ 17%]
+tests/test_integration.py::TestContactSensorEffects::test_contact_open_pauses_thermostat_after_timeout ERROR [ 17%]
+tests/test_integration.py::TestContactSensorEffects::test_contact_close_resumes_thermostat_after_timeout PASSED [ 18%]
+tests/test_integration.py::TestContactSensorEffects::test_contact_close_resumes_thermostat_after_timeout ERROR [ 18%]
+tests/test_integration.py::TestContactSensorEffects::test_multiple_contacts_open_one_close_stays_paused PASSED [ 18%]
+tests/test_integration.py::TestContactSensorEffects::test_multiple_contacts_open_one_close_stays_paused ERROR [ 18%]
+tests/test_integration.py::TestOccupancyVentEffects::test_occupied_room_opens_vents_after_delay PASSED [ 18%]
+tests/test_integration.py::TestOccupancyVentEffects::test_occupied_room_below_delay_keeps_vents_closed PASSED [ 19%]
+tests/test_integration.py::TestOccupancyVentEffects::test_inactive_room_closes_vents PASSED [ 19%]
+tests/test_integration.py::TestTemperatureEffects::test_satiated_room_closes_vents PASSED [ 19%]
+tests/test_integration.py::TestTemperatureEffects::test_unsatiated_room_keeps_vents_open PASSED [ 19%]
+tests/test_integration.py::TestCriticalTemperatureEffects::test_critical_cold_room_opens_vents PASSED [ 20%]
+tests/test_integration.py::TestCriticalTemperatureEffects::test_critical_room_counts_toward_minimum_vents PASSED [ 20%]
+tests/test_integration.py::TestMinimumVentsOpen::test_minimum_vents_kept_open_when_all_inactive PASSED [ 20%]
+tests/test_integration.py::TestMinimumVentsOpen::test_vent_group_counts_as_multiple_vents PASSED [ 21%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_morning_wakeup PASSED [ 21%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_window_opened_during_heating PASSED [ 21%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_window_opened_during_heating ERROR [ 21%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_all_rooms_reach_temperature PASSED [ 21%]
+tests/test_integration.py::TestFullSystemIntegration::test_scenario_mixed_room_states PASSED [ 22%]
+tests/test_integration.py::TestEdgeCases::test_thermostat_unavailable PASSED [ 22%]
+tests/test_integration.py::TestEdgeCases::test_temperature_sensor_unavailable PASSED [ 22%]
+tests/test_integration.py::TestEdgeCases::test_vent_unavailable PASSED   [ 23%]
+tests/test_integration.py::TestEdgeCases::test_empty_areas_config PASSED [ 23%]
+tests/test_integration.py::TestEdgeCases::test_rapid_occupancy_changes PASSED [ 23%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_none_state_returns_false PASSED [ 23%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_on_state_returns_true PASSED [ 24%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_off_state_returns_false PASSED [ 24%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_unavailable_state_returns_false PASSED [ 24%]
+tests/test_occupancy.py::TestIsBinarySensorOccupied::test_unknown_state_returns_false PASSED [ 25%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_none_state_returns_false PASSED [ 25%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_previous_valid_state_on_returns_true PASSED [ 25%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_previous_valid_state_off_returns_false PASSED [ 26%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_no_previous_valid_state_attribute_returns_false PASSED [ 26%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_unavailable_state_returns_false PASSED [ 26%]
+tests/test_occupancy.py::TestIsSensorOccupied::test_unknown_state_returns_false PASSED [ 26%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_binary_sensor_on PASSED [ 27%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_binary_sensor_off PASSED [ 27%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_sensor_with_previous_valid_state_on PASSED [ 27%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_sensor_with_previous_valid_state_off PASSED [ 28%]
+tests/test_occupancy.py::TestGetSensorOccupancyState::test_none_state_returns_false PASSED [ 28%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_is_occupied_with_no_sensors PASSED [ 28%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_is_occupied_with_binary_sensor PASSED [ 28%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_is_occupied_with_regular_sensor PASSED [ 29%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_is_occupied_with_both_sensor_types PASSED [ 29%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_all_sensors PASSED [ 29%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_occupied_sensor_count PASSED [ 30%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_total_sensor_count PASSED [ 30%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_get_occupancy_duration_when_not_occupied PASSED [ 30%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_get_occupancy_duration_when_occupied PASSED [ 30%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_get_occupancy_minutes PASSED [ 31%]
+tests/test_occupancy.py::TestAreaOccupancyState::test_get_occupancy_minutes_when_not_occupied PASSED [ 31%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_init_with_default_min_occupancy PASSED [ 31%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_init_with_custom_min_occupancy PASSED [ 32%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_min_occupancy_minutes_setter PASSED [ 32%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_disabled_areas_are_not_tracked PASSED [ 32%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerInit::test_all_tracked_sensors PASSED [ 33%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerSetupShutdown::test_setup_subscribes_to_state_changes PASSED [ 33%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerSetupShutdown::test_shutdown_unsubscribes PASSED [ 33%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerSetupShutdown::test_setup_scans_initial_sensor_states PASSED [ 33%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_binary_sensor_on_makes_area_occupied PASSED [ 34%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_sensor_previous_valid_state_on_makes_area_occupied PASSED [ 34%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_multiple_sensors_or_logic PASSED [ 34%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_continuous_occupancy_with_sensor_handoff PASSED [ 35%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerOccupancy::test_all_sensors_off_clears_occupancy PASSED [ 35%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_newly_occupied_area_is_not_active PASSED [ 35%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_area_becomes_active_after_threshold PASSED [ 35%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_area_not_active_before_threshold PASSED [ 36%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_changing_min_occupancy_updates_active_status PASSED [ 36%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_init_with_default_grace_period PASSED [ 36%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_init_with_custom_grace_period PASSED [ 37%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_minimum_enforced_on_init PASSED [ 37%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_minimum_enforced_on_setter PASSED [ 37%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_setter_updates_value PASSED [ 38%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_custom_grace_period_used_for_expiration PASSED [ 38%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_independent_of_min_occupancy PASSED [ 38%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_active_enters_grace_period_when_unoccupied PASSED [ 38%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_expires_after_threshold PASSED [ 39%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_reoccupancy_during_grace_period_remains_active PASSED [ 39%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_non_active_area_no_grace_period_when_unoccupied PASSED [ 39%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerActiveStatus::test_grace_period_not_expired_before_threshold PASSED [ 40%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_occupied_areas_property PASSED [ 40%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_active_areas_property PASSED [ 40%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_any_area_occupied_property PASSED [ 40%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_any_area_active_property PASSED [ 41%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerProperties::test_inactive_areas_property PASSED [ 41%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerCallbacks::test_register_update_callback PASSED [ 41%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerCallbacks::test_multiple_callbacks PASSED [ 42%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerConfigUpdate::test_update_config_rebuilds_tracking PASSED [ 42%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerSummary::test_get_summary PASSED [ 42%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerEdgeCases::test_sensor_state_unavailable PASSED [ 42%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerEdgeCases::test_get_area_returns_none_for_unknown_area PASSED [ 43%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerEdgeCases::test_empty_areas_config PASSED [ 43%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerEdgeCases::test_area_with_no_occupancy_sensors PASSED [ 43%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_to_storage_dict_empty_state PASSED [ 44%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_to_storage_dict_active_state PASSED [ 44%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_to_storage_dict_grace_period_state PASSED [ 44%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_restore_from_storage_empty_data PASSED [ 45%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_restore_from_storage_active_state PASSED [ 45%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_restore_from_storage_grace_period_state PASSED [ 45%]
+tests/test_occupancy.py::TestAreaOccupancyStateSerialization::test_restore_from_storage_invalid_timestamp PASSED [ 45%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_tracker_with_entry_id_has_store PASSED [ 46%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_tracker_without_entry_id_no_store PASSED [ 46%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_save_state_creates_data PASSED [ 46%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_restore_state_loads_data PASSED [ 47%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_restore_state_no_data PASSED [ 47%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_setup_restores_state PASSED [ 47%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_shutdown_saves_state PASSED [ 47%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_restore_ignores_unknown_areas PASSED [ 48%]
+tests/test_occupancy.py::TestRoomOccupancyTrackerPersistence::test_persist_grace_period_state PASSED [ 48%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_sensor_creation_per_area PASSED [ 48%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_sensor_unique_id PASSED [ 49%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_initial_state_inactive PASSED [ 49%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_state_becomes_occupied PASSED [ 49%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_occupied_sensors_attribute PASSED [ 50%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_time_until_active_attribute PASSED [ 50%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_state_becomes_inactive_when_unoccupied PASSED [ 50%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_area_attributes PASSED [ 50%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_min_occupancy_minutes_attribute PASSED [ 51%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_grace_period_minutes_attribute PASSED [ 51%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_grace_period_attributes_when_not_in_grace_period PASSED [ 51%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_active_area_enters_grace_period_when_unoccupied PASSED [ 52%]
+tests/test_occupancy_and_control_sensors.py::TestRoomOccupancySensor::test_reoccupancy_during_grace_period_clears_grace_period PASSED [ 52%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_sensor_creation PASSED [ 52%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_sensor_unique_id PASSED [ 52%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_initial_state_idle PASSED [ 53%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_thermostat_entity_id_attribute PASSED [ 53%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_paused_state PASSED [ 53%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_hvac_mode_attribute PASSED [ 54%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_room_count_attributes PASSED [ 54%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_cycle_protection_attributes PASSED [ 54%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_recommended_action_attribute PASSED [ 54%]
+tests/test_occupancy_and_control_sensors.py::TestThermostatControlSensor::test_room_summary_attribute PASSED [ 55%]
+tests/test_occupancy_and_control_sensors.py::TestSensorIntegration::test_all_sensors_created PASSED [ 55%]
+tests/test_occupancy_and_control_sensors.py::TestSensorIntegration::test_sensors_share_device PASSED [ 55%]
+tests/test_options_flow.py::test_options_flow_shows_menu PASSED          [ 56%]
+tests/test_options_flow.py::test_options_flow_global_settings PASSED     [ 56%]
+tests/test_options_flow.py::test_options_flow_global_settings_grace_period PASSED [ 56%]
+tests/test_options_flow.py::test_options_flow_thermostat PASSED          [ 57%]
+tests/test_options_flow.py::test_options_flow_manage_areas_checkboxes PASSED [ 57%]
+tests/test_options_flow.py::test_options_flow_configure_area_sensors_menu PASSED [ 57%]
+tests/test_options_flow.py::test_options_flow_area_config PASSED         [ 57%]
+tests/test_options_flow.py::test_options_flow_disable_area PASSED        [ 58%]
+tests/test_options_flow.py::test_options_flow_thermostat_required PASSED [ 58%]
+tests/test_options_flow.py::test_options_flow_sensor_count_updates_after_adding PASSED [ 58%]
+tests/test_options_flow.py::test_options_flow_sensor_count_updates_after_removing PASSED [ 59%]
+tests/test_options_flow.py::test_options_flow_enable_disable_areas_shows_correct_count PASSED [ 59%]
+tests/test_sensor.py::test_sensor_creation PASSED                        [ 59%]
+tests/test_sensor.py::test_sensor_unique_id PASSED                       [ 59%]
+tests/test_sensor.py::test_sensor_count_updates PASSED                   [ 60%]
+tests/test_sensor.py::test_sensor_attributes_open_sensors PASSED         [ 60%]
+tests/test_sensor.py::test_sensor_attributes_door_window_counts PASSED   [ 60%]
+tests/test_sensor.py::test_sensor_attributes_monitored_sensors PASSED    [ 61%]
+tests/test_sensor.py::test_sensor_unit_of_measurement PASSED             [ 61%]
+tests/test_sensor.py::test_sensor_device_info PASSED                     [ 61%]
+tests/test_services.py::TestServiceRegistration::test_services_registered PASSED [ 61%]
+tests/test_services.py::TestServiceRegistration::test_services_registered_once PASSED [ 62%]
+tests/test_services.py::TestPauseService::test_pause_service_pauses_thermostat PASSED [ 62%]
+tests/test_services.py::TestPauseService::test_pause_service_already_paused PASSED [ 62%]
+tests/test_services.py::TestPauseService::test_pause_service_invalid_entry_id PASSED [ 63%]
+tests/test_services.py::TestResumeService::test_resume_service_resumes_thermostat PASSED [ 63%]
+tests/test_services.py::TestResumeService::test_resume_service_not_paused PASSED [ 63%]
+tests/test_services.py::TestResumeService::test_resume_service_invalid_entry_id PASSED [ 64%]
+tests/test_services.py::TestRecalculateService::test_recalculate_service PASSED [ 64%]
+tests/test_services.py::TestRecalculateService::test_recalculate_service_invalid_entry_id PASSED [ 64%]
+tests/test_switch.py::TestRespectUserOffSwitch::test_switch_default_state_is_off PASSED [ 64%]
+tests/test_switch.py::TestRespectUserOffSwitch::test_switch_turn_on PASSED [ 65%]
+tests/test_switch.py::TestRespectUserOffSwitch::test_switch_turn_off PASSED [ 65%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_thermostat_off_resumes_when_respect_off_disabled PASSED [ 65%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_thermostat_off_resumes_when_respect_off_disabled ERROR [ 65%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_thermostat_stays_off_when_respect_off_enabled PASSED [ 66%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_thermostat_stays_off_when_respect_off_enabled ERROR [ 66%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_active_thermostat_always_resumes PASSED [ 66%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_active_thermostat_always_resumes ERROR [ 66%]
+tests/test_switch.py::TestRespectUserOffBehavior::test_switch_extra_state_attributes PASSED [ 66%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_valid_temperature PASSED [ 66%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_integer_temperature PASSED [ 67%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_unavailable_state PASSED [ 67%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_unknown_state PASSED [ 67%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_none_state PASSED [ 68%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_invalid_string_state PASSED [ 68%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_empty_string_state PASSED [ 68%]
+tests/test_thermostat_control.py::TestGetTemperatureFromState::test_negative_temperature PASSED [ 69%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_satiated_when_at_target PASSED [ 69%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_satiated_within_deadband PASSED [ 69%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_satiated_exactly_at_deadband_boundary PASSED [ 69%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_not_satiated_below_deadband PASSED [ 70%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_satiated_when_above_target PASSED [ 70%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_multiple_sensors_warmest_satiated PASSED [ 70%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_multiple_sensors_none_satiated PASSED [ 71%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_empty_readings PASSED [ 71%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeat::test_zero_deadband PASSED [ 71%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_satiated_when_at_target PASSED [ 71%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_satiated_within_deadband PASSED [ 72%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_satiated_exactly_at_deadband_boundary PASSED [ 72%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_not_satiated_above_deadband PASSED [ 72%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_satiated_when_below_target PASSED [ 73%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_multiple_sensors_coolest_satiated PASSED [ 73%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_multiple_sensors_none_satiated PASSED [ 73%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForCool::test_empty_readings PASSED [ 73%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_satiated_when_in_range PASSED [ 74%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_satiated_near_low_boundary PASSED [ 74%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_satiated_near_high_boundary PASSED [ 74%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_not_satiated_too_cold PASSED [ 75%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_not_satiated_too_hot PASSED [ 75%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_multiple_sensors_one_satiated PASSED [ 75%]
+tests/test_thermostat_control.py::TestIsRoomSatiatedForHeatCool::test_empty_readings PASSED [ 76%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_has_valid_readings_true PASSED [ 76%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_has_valid_readings_false PASSED [ 76%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_available_sensor_count PASSED [ 76%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_get_closest_to_target_heat_mode PASSED [ 77%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_get_closest_to_target_cool_mode PASSED [ 77%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_get_closest_to_target_no_readings PASSED [ 77%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_target_temperature_field PASSED [ 78%]
+tests/test_thermostat_control.py::TestRoomTemperatureState::test_target_temperature_default_none PASSED [ 78%]
+tests/test_thermostat_control.py::TestThermostatController::test_initialization PASSED [ 78%]
+tests/test_thermostat_control.py::TestThermostatController::test_update_cycle_time_on PASSED [ 78%]
+tests/test_thermostat_control.py::TestThermostatController::test_update_cycle_time_off PASSED [ 79%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_off_without_prior_on_time PASSED [ 79%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_off_after_min_on_time PASSED [ 79%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_off_before_min_on_time PASSED [ 80%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_on_without_prior_off_time PASSED [ 80%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_on_after_min_off_time PASSED [ 80%]
+tests/test_thermostat_control.py::TestThermostatController::test_can_turn_on_before_min_off_time PASSED [ 80%]
+tests/test_thermostat_control.py::TestContactSensorPriority::test_evaluate_returns_none_when_paused PASSED [ 81%]
+tests/test_thermostat_control.py::TestEdgeCases::test_no_active_rooms_returns_none PASSED [ 81%]
+tests/test_thermostat_control.py::TestEdgeCases::test_room_with_no_temp_sensors_ignored PASSED [ 81%]
+tests/test_thermostat_control.py::TestEdgeCases::test_unavailable_sensors_ignored PASSED [ 82%]
+tests/test_thermostat_control.py::TestEdgeCases::test_thermostat_off_mode_returns_none PASSED [ 82%]
+tests/test_thermostat_control.py::TestHVACModes::test_heat_mode_not_satiated PASSED [ 82%]
+tests/test_thermostat_control.py::TestHVACModes::test_heat_mode_satiated PASSED [ 83%]
+tests/test_thermostat_control.py::TestHVACModes::test_cool_mode_not_satiated PASSED [ 83%]
+tests/test_thermostat_control.py::TestHVACModes::test_cool_mode_satiated PASSED [ 83%]
+tests/test_thermostat_control.py::TestHVACModes::test_heat_cool_mode_uses_target_high_low PASSED [ 83%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_heat_mode_critical PASSED [ 84%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_heat_mode_not_critical PASSED [ 84%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_cool_mode_critical PASSED [ 84%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_cool_mode_not_critical PASSED [ 85%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_heat_cool_mode_too_cold PASSED [ 85%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_heat_cool_mode_too_hot PASSED [ 85%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_no_sensors PASSED [ 85%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_uses_coldest_sensor_for_heat PASSED [ 86%]
+tests/test_thermostat_control.py::TestCriticalTemperatureLogic::test_evaluate_room_critical_uses_warmest_sensor_for_cool PASSED [ 86%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_critical_room_keeps_thermostat_on PASSED [ 86%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_critical_room_with_satiated_active_room PASSED [ 87%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_no_critical_rooms_when_within_threshold PASSED [ 87%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_critical_room_count_in_state PASSED [ 87%]
+tests/test_thermostat_control.py::TestEvaluateThermostatActionWithCriticalRooms::test_room_states_include_critical_info PASSED [ 88%]
+tests/test_thermostat_control.py::TestUnoccupiedThresholdConfiguration::test_default_thresholds PASSED [ 88%]
+tests/test_thermostat_control.py::TestUnoccupiedThresholdConfiguration::test_custom_thresholds PASSED [ 88%]
+tests/test_thermostat_control.py::TestUnoccupiedThresholdConfiguration::test_threshold_setter PASSED [ 88%]
+tests/test_thermostat_control.py::TestUnoccupiedThresholdConfiguration::test_larger_threshold_changes_critical_detection PASSED [ 89%]
+tests/test_vent_control.py::TestVentControllerInit::test_default_values PASSED [ 89%]
+tests/test_vent_control.py::TestVentControllerInit::test_custom_values PASSED [ 89%]
+tests/test_vent_control.py::TestVentControllerInit::test_setters PASSED  [ 90%]
+tests/test_vent_control.py::TestGroupDetection::test_single_vent_not_group PASSED [ 90%]
+tests/test_vent_control.py::TestGroupDetection::test_group_detected PASSED [ 90%]
+tests/test_vent_control.py::TestGroupDetection::test_none_state_returns_defaults PASSED [ 90%]
+tests/test_vent_control.py::TestVentCurrentState::test_open_state PASSED [ 91%]
+tests/test_vent_control.py::TestVentCurrentState::test_closed_state PASSED [ 91%]
+tests/test_vent_control.py::TestVentCurrentState::test_tilt_position_open PASSED [ 91%]
+tests/test_vent_control.py::TestVentCurrentState::test_tilt_position_closed PASSED [ 92%]
+tests/test_vent_control.py::TestVentCurrentState::test_unavailable_state PASSED [ 92%]
+tests/test_vent_control.py::TestVentCurrentState::test_none_state PASSED [ 92%]
+tests/test_vent_control.py::TestDebounce::test_no_previous_command PASSED [ 92%]
+tests/test_vent_control.py::TestDebounce::test_within_debounce_period PASSED [ 93%]
+tests/test_vent_control.py::TestDebounce::test_after_debounce_period PASSED [ 93%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_critical_room_vents_open PASSED [ 93%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_active_unsatiated_vents_open PASSED [ 94%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_active_satiated_but_occupied_past_delay_vents_open PASSED [ 94%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_satiated_not_occupied_vents_closed PASSED [ 94%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_occupied_past_delay_vents_open PASSED [ 95%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_occupied_before_delay_vents_closed PASSED [ 95%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_inactive_vents_closed PASSED [ 95%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_per_area_vent_delay_override PASSED [ 95%]
+tests/test_vent_control.py::TestEvaluateAreaVents::test_vent_group_member_count PASSED [ 96%]
+tests/test_vent_control.py::TestMinimumVentsOpen::test_minimum_vents_kept_open PASSED [ 96%]
+tests/test_vent_control.py::TestMinimumVentsOpen::test_group_counts_as_multiple_vents PASSED [ 96%]
+tests/test_vent_control.py::TestEvaluateAllVents::test_pending_commands_generated PASSED [ 97%]
+tests/test_vent_control.py::TestEvaluateAllVents::test_no_commands_when_state_matches PASSED [ 97%]
+tests/test_vent_control.py::TestExecuteVentCommands::test_open_command_executed PASSED [ 97%]
+tests/test_vent_control.py::TestExecuteVentCommands::test_close_command_executed PASSED [ 97%]
+tests/test_vent_control.py::TestExecuteVentCommands::test_multiple_commands_executed PASSED [ 98%]
+tests/test_vent_control.py::TestExecuteVentCommands::test_command_error_handled PASSED [ 98%]
+tests/test_vent_control.py::TestGetSummary::test_summary_structure PASSED [ 98%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_distance_from_target_uses_target_temperature PASSED [ 99%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_distance_from_target_zero_when_satiated PASSED [ 99%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_distance_from_target_zero_when_no_target PASSED [ 99%]
+tests/test_vent_control.py::TestDistanceFromTarget::test_distance_priority_for_minimum_vents PASSED [100%]
+==================================== ERRORS ====================================
+_ ERROR at teardown of TestContactSensorEffects.test_contact_open_pauses_thermostat_after_timeout _
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/pytest_homeassistant_custom_component/plugins.py:399: in verify_cleanup
+    pytest.fail(f"Lingering timer after test {handle!r}")
+E   Failed: Lingering timer after test <TimerHandle when=848.078792697 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.751244-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.751496-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=None, new_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:01.751664-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_door, old_state=None, new_state=<state binary_sensor.office_door=off; device_class=window @ 2025-12-28T20:07:01.751793-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_motion, old_state=None, new_state=<state binary_sensor.living_room_motion=off; device_class=motion @ 2025-12-28T20:07:01.751911-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_motion, old_state=None, new_state=<state binary_sensor.bedroom_motion=off; device_class=motion @ 2025-12-28T20:07:01.752027-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_motion, old_state=None, new_state=<state binary_sensor.office_motion=off; device_class=motion @ 2025-12-28T20:07:01.752140-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.kitchen_motion, old_state=None, new_state=<state binary_sensor.kitchen_motion=off; device_class=motion @ 2025-12-28T20:07:01.752251-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.living_room_temperature, old_state=None, new_state=<state sensor.living_room_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.752377-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.bedroom_temperature, old_state=None, new_state=<state sensor.bedroom_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.752501-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.office_temperature, old_state=None, new_state=<state sensor.office_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.752620-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.kitchen_temperature, old_state=None, new_state=<state sensor.kitchen_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.752731-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.living_room_vent, old_state=None, new_state=<state cover.living_room_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.752841-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.bedroom_vent, old_state=None, new_state=<state cover.bedroom_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.752955-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.office_vent, old_state=None, new_state=<state cover.office_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753194-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=None, new_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753311-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=None, new_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753449-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=None, new_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.753585-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=cover, service=open_cover_tilt>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=cover, service=close_cover_tilt>
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.751244-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.751496-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=None, new_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:01.751664-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_door, old_state=None, new_state=<state binary_sensor.office_door=off; device_class=window @ 2025-12-28T20:07:01.751793-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_motion, old_state=None, new_state=<state binary_sensor.living_room_motion=off; device_class=motion @ 2025-12-28T20:07:01.751911-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_motion, old_state=None, new_state=<state binary_sensor.bedroom_motion=off; device_class=motion @ 2025-12-28T20:07:01.752027-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_motion, old_state=None, new_state=<state binary_sensor.office_motion=off; device_class=motion @ 2025-12-28T20:07:01.752140-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.kitchen_motion, old_state=None, new_state=<state binary_sensor.kitchen_motion=off; device_class=motion @ 2025-12-28T20:07:01.752251-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.living_room_temperature, old_state=None, new_state=<state sensor.living_room_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.752377-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.bedroom_temperature, old_state=None, new_state=<state sensor.bedroom_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.752501-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.office_temperature, old_state=None, new_state=<state sensor.office_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.752620-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.kitchen_temperature, old_state=None, new_state=<state sensor.kitchen_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.752731-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.living_room_vent, old_state=None, new_state=<state cover.living_room_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.752841-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.bedroom_vent, old_state=None, new_state=<state cover.bedroom_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.752955-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.office_vent, old_state=None, new_state=<state cover.office_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753194-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=None, new_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753311-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=None, new_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753449-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=None, new_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.753585-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=cover, service=open_cover_tilt>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=cover, service=close_cover_tilt>
+----------------------------- Captured stderr call -----------------------------
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Built occupancy tracking for 4 areas with 4 total sensors
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:No stored occupancy state found
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker setup complete. Monitoring 4 sensors across 4 areas
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Coordinator setup complete. Monitoring 3 sensors for thermostat climate.main_thermostat
+DEBUG:custom_components.thermostat_contact_sensors.thermostat_control:Contact sensor pause state: False
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.kitchen_vent: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.kitchen_vent>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753311-08:00>, new_state=<state cover.kitchen_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.757688-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.hallway_vents: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.hallway_vents>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.753585-08:00>, new_state=<state cover.hallway_vents=closed; current_tilt_position=0, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.758027-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.basement_vent: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.basement_vent>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753449-08:00>, new_state=<state cover.basement_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.758377-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Executed 3 vent commands out of 3 pending
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.751496-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.758607-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.living_room_window changed from off to on
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor opened: binary_sensor.living_room_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Open timeout expired with 1 sensors open. Pausing thermostat.
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.751244-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.759700-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Thermostat paused. Previous mode: heat
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Thermostat climate.main_thermostat changed from heat to off (is_paused=True)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:User turned thermostat off while sensors open. Will restore to: heat
+DEBUG:pytest_homeassistant_custom_component.common:Writing data to thermostat_contact_sensors.integration_test_entry.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.integration_test_entry.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:01.760513+00:00', 'areas': {'living_room': {'area_id': 'living_room', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'bedroom': {'area_id': 'bedroom', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'office': {'area_id': 'office', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'kitchen': {'area_id': 'kitchen', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}}}}
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Saved occupancy state for 4 areas
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker shut down
+------------------------------ Captured log call -------------------------------
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:393 Built occupancy tracking for 4 areas with 4 total sensors
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:489 No stored occupancy state found
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:435 Occupancy tracker setup complete. Monitoring 4 sensors across 4 areas
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:385 Coordinator setup complete. Monitoring 3 sensors for thermostat climate.main_thermostat
+DEBUG    custom_components.thermostat_contact_sensors.thermostat_control:thermostat_control.py:434 Contact sensor pause state: False
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.kitchen_vent: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.kitchen_vent>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753311-08:00>, new_state=<state cover.kitchen_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.757688-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.hallway_vents: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.hallway_vents>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.753585-08:00>, new_state=<state cover.hallway_vents=closed; current_tilt_position=0, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.758027-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.basement_vent: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.basement_vent>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.753449-08:00>, new_state=<state cover.basement_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.758377-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:488 Executed 3 vent commands out of 3 pending
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.751496-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.758607-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.living_room_window changed from off to on
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:604 Sensor opened: binary_sensor.living_room_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:620 Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:659 Open timeout expired with 1 sensors open. Pausing thermostat.
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.751244-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.759700-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:694 Thermostat paused. Previous mode: heat
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:531 Thermostat climate.main_thermostat changed from heat to off (is_paused=True)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:560 User turned thermostat off while sensors open. Will restore to: heat
+DEBUG    pytest_homeassistant_custom_component.common:common.py:1423 Writing data to thermostat_contact_sensors.integration_test_entry.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.integration_test_entry.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:01.760513+00:00', 'areas': {'living_room': {'area_id': 'living_room', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'bedroom': {'area_id': 'bedroom', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'office': {'area_id': 'office', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'kitchen': {'area_id': 'kitchen', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}}}}
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:480 Saved occupancy state for 4 areas
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:463 Occupancy tracker shut down
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_ ERROR at teardown of TestContactSensorEffects.test_contact_close_resumes_thermostat_after_timeout _
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/pytest_homeassistant_custom_component/plugins.py:399: in verify_cleanup
+    pytest.fail(f"Lingering timer after test {handle!r}")
+E   Failed: Lingering timer after test <TimerHandle when=668.147253697 ThermostatContactSensorsCoordinator._handle_sensor_closed.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:642 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:640>
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.818562-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.818801-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=None, new_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:01.818941-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_door, old_state=None, new_state=<state binary_sensor.office_door=off; device_class=window @ 2025-12-28T20:07:01.819062-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_motion, old_state=None, new_state=<state binary_sensor.living_room_motion=off; device_class=motion @ 2025-12-28T20:07:01.819180-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_motion, old_state=None, new_state=<state binary_sensor.bedroom_motion=off; device_class=motion @ 2025-12-28T20:07:01.819290-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_motion, old_state=None, new_state=<state binary_sensor.office_motion=off; device_class=motion @ 2025-12-28T20:07:01.819418-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.kitchen_motion, old_state=None, new_state=<state binary_sensor.kitchen_motion=off; device_class=motion @ 2025-12-28T20:07:01.819531-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.living_room_temperature, old_state=None, new_state=<state sensor.living_room_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.819639-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.bedroom_temperature, old_state=None, new_state=<state sensor.bedroom_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.819751-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.office_temperature, old_state=None, new_state=<state sensor.office_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.819865-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.kitchen_temperature, old_state=None, new_state=<state sensor.kitchen_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.819974-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.living_room_vent, old_state=None, new_state=<state cover.living_room_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820086-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.bedroom_vent, old_state=None, new_state=<state cover.bedroom_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820193-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.office_vent, old_state=None, new_state=<state cover.office_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820297-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=None, new_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820420-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=None, new_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820529-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=None, new_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.820646-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=cover, service=open_cover_tilt>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=cover, service=close_cover_tilt>
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.818562-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.818801-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=None, new_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:01.818941-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_door, old_state=None, new_state=<state binary_sensor.office_door=off; device_class=window @ 2025-12-28T20:07:01.819062-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_motion, old_state=None, new_state=<state binary_sensor.living_room_motion=off; device_class=motion @ 2025-12-28T20:07:01.819180-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_motion, old_state=None, new_state=<state binary_sensor.bedroom_motion=off; device_class=motion @ 2025-12-28T20:07:01.819290-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_motion, old_state=None, new_state=<state binary_sensor.office_motion=off; device_class=motion @ 2025-12-28T20:07:01.819418-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.kitchen_motion, old_state=None, new_state=<state binary_sensor.kitchen_motion=off; device_class=motion @ 2025-12-28T20:07:01.819531-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.living_room_temperature, old_state=None, new_state=<state sensor.living_room_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.819639-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.bedroom_temperature, old_state=None, new_state=<state sensor.bedroom_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.819751-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.office_temperature, old_state=None, new_state=<state sensor.office_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.819865-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.kitchen_temperature, old_state=None, new_state=<state sensor.kitchen_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.819974-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.living_room_vent, old_state=None, new_state=<state cover.living_room_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820086-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.bedroom_vent, old_state=None, new_state=<state cover.bedroom_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820193-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.office_vent, old_state=None, new_state=<state cover.office_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820297-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=None, new_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820420-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=None, new_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820529-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=None, new_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.820646-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=cover, service=open_cover_tilt>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=cover, service=close_cover_tilt>
+----------------------------- Captured stderr call -----------------------------
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Built occupancy tracking for 4 areas with 4 total sensors
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:No stored occupancy state found
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker setup complete. Monitoring 4 sensors across 4 areas
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Coordinator setup complete. Monitoring 3 sensors for thermostat climate.main_thermostat
+DEBUG:custom_components.thermostat_contact_sensors.thermostat_control:Contact sensor pause state: False
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.kitchen_vent: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.kitchen_vent>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820420-08:00>, new_state=<state cover.kitchen_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.824411-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.hallway_vents: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.hallway_vents>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.820646-08:00>, new_state=<state cover.hallway_vents=closed; current_tilt_position=0, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.824752-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.basement_vent: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.basement_vent>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820529-08:00>, new_state=<state cover.basement_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.825072-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Executed 3 vent commands out of 3 pending
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.818801-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.825279-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.living_room_window changed from off to on
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor opened: binary_sensor.living_room_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Open timeout expired with 1 sensors open. Pausing thermostat.
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.818562-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.826301-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Thermostat paused. Previous mode: heat
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Thermostat climate.main_thermostat changed from heat to off (is_paused=True)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:User turned thermostat off while sensors open. Will restore to: heat
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.825279-08:00>, new_state=<state binary_sensor.living_room_window=off @ 2025-12-28T20:07:01.827083-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.living_room_window changed from on to off
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor closed: binary_sensor.living_room_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Started close timer for 2 minutes
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Close timeout expired with all sensors closed. Resuming thermostat.
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=heat>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.826301-08:00>, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.828048-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Thermostat resumed to mode: heat
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Thermostat climate.main_thermostat changed from off to heat (is_paused=False)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Updated last known HVAC mode to: heat
+DEBUG:pytest_homeassistant_custom_component.common:Writing data to thermostat_contact_sensors.integration_test_entry.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.integration_test_entry.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:01.828808+00:00', 'areas': {'living_room': {'area_id': 'living_room', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'bedroom': {'area_id': 'bedroom', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'office': {'area_id': 'office', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'kitchen': {'area_id': 'kitchen', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}}}}
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Saved occupancy state for 4 areas
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker shut down
+------------------------------ Captured log call -------------------------------
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:393 Built occupancy tracking for 4 areas with 4 total sensors
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:489 No stored occupancy state found
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:435 Occupancy tracker setup complete. Monitoring 4 sensors across 4 areas
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:385 Coordinator setup complete. Monitoring 3 sensors for thermostat climate.main_thermostat
+DEBUG    custom_components.thermostat_contact_sensors.thermostat_control:thermostat_control.py:434 Contact sensor pause state: False
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.kitchen_vent: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.kitchen_vent>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820420-08:00>, new_state=<state cover.kitchen_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.824411-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.hallway_vents: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.hallway_vents>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.820646-08:00>, new_state=<state cover.hallway_vents=closed; current_tilt_position=0, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.824752-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.basement_vent: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.basement_vent>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.820529-08:00>, new_state=<state cover.basement_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.825072-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:488 Executed 3 vent commands out of 3 pending
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.818801-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.825279-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.living_room_window changed from off to on
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:604 Sensor opened: binary_sensor.living_room_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:620 Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:659 Open timeout expired with 1 sensors open. Pausing thermostat.
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.818562-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.826301-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:694 Thermostat paused. Previous mode: heat
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:531 Thermostat climate.main_thermostat changed from heat to off (is_paused=True)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:560 User turned thermostat off while sensors open. Will restore to: heat
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.825279-08:00>, new_state=<state binary_sensor.living_room_window=off @ 2025-12-28T20:07:01.827083-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.living_room_window changed from on to off
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:628 Sensor closed: binary_sensor.living_room_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:644 Started close timer for 2 minutes
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:709 Close timeout expired with all sensors closed. Resuming thermostat.
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=heat>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.826301-08:00>, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.828048-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:751 Thermostat resumed to mode: heat
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:531 Thermostat climate.main_thermostat changed from off to heat (is_paused=False)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:542 Updated last known HVAC mode to: heat
+DEBUG    pytest_homeassistant_custom_component.common:common.py:1423 Writing data to thermostat_contact_sensors.integration_test_entry.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.integration_test_entry.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:01.828808+00:00', 'areas': {'living_room': {'area_id': 'living_room', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'bedroom': {'area_id': 'bedroom', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'office': {'area_id': 'office', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'kitchen': {'area_id': 'kitchen', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}}}}
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:480 Saved occupancy state for 4 areas
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:463 Occupancy tracker shut down
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_ ERROR at teardown of TestContactSensorEffects.test_multiple_contacts_open_one_close_stays_paused _
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/pytest_homeassistant_custom_component/plugins.py:399: in verify_cleanup
+    pytest.fail(f"Lingering timer after test {handle!r}")
+E   Failed: Lingering timer after test <TimerHandle when=848.210081063 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.883282-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.883512-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=None, new_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:01.883648-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_door, old_state=None, new_state=<state binary_sensor.office_door=off; device_class=window @ 2025-12-28T20:07:01.883763-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_motion, old_state=None, new_state=<state binary_sensor.living_room_motion=off; device_class=motion @ 2025-12-28T20:07:01.883872-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_motion, old_state=None, new_state=<state binary_sensor.bedroom_motion=off; device_class=motion @ 2025-12-28T20:07:01.883977-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_motion, old_state=None, new_state=<state binary_sensor.office_motion=off; device_class=motion @ 2025-12-28T20:07:01.884080-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.kitchen_motion, old_state=None, new_state=<state binary_sensor.kitchen_motion=off; device_class=motion @ 2025-12-28T20:07:01.884186-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.living_room_temperature, old_state=None, new_state=<state sensor.living_room_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.884289-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.bedroom_temperature, old_state=None, new_state=<state sensor.bedroom_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.884421-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.office_temperature, old_state=None, new_state=<state sensor.office_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.884537-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.kitchen_temperature, old_state=None, new_state=<state sensor.kitchen_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.884646-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.living_room_vent, old_state=None, new_state=<state cover.living_room_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.884754-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.bedroom_vent, old_state=None, new_state=<state cover.bedroom_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.884869-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.office_vent, old_state=None, new_state=<state cover.office_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.884974-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=None, new_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.885077-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=None, new_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.885177-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=None, new_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.885295-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=cover, service=open_cover_tilt>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=cover, service=close_cover_tilt>
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.883282-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.883512-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=None, new_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:01.883648-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_door, old_state=None, new_state=<state binary_sensor.office_door=off; device_class=window @ 2025-12-28T20:07:01.883763-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_motion, old_state=None, new_state=<state binary_sensor.living_room_motion=off; device_class=motion @ 2025-12-28T20:07:01.883872-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_motion, old_state=None, new_state=<state binary_sensor.bedroom_motion=off; device_class=motion @ 2025-12-28T20:07:01.883977-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_motion, old_state=None, new_state=<state binary_sensor.office_motion=off; device_class=motion @ 2025-12-28T20:07:01.884080-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.kitchen_motion, old_state=None, new_state=<state binary_sensor.kitchen_motion=off; device_class=motion @ 2025-12-28T20:07:01.884186-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.living_room_temperature, old_state=None, new_state=<state sensor.living_room_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.884289-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.bedroom_temperature, old_state=None, new_state=<state sensor.bedroom_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.884421-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.office_temperature, old_state=None, new_state=<state sensor.office_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.884537-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.kitchen_temperature, old_state=None, new_state=<state sensor.kitchen_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:01.884646-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.living_room_vent, old_state=None, new_state=<state cover.living_room_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.884754-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.bedroom_vent, old_state=None, new_state=<state cover.bedroom_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.884869-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.office_vent, old_state=None, new_state=<state cover.office_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.884974-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=None, new_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.885077-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=None, new_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.885177-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=None, new_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.885295-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=cover, service=open_cover_tilt>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=cover, service=close_cover_tilt>
+----------------------------- Captured stderr call -----------------------------
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Built occupancy tracking for 4 areas with 4 total sensors
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:No stored occupancy state found
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker setup complete. Monitoring 4 sensors across 4 areas
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Coordinator setup complete. Monitoring 3 sensors for thermostat climate.main_thermostat
+DEBUG:custom_components.thermostat_contact_sensors.thermostat_control:Contact sensor pause state: False
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.kitchen_vent: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.kitchen_vent>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.885077-08:00>, new_state=<state cover.kitchen_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.888828-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.hallway_vents: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.hallway_vents>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.885295-08:00>, new_state=<state cover.hallway_vents=closed; current_tilt_position=0, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.889145-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.basement_vent: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.basement_vent>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.885177-08:00>, new_state=<state cover.basement_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.889477-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Executed 3 vent commands out of 3 pending
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.883512-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.889682-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:01.883648-08:00>, new_state=<state binary_sensor.bedroom_window=on @ 2025-12-28T20:07:01.889904-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.living_room_window changed from off to on
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor opened: binary_sensor.living_room_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.bedroom_window changed from off to on
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor opened: binary_sensor.bedroom_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Open timeout expired with 2 sensors open. Pausing thermostat.
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.883282-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.891133-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Thermostat paused. Previous mode: heat
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Thermostat climate.main_thermostat changed from heat to off (is_paused=True)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:User turned thermostat off while sensors open. Will restore to: heat
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.889682-08:00>, new_state=<state binary_sensor.living_room_window=off @ 2025-12-28T20:07:01.891853-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.living_room_window changed from on to off
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor closed: binary_sensor.living_room_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Close timeout expired but 1 sensors are still open
+DEBUG:pytest_homeassistant_custom_component.common:Writing data to thermostat_contact_sensors.integration_test_entry.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.integration_test_entry.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:01.892657+00:00', 'areas': {'living_room': {'area_id': 'living_room', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'bedroom': {'area_id': 'bedroom', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'office': {'area_id': 'office', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'kitchen': {'area_id': 'kitchen', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}}}}
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Saved occupancy state for 4 areas
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker shut down
+------------------------------ Captured log call -------------------------------
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:393 Built occupancy tracking for 4 areas with 4 total sensors
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:489 No stored occupancy state found
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:435 Occupancy tracker setup complete. Monitoring 4 sensors across 4 areas
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:385 Coordinator setup complete. Monitoring 3 sensors for thermostat climate.main_thermostat
+DEBUG    custom_components.thermostat_contact_sensors.thermostat_control:thermostat_control.py:434 Contact sensor pause state: False
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.kitchen_vent: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.kitchen_vent>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.885077-08:00>, new_state=<state cover.kitchen_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.888828-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.hallway_vents: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.hallway_vents>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.885295-08:00>, new_state=<state cover.hallway_vents=closed; current_tilt_position=0, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:01.889145-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.vent_control:vent_control.py:571 Executing close_cover_tilt on cover.basement_vent: Close vent
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.basement_vent>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:01.885177-08:00>, new_state=<state cover.basement_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:01.889477-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:488 Executed 3 vent commands out of 3 pending
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:01.883512-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.889682-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:01.883648-08:00>, new_state=<state binary_sensor.bedroom_window=on @ 2025-12-28T20:07:01.889904-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.living_room_window changed from off to on
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:604 Sensor opened: binary_sensor.living_room_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:620 Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.bedroom_window changed from off to on
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:604 Sensor opened: binary_sensor.bedroom_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:659 Open timeout expired with 2 sensors open. Pausing thermostat.
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.883282-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:01.891133-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:694 Thermostat paused. Previous mode: heat
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:531 Thermostat climate.main_thermostat changed from heat to off (is_paused=True)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:560 User turned thermostat off while sensors open. Will restore to: heat
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:01.889682-08:00>, new_state=<state binary_sensor.living_room_window=off @ 2025-12-28T20:07:01.891853-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.living_room_window changed from on to off
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:628 Sensor closed: binary_sensor.living_room_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:703 Close timeout expired but 1 sensors are still open
+DEBUG    pytest_homeassistant_custom_component.common:common.py:1423 Writing data to thermostat_contact_sensors.integration_test_entry.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.integration_test_entry.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:01.892657+00:00', 'areas': {'living_room': {'area_id': 'living_room', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'bedroom': {'area_id': 'bedroom', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'office': {'area_id': 'office', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}, 'kitchen': {'area_id': 'kitchen', 'is_active': False, 'occupancy_start_time': None, 'was_active_before_unoccupied': False, 'unoccupancy_start_time': None}}}}
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:480 Saved occupancy state for 4 areas
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:463 Occupancy tracker shut down
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_ ERROR at teardown of TestFullSystemIntegration.test_scenario_window_opened_during_heating _
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/pytest_homeassistant_custom_component/plugins.py:399: in verify_cleanup
+    pytest.fail(f"Lingering timer after test {handle!r}")
+E   Failed: Lingering timer after test <TimerHandle when=848.537502464 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:02.210782-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:02.210981-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=None, new_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:02.211104-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_door, old_state=None, new_state=<state binary_sensor.office_door=off; device_class=window @ 2025-12-28T20:07:02.211218-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_motion, old_state=None, new_state=<state binary_sensor.living_room_motion=off; device_class=motion @ 2025-12-28T20:07:02.211328-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_motion, old_state=None, new_state=<state binary_sensor.bedroom_motion=off; device_class=motion @ 2025-12-28T20:07:02.211482-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_motion, old_state=None, new_state=<state binary_sensor.office_motion=off; device_class=motion @ 2025-12-28T20:07:02.211601-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.kitchen_motion, old_state=None, new_state=<state binary_sensor.kitchen_motion=off; device_class=motion @ 2025-12-28T20:07:02.211707-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.living_room_temperature, old_state=None, new_state=<state sensor.living_room_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:02.211813-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.bedroom_temperature, old_state=None, new_state=<state sensor.bedroom_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:02.211924-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.office_temperature, old_state=None, new_state=<state sensor.office_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:02.212033-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=sensor.kitchen_temperature, old_state=None, new_state=<state sensor.kitchen_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:02.212141-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.living_room_vent, old_state=None, new_state=<state cover.living_room_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212247-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.bedroom_vent, old_state=None, new_state=<state cover.bedroom_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212371-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.office_vent, old_state=None, new_state=<state cover.office_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212486-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=None, new_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212591-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=None, new_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212692-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=None, new_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:02.212805-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=cover, service=open_cover_tilt>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=cover, service=close_cover_tilt>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:02.210782-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:02.210981-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_window, old_state=None, new_state=<state binary_sensor.bedroom_window=off; device_class=window @ 2025-12-28T20:07:02.211104-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_door, old_state=None, new_state=<state binary_sensor.office_door=off; device_class=window @ 2025-12-28T20:07:02.211218-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_motion, old_state=None, new_state=<state binary_sensor.living_room_motion=off; device_class=motion @ 2025-12-28T20:07:02.211328-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.bedroom_motion, old_state=None, new_state=<state binary_sensor.bedroom_motion=off; device_class=motion @ 2025-12-28T20:07:02.211482-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.office_motion, old_state=None, new_state=<state binary_sensor.office_motion=off; device_class=motion @ 2025-12-28T20:07:02.211601-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.kitchen_motion, old_state=None, new_state=<state binary_sensor.kitchen_motion=off; device_class=motion @ 2025-12-28T20:07:02.211707-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.living_room_temperature, old_state=None, new_state=<state sensor.living_room_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:02.211813-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.bedroom_temperature, old_state=None, new_state=<state sensor.bedroom_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:02.211924-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.office_temperature, old_state=None, new_state=<state sensor.office_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:02.212033-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=sensor.kitchen_temperature, old_state=None, new_state=<state sensor.kitchen_temperature=20.0; unit_of_measurement=°C @ 2025-12-28T20:07:02.212141-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.living_room_vent, old_state=None, new_state=<state cover.living_room_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212247-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.bedroom_vent, old_state=None, new_state=<state cover.bedroom_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212371-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.office_vent, old_state=None, new_state=<state cover.office_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212486-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=None, new_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212591-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=None, new_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212692-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=None, new_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:02.212805-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=cover, service=open_cover_tilt>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=cover, service=close_cover_tilt>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+----------------------------- Captured stderr call -----------------------------
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Built occupancy tracking for 4 areas with 4 total sensors
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:No stored occupancy state found
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker setup complete. Monitoring 4 sensors across 4 areas
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Coordinator setup complete. Monitoring 3 sensors for thermostat climate.main_thermostat
+DEBUG:custom_components.thermostat_contact_sensors.thermostat_control:Contact sensor pause state: False
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.kitchen_vent: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.kitchen_vent>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.kitchen_vent, old_state=<state cover.kitchen_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212591-08:00>, new_state=<state cover.kitchen_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:02.216292-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.hallway_vents: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.hallway_vents>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.hallway_vents, old_state=<state cover.hallway_vents=open; current_tilt_position=100, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:02.212805-08:00>, new_state=<state cover.hallway_vents=closed; current_tilt_position=0, entity_id=['cover.hallway_vent_1', 'cover.hallway_vent_2'] @ 2025-12-28T20:07:02.216635-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.vent_control:Executing close_cover_tilt on cover.basement_vent: Close vent
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=cover, service=close_cover_tilt, service_data=entity_id=cover.basement_vent>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=cover.basement_vent, old_state=<state cover.basement_vent=open; current_tilt_position=100 @ 2025-12-28T20:07:02.212692-08:00>, new_state=<state cover.basement_vent=closed; current_tilt_position=0 @ 2025-12-28T20:07:02.216940-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Executed 3 vent commands out of 3 pending
+DEBUG:custom_components.thermostat_contact_sensors.thermostat_control:Contact sensor pause state: False
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window @ 2025-12-28T20:07:02.210981-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:02.217308-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.living_room_window changed from off to on
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor opened: binary_sensor.living_room_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Open timeout expired with 1 sensors open. Pausing thermostat.
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:02.210782-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:02.218325-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Thermostat paused. Previous mode: heat
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:659 Open timeout expired with 1 sensors open. Pausing thermostat.
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_reported[L]: entity_id=climate.main_thermostat, old_last_reported=2025-12-28T20:07:08.919122-08:00, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.919122-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:694 Thermostat paused. Previous mode: off
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:08.920627-08:00>, new_state=<state binary_sensor.living_room_window=off @ 2025-12-28T20:07:08.922107-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.living_room_window changed from on to off
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:628 Sensor closed: binary_sensor.living_room_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:644 Started close timer for 5 minutes
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:709 Close timeout expired with all sensors closed. Resuming thermostat.
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:717 Thermostat was off before pause and respect_user_off is enabled. Keeping thermostat off.
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:751 Thermostat resumed to mode: off
+DEBUG    pytest_homeassistant_custom_component.common:common.py:1423 Writing data to thermostat_contact_sensors.01KDM4KPBMZH13J4VEW7BMVRQ6.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.01KDM4KPBMZH13J4VEW7BMVRQ6.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:08.923342+00:00', 'areas': {}}}
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:480 Saved occupancy state for 0 areas
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:463 Occupancy tracker shut down
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_ ERROR at teardown of TestRespectUserOffBehavior.test_active_thermostat_always_resumes _
+/opt/hostedtoolcache/Python/3.12.12/x64/lib/python3.12/site-packages/pytest_homeassistant_custom_component/plugins.py:399: in verify_cleanup
+    pytest.fail(f"Lingering timer after test {handle!r}")
+E   Failed: Lingering timer after test <TimerHandle when=855.303878813 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:homeassistant.helpers.restore_state:Not creating cache - no saved states found
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.980724-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window, friendly_name=Living Room Window @ 2025-12-28T20:07:08.980938-08:00>>
+DEBUG:homeassistant.core:Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    homeassistant.helpers.restore_state:restore_state.py:147 Not creating cache - no saved states found
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=None, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.980724-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=None, new_state=<state binary_sensor.living_room_window=off; device_class=window, friendly_name=Living Room Window @ 2025-12-28T20:07:08.980938-08:00>>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event service_registered[L]: domain=climate, service=set_hvac_mode>
+----------------------------- Captured stderr call -----------------------------
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Built occupancy tracking for 0 areas with 0 total sensors
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:No stored occupancy state found
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker setup complete. Monitoring 0 sensors across 0 areas
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Coordinator setup complete. Monitoring 1 sensors for thermostat climate.main_thermostat
+DEBUG:custom_components.thermostat_contact_sensors.thermostat_control:Contact sensor pause state: False
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window, friendly_name=Living Room Window @ 2025-12-28T20:07:08.980938-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:08.983683-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.living_room_window changed from off to on
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor opened: binary_sensor.living_room_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Open timeout expired with 1 sensors open. Pausing thermostat.
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.980724-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.984743-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Thermostat paused. Previous mode: heat
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Thermostat climate.main_thermostat changed from heat to off (is_paused=True)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:User turned thermostat off while sensors open. Will restore to: heat
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:08.983683-08:00>, new_state=<state binary_sensor.living_room_window=off @ 2025-12-28T20:07:08.985498-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor binary_sensor.living_room_window changed from on to off
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Sensor closed: binary_sensor.living_room_window
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Started close timer for 5 minutes
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Close timeout expired with all sensors closed. Resuming thermostat.
+DEBUG:homeassistant.core:Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=heat>
+DEBUG:homeassistant.core:Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.984743-08:00>, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.986471-08:00>>
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Manually updated thermostat_contact_sensors data
+INFO:custom_components.thermostat_contact_sensors.coordinator:Thermostat resumed to mode: heat
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Thermostat climate.main_thermostat changed from off to heat (is_paused=False)
+DEBUG:custom_components.thermostat_contact_sensors.coordinator:Updated last known HVAC mode to: heat
+DEBUG:pytest_homeassistant_custom_component.common:Writing data to thermostat_contact_sensors.01KDM4KPDMG15BQFA6K8YYY11Y.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.01KDM4KPDMG15BQFA6K8YYY11Y.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:08.987209+00:00', 'areas': {}}}
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Saved occupancy state for 0 areas
+DEBUG:custom_components.thermostat_contact_sensors.occupancy:Occupancy tracker shut down
+------------------------------ Captured log call -------------------------------
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:393 Built occupancy tracking for 0 areas with 0 total sensors
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:489 No stored occupancy state found
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:435 Occupancy tracker setup complete. Monitoring 0 sensors across 0 areas
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:385 Coordinator setup complete. Monitoring 1 sensors for thermostat climate.main_thermostat
+DEBUG    custom_components.thermostat_contact_sensors.thermostat_control:thermostat_control.py:434 Contact sensor pause state: False
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=off; device_class=window, friendly_name=Living Room Window @ 2025-12-28T20:07:08.980938-08:00>, new_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:08.983683-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.living_room_window changed from off to on
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:604 Sensor opened: binary_sensor.living_room_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:620 Started open timer for 5 minutes (triggered by binary_sensor.living_room_window)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:659 Open timeout expired with 1 sensors open. Pausing thermostat.
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=off>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.980724-08:00>, new_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.984743-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:694 Thermostat paused. Previous mode: heat
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:531 Thermostat climate.main_thermostat changed from heat to off (is_paused=True)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:560 User turned thermostat off while sensors open. Will restore to: heat
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=binary_sensor.living_room_window, old_state=<state binary_sensor.living_room_window=on @ 2025-12-28T20:07:08.983683-08:00>, new_state=<state binary_sensor.living_room_window=off @ 2025-12-28T20:07:08.985498-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:581 Sensor binary_sensor.living_room_window changed from on to off
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:628 Sensor closed: binary_sensor.living_room_window
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:644 Started close timer for 5 minutes
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:709 Close timeout expired with all sensors closed. Resuming thermostat.
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event call_service[L]: domain=climate, service=set_hvac_mode, service_data=entity_id=climate.main_thermostat, hvac_mode=heat>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event state_changed[L]: entity_id=climate.main_thermostat, old_state=<state climate.main_thermostat=off; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.984743-08:00>, new_state=<state climate.main_thermostat=heat; friendly_name=Main Thermostat, hvac_modes=[<HVACMode.OFF: 'off'>, <HVACMode.HEAT: 'heat'>, <HVACMode.COOL: 'cool'>, <HVACMode.AUTO: 'auto'>], current_temperature=20, temperature=22 @ 2025-12-28T20:07:08.986471-08:00>>
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:update_coordinator.py:506 Manually updated thermostat_contact_sensors data
+INFO     custom_components.thermostat_contact_sensors.coordinator:coordinator.py:751 Thermostat resumed to mode: heat
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:531 Thermostat climate.main_thermostat changed from off to heat (is_paused=False)
+DEBUG    custom_components.thermostat_contact_sensors.coordinator:coordinator.py:542 Updated last known HVAC mode to: heat
+DEBUG    pytest_homeassistant_custom_component.common:common.py:1423 Writing data to thermostat_contact_sensors.01KDM4KPDMG15BQFA6K8YYY11Y.occupancy: {'version': 1, 'minor_version': 1, 'key': 'thermostat_contact_sensors.01KDM4KPDMG15BQFA6K8YYY11Y.occupancy', 'data': {'version': 1, 'saved_at': '2025-12-29T04:07:08.987209+00:00', 'areas': {}}}
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:480 Saved occupancy state for 0 areas
+DEBUG    custom_components.thermostat_contact_sensors.occupancy:occupancy.py:463 Occupancy tracker shut down
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_stop[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG:homeassistant.core:Bus:Handling <Event homeassistant_close[L]>
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_stop[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_final_write[L]>
+DEBUG    homeassistant.core:core.py:1548 Bus:Handling <Event homeassistant_close[L]>
+DEBUG    asyncio:base_events.py:714 Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+---------- coverage: platform linux, python 3.12.12-final-0 ----------
+Coverage XML written to file coverage.xml
+=========================== short test summary info ============================
+ERROR tests/test_integration.py::TestContactSensorEffects::test_contact_open_pauses_thermostat_after_timeout - Failed: Lingering timer after test <TimerHandle when=848.078792697 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+ERROR tests/test_integration.py::TestContactSensorEffects::test_contact_close_resumes_thermostat_after_timeout - Failed: Lingering timer after test <TimerHandle when=668.147253697 ThermostatContactSensorsCoordinator._handle_sensor_closed.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:642 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:640>
+ERROR tests/test_integration.py::TestContactSensorEffects::test_multiple_contacts_open_one_close_stays_paused - Failed: Lingering timer after test <TimerHandle when=848.210081063 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+ERROR tests/test_integration.py::TestFullSystemIntegration::test_scenario_window_opened_during_heating - Failed: Lingering timer after test <TimerHandle when=848.537502464 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+ERROR tests/test_switch.py::TestRespectUserOffBehavior::test_thermostat_off_resumes_when_respect_off_disabled - Failed: Lingering timer after test <TimerHandle when=855.175260647 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+ERROR tests/test_switch.py::TestRespectUserOffBehavior::test_thermostat_stays_off_when_respect_off_enabled - Failed: Lingering timer after test <TimerHandle when=855.240817827 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+ERROR tests/test_switch.py::TestRespectUserOffBehavior::test_active_thermostat_always_resumes - Failed: Lingering timer after test <TimerHandle when=855.303878813 ThermostatContactSensorsCoordinator._handle_sensor_opened.<locals>.<lambda>() at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:618 created at /home/runner/work/ha-thermostat-contact-sensors/ha-thermostat-contact-sensors/custom_components/thermostat_contact_sensors/coordinator.py:616>
+======================== 342 passed, 7 errors in 33.33s ========================
+Error: Process completed with exit code 1.
