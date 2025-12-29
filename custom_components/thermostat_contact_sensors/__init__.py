@@ -5,9 +5,7 @@ import logging
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.helpers import area_registry as ar
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
 from homeassistant.exceptions import ServiceValidationError
 
@@ -61,7 +59,6 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
         # Try to assign sensors to their actual areas
         entity_reg = er.async_get(hass)
-        area_reg = ar.async_get(hass)
 
         # Group sensors by area
         sensors_by_area: dict[str, list[str]] = {}

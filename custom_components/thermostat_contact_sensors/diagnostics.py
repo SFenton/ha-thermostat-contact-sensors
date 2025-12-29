@@ -9,11 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
-    CONF_AREAS,
-    CONF_CONTACT_SENSORS,
     CONF_NOTIFY_SERVICE,
-    CONF_THERMOSTAT,
-    DOMAIN,
 )
 from .coordinator import ThermostatContactSensorsCoordinator
 

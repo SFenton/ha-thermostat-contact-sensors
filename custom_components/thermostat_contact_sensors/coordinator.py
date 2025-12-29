@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import logging
 from typing import Any
 
@@ -16,7 +15,6 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (
     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_CLOSE_TIMEOUT,
-    CONF_CONTACT_SENSORS,
     CONF_GRACE_PERIOD_MINUTES,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
@@ -31,7 +29,6 @@ from .const import (
     CONF_OPEN_TIMEOUT,
     CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
-    CONF_THERMOSTAT,
     CONF_UNOCCUPIED_COOLING_THRESHOLD,
     CONF_UNOCCUPIED_HEATING_THRESHOLD,
     CONF_VENT_DEBOUNCE_SECONDS,

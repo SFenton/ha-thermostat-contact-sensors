@@ -10,21 +10,19 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_AREA_ENABLED,
-    CONF_MIN_OCCUPANCY_MINUTES,
     CONF_TEMPERATURE_SENSORS,
-    DEFAULT_MIN_OCCUPANCY_MINUTES,
     DOMAIN,
 )
 from .coordinator import ThermostatContactSensorsCoordinator
 from .occupancy import AreaOccupancyState
-from .thermostat_control import RoomTemperatureState, ThermostatAction, ThermostatState
+from .thermostat_control import RoomTemperatureState, ThermostatState
 
 _LOGGER = logging.getLogger(__name__)
 

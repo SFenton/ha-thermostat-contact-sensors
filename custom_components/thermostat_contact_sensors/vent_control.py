@@ -5,14 +5,12 @@ airflow to individual rooms based on occupancy and temperature conditions.
 """
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
-from homeassistant.components.group import DOMAIN as GROUP_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     STATE_OPEN,
@@ -21,7 +19,6 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:

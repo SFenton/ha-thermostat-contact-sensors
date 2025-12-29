@@ -31,16 +31,10 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_MIN_CYCLE_OFF_MINUTES,
-    CONF_MIN_CYCLE_ON_MINUTES,
-    CONF_TEMPERATURE_DEADBAND,
-    CONF_UNOCCUPIED_COOLING_THRESHOLD,
-    CONF_UNOCCUPIED_HEATING_THRESHOLD,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_TEMPERATURE_DEADBAND,

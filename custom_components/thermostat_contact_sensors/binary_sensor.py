@@ -9,12 +9,12 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_THERMOSTAT, DOMAIN
+from .const import DOMAIN
 from .coordinator import ThermostatContactSensorsCoordinator
 
 _LOGGER = logging.getLogger(__name__)
