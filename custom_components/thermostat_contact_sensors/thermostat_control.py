@@ -364,6 +364,11 @@ class ThermostatController:
         self._we_turned_off: bool = False  # Track if integration turned off thermostat
         self._previous_hvac_mode: str | None = None  # Track mode before we turned off
 
+        # Stored target temperatures (captured when thermostat is ON)
+        self._stored_target_temp: float | None = None
+        self._stored_target_temp_low: float | None = None
+        self._stored_target_temp_high: float | None = None
+
         # Storage for persisting state across restarts
         if entry_id:
             self._store: Store | None = Store(
@@ -502,6 +507,30 @@ class ThermostatController:
                 target_temp_high = float(target_temp_high)
             except (ValueError, TypeError):
                 target_temp_high = None
+
+        # If we have valid values, store them for when thermostat is OFF
+        if target_temp is not None:
+            self._stored_target_temp = target_temp
+        if target_temp_low is not None:
+            self._stored_target_temp_low = target_temp_low
+        if target_temp_high is not None:
+            self._stored_target_temp_high = target_temp_high
+
+        # If thermostat is OFF and we turned it off, use stored values
+        hvac_mode, _ = self.get_thermostat_state()
+        if hvac_mode == HVACMode.OFF and self._we_turned_off:
+            _LOGGER.debug(
+                "Thermostat is OFF (we turned it off) - using stored target temps: "
+                "temp=%s, low=%s, high=%s",
+                self._stored_target_temp,
+                self._stored_target_temp_low,
+                self._stored_target_temp_high,
+            )
+            return (
+                self._stored_target_temp,
+                self._stored_target_temp_low,
+                self._stored_target_temp_high,
+            )
 
         return target_temp, target_temp_low, target_temp_high
 
@@ -1163,14 +1192,21 @@ class ThermostatController:
         state_data = {
             "we_turned_off": self._we_turned_off,
             "previous_hvac_mode": self._previous_hvac_mode,
+            "stored_target_temp": self._stored_target_temp,
+            "stored_target_temp_low": self._stored_target_temp_low,
+            "stored_target_temp_high": self._stored_target_temp_high,
             "saved_at": dt_util.utcnow().isoformat(),
         }
 
         await self._store.async_save(state_data)
         _LOGGER.debug(
-            "Saved thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s",
+            "Saved thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s, "
+            "target_temps=(%s, %s, %s)",
             self._we_turned_off,
             self._previous_hvac_mode,
+            self._stored_target_temp,
+            self._stored_target_temp_low,
+            self._stored_target_temp_high,
         )
 
     async def _async_restore_state(self) -> None:
@@ -1189,9 +1225,21 @@ class ThermostatController:
         if stored_data.get("previous_hvac_mode"):
             self._previous_hvac_mode = stored_data["previous_hvac_mode"]
 
+        # Restore stored target temperatures
+        if stored_data.get("stored_target_temp") is not None:
+            self._stored_target_temp = stored_data["stored_target_temp"]
+        if stored_data.get("stored_target_temp_low") is not None:
+            self._stored_target_temp_low = stored_data["stored_target_temp_low"]
+        if stored_data.get("stored_target_temp_high") is not None:
+            self._stored_target_temp_high = stored_data["stored_target_temp_high"]
+
         _LOGGER.debug(
-            "Restored thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s (saved at %s)",
+            "Restored thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s, "
+            "target_temps=(%s, %s, %s) (saved at %s)",
             self._we_turned_off,
             self._previous_hvac_mode,
+            self._stored_target_temp,
+            self._stored_target_temp_low,
+            self._stored_target_temp_high,
             stored_data.get("saved_at", "unknown"),
         )

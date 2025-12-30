@@ -1912,3 +1912,220 @@ class TestThermostatControllerPersistence:
 
         # Should not raise
         await controller.async_shutdown()
+
+
+class TestStoredTargetTemperatures:
+    """Tests for stored target temperature behavior."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock Home Assistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        hass.services = AsyncMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        tracker = MagicMock(spec=RoomOccupancyTracker)
+        tracker.active_areas = []
+        return tracker
+
+    @pytest.fixture
+    def controller(self, mock_hass, mock_occupancy_tracker):
+        """Create a ThermostatController for testing."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+        )
+
+    def test_stored_target_temps_initially_none(self, controller):
+        """Test that stored target temps are initially None."""
+        assert controller._stored_target_temp is None
+        assert controller._stored_target_temp_low is None
+        assert controller._stored_target_temp_high is None
+
+    def test_target_temps_stored_when_thermostat_on(self, controller, mock_hass):
+        """Test that target temps are stored when retrieved while thermostat is ON."""
+        mock_state = MagicMock()
+        mock_state.state = HVACMode.HEAT
+        mock_state.attributes = {ATTR_TEMPERATURE: 72.0}
+        mock_hass.states.get.return_value = mock_state
+
+        target, low, high = controller.get_target_temperatures()
+
+        assert target == 72.0
+        assert controller._stored_target_temp == 72.0
+
+    def test_stored_temps_used_when_off_and_we_turned_off(self, controller, mock_hass):
+        """Test stored temps are returned when thermostat is OFF and we turned it off."""
+        # First, get temps while ON to store them
+        mock_state_on = MagicMock()
+        mock_state_on.state = HVACMode.HEAT
+        mock_state_on.attributes = {ATTR_TEMPERATURE: 72.0}
+        mock_hass.states.get.return_value = mock_state_on
+
+        controller.get_target_temperatures()  # This stores the value
+
+        # Now thermostat is OFF and we turned it off
+        mock_state_off = MagicMock()
+        mock_state_off.state = HVACMode.OFF
+        mock_state_off.attributes = {}  # No target temp when OFF
+        mock_hass.states.get.return_value = mock_state_off
+        controller._we_turned_off = True
+
+        target, low, high = controller.get_target_temperatures()
+
+        # Should return stored value
+        assert target == 72.0
+
+    def test_current_temps_used_when_off_but_user_turned_off(self, controller, mock_hass):
+        """Test current (None) temps are returned when user turned off thermostat."""
+        # First, get temps while ON to store them
+        mock_state_on = MagicMock()
+        mock_state_on.state = HVACMode.HEAT
+        mock_state_on.attributes = {ATTR_TEMPERATURE: 72.0}
+        mock_hass.states.get.return_value = mock_state_on
+
+        controller.get_target_temperatures()  # This stores the value
+
+        # Now thermostat is OFF but user turned it off (not us)
+        mock_state_off = MagicMock()
+        mock_state_off.state = HVACMode.OFF
+        mock_state_off.attributes = {}  # No target temp when OFF
+        mock_hass.states.get.return_value = mock_state_off
+        controller._we_turned_off = False  # User turned it off
+
+        target, low, high = controller.get_target_temperatures()
+
+        # Should return None (current value), not stored
+        assert target is None
+
+    def test_stored_temps_for_heat_cool_mode(self, controller, mock_hass):
+        """Test that heat_cool temps (low/high) are stored and restored."""
+        # Store temps while in HEAT_COOL mode
+        mock_state_on = MagicMock()
+        mock_state_on.state = HVACMode.HEAT_COOL
+        mock_state_on.attributes = {
+            ATTR_TARGET_TEMP_LOW: 68.0,
+            ATTR_TARGET_TEMP_HIGH: 75.0,
+        }
+        mock_hass.states.get.return_value = mock_state_on
+
+        controller.get_target_temperatures()
+
+        assert controller._stored_target_temp_low == 68.0
+        assert controller._stored_target_temp_high == 75.0
+
+        # Now OFF with we_turned_off
+        mock_state_off = MagicMock()
+        mock_state_off.state = HVACMode.OFF
+        mock_state_off.attributes = {}
+        mock_hass.states.get.return_value = mock_state_off
+        controller._we_turned_off = True
+
+        target, low, high = controller.get_target_temperatures()
+
+        assert low == 68.0
+        assert high == 75.0
+
+    def test_evaluation_uses_stored_temps_when_off(self, controller, mock_hass):
+        """Test that satiation evaluation uses stored temps when thermostat is OFF."""
+        # Set up: thermostat was HEAT with target 72, room at 68
+        controller._stored_target_temp = 72.0
+        controller._we_turned_off = True
+        controller._previous_hvac_mode = HVACMode.HEAT.value
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                mock_state = MagicMock()
+                mock_state.state = HVACMode.OFF
+                mock_state.attributes = {}  # No target temp when OFF
+                return mock_state
+            elif entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "68.0"  # Below target
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        active_areas = [
+            AreaOccupancyState(
+                area_id=TEST_AREA_LIVING_ROOM,
+                area_name="Living Room",
+                is_active=True,
+            )
+        ]
+        area_temp_sensors = {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]}
+
+        state = controller.evaluate_thermostat_action(active_areas, area_temp_sensors)
+
+        # Room is at 68, target is 72, so NOT satiated - should want to turn ON
+        assert state.recommended_action == ThermostatAction.TURN_ON
+
+
+class TestStoredTargetTempsPersistence:
+    """Tests for persistence of stored target temperatures."""
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        tracker = MagicMock(spec=RoomOccupancyTracker)
+        return tracker
+
+    @pytest.mark.asyncio
+    async def test_stored_temps_are_saved(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
+        """Test that stored target temps are saved to storage."""
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            entry_id="test_entry_123",
+        )
+
+        controller._store.async_save = AsyncMock()
+        controller._stored_target_temp = 72.0
+        controller._stored_target_temp_low = 68.0
+        controller._stored_target_temp_high = 76.0
+
+        await controller.async_shutdown()
+
+        controller._store.async_save.assert_called_once()
+        saved_data = controller._store.async_save.call_args[0][0]
+        assert saved_data["stored_target_temp"] == 72.0
+        assert saved_data["stored_target_temp_low"] == 68.0
+        assert saved_data["stored_target_temp_high"] == 76.0
+
+    @pytest.mark.asyncio
+    async def test_stored_temps_are_restored(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
+        """Test that stored target temps are restored from storage."""
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            entry_id="test_entry_123",
+        )
+
+        controller._store.async_load = AsyncMock(
+            return_value={
+                "we_turned_off": True,
+                "previous_hvac_mode": "heat",
+                "stored_target_temp": 72.0,
+                "stored_target_temp_low": 68.0,
+                "stored_target_temp_high": 76.0,
+                "saved_at": "2025-01-01T00:00:00",
+            }
+        )
+
+        await controller.async_setup()
+
+        assert controller._stored_target_temp == 72.0
+        assert controller._stored_target_temp_low == 68.0
+        assert controller._stored_target_temp_high == 76.0
