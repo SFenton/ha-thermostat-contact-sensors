@@ -27,7 +27,7 @@ from .conftest import (
 
 
 @pytest.fixture(autouse=True)
-async def setup_ha(hass: HomeAssistant, setup_test_entities, setup_entity_registry) -> None:
+async def setup_ha(hass: HomeAssistant, setup_test_entities, setup_entity_registry, mock_climate_service) -> None:
     """Set up Home Assistant with test entities."""
     pass
 
