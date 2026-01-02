@@ -742,7 +742,7 @@ class TestEdgeCases:
         )
 
     def test_no_active_rooms_returns_none(self, controller, mock_hass):
-        """Test that no active rooms results in NONE action."""
+        """Test that no active rooms results in TURN_OFF action when thermostat is on."""
         # Set up thermostat state
         mock_state = MagicMock()
         mock_state.state = HVACMode.HEAT
@@ -755,8 +755,28 @@ class TestEdgeCases:
 
         state = controller.evaluate_thermostat_action(active_areas, area_temp_sensors)
 
-        # No active rooms means we don't control the thermostat
+        # No active rooms means we should turn off the thermostat (idle)
         assert state.active_room_count == 0
+        assert state.recommended_action == ThermostatAction.TURN_OFF
+        assert "idle" in state.action_reason.lower()
+
+    def test_no_active_rooms_already_off_returns_none(self, controller, mock_hass):
+        """Test that no active rooms with thermostat already off results in NONE action."""
+        # Set up thermostat state as off (by user, not us)
+        mock_state = MagicMock()
+        mock_state.state = HVACMode.OFF
+        mock_state.attributes = {"temperature": 22.0, "current_temperature": 20.0}
+        mock_hass.states.get.return_value = mock_state
+
+        # Empty active areas list
+        active_areas = []
+        area_temp_sensors = {}
+
+        state = controller.evaluate_thermostat_action(active_areas, area_temp_sensors)
+
+        # Already off by user choice, should be NONE
+        assert state.active_room_count == 0
+        assert state.recommended_action == ThermostatAction.NONE
 
     def test_room_with_no_temp_sensors_ignored(self, controller, mock_hass):
         """Test that rooms without temperature sensors are ignored."""
@@ -1446,7 +1466,8 @@ class TestEvaluateThermostatActionWithCriticalRooms:
         )
 
         assert state.critical_room_count == 0
-        assert state.recommended_action == ThermostatAction.NONE
+        # Should turn off when idle (no active or critical rooms) and thermostat is on
+        assert state.recommended_action == ThermostatAction.TURN_OFF
         assert "No active or critical rooms" in state.action_reason
 
     def test_critical_room_count_in_state(self, controller, mock_hass):

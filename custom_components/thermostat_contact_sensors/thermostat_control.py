@@ -987,9 +987,18 @@ class ThermostatController:
 
         # Determine recommended action
         if len(active_areas) == 0 and critical_count == 0:
-            # No active rooms and no critical rooms
-            thermostat_state.recommended_action = ThermostatAction.NONE
-            thermostat_state.action_reason = "No active or critical rooms"
+            # No active rooms and no critical rooms - should turn off (idle)
+            if is_on:
+                can_off, reason = self.can_turn_off(now)
+                if can_off:
+                    thermostat_state.recommended_action = ThermostatAction.TURN_OFF
+                    thermostat_state.action_reason = "No active or critical rooms (idle)"
+                else:
+                    thermostat_state.recommended_action = ThermostatAction.WAIT_CYCLE_ON
+                    thermostat_state.action_reason = f"Want to turn off (idle) but {reason}"
+            else:
+                thermostat_state.recommended_action = ThermostatAction.NONE
+                thermostat_state.action_reason = "Already off, no active or critical rooms"
             return thermostat_state
 
         if not needs_conditioning:
