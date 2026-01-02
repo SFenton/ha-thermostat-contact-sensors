@@ -73,6 +73,9 @@ async def test_config_flow_user_success(hass: HomeAssistant) -> None:
     # Areas should be auto-discovered
     assert CONF_AREAS in result["data"]
 
+    # Cleanup: unload the entry to stop timers
+    await hass.config_entries.async_unload(result["result"].entry_id)
+
 
 async def test_config_flow_no_thermostat_error(hass: HomeAssistant) -> None:
     """Test config flow rejects invalid thermostat selection.
@@ -121,6 +124,7 @@ async def test_config_flow_duplicate_thermostat(hass: HomeAssistant) -> None:
     )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
+    first_entry = result["result"]
 
     # Second entry with same thermostat
     result = await hass.config_entries.flow.async_init(
@@ -142,6 +146,9 @@ async def test_config_flow_duplicate_thermostat(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "already_configured"
 
+    # Cleanup: unload the first entry to stop timers
+    await hass.config_entries.async_unload(first_entry.entry_id)
+
 
 async def test_config_flow_default_values(hass: HomeAssistant) -> None:
     """Test config flow uses default values."""
@@ -162,6 +169,9 @@ async def test_config_flow_default_values(hass: HomeAssistant) -> None:
     assert result["options"][CONF_OPEN_TIMEOUT] == DEFAULT_OPEN_TIMEOUT
     assert result["options"][CONF_CLOSE_TIMEOUT] == DEFAULT_CLOSE_TIMEOUT
     assert result["options"][CONF_NOTIFY_SERVICE] == ""
+
+    # Cleanup: unload the entry to stop timers
+    await hass.config_entries.async_unload(result["result"].entry_id)
 
 
 async def test_config_flow_with_notification_service(hass: HomeAssistant) -> None:
@@ -187,6 +197,9 @@ async def test_config_flow_with_notification_service(hass: HomeAssistant) -> Non
     assert result["options"][CONF_OPEN_TIMEOUT] == 10
     assert result["options"][CONF_CLOSE_TIMEOUT] == 5
 
+    # Cleanup: unload the entry to stop timers
+    await hass.config_entries.async_unload(result["result"].entry_id)
+
 
 async def test_config_flow_auto_discovers_areas(hass: HomeAssistant) -> None:
     """Test that config flow auto-discovers areas and their sensors."""
@@ -209,3 +222,6 @@ async def test_config_flow_auto_discovers_areas(hass: HomeAssistant) -> None:
     areas = result["data"].get(CONF_AREAS, {})
     # Should have at least the test areas we set up
     assert len(areas) >= 0  # Will depend on entity registry setup
+
+    # Cleanup: unload the entry to stop timers
+    await hass.config_entries.async_unload(result["result"].entry_id)
