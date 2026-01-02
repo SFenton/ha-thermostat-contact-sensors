@@ -75,6 +75,7 @@ async def test_config_flow_user_success(hass: HomeAssistant) -> None:
 
     # Cleanup: unload the entry to stop timers
     await hass.config_entries.async_unload(result["result"].entry_id)
+    await hass.async_block_till_done()
 
 
 async def test_config_flow_no_thermostat_error(hass: HomeAssistant) -> None:
@@ -148,6 +149,7 @@ async def test_config_flow_duplicate_thermostat(hass: HomeAssistant) -> None:
 
     # Cleanup: unload the first entry to stop timers
     await hass.config_entries.async_unload(first_entry.entry_id)
+    await hass.async_block_till_done()
 
 
 async def test_config_flow_default_values(hass: HomeAssistant) -> None:
@@ -172,6 +174,7 @@ async def test_config_flow_default_values(hass: HomeAssistant) -> None:
 
     # Cleanup: unload the entry to stop timers
     await hass.config_entries.async_unload(result["result"].entry_id)
+    await hass.async_block_till_done()
 
 
 async def test_config_flow_with_notification_service(hass: HomeAssistant) -> None:
@@ -199,6 +202,7 @@ async def test_config_flow_with_notification_service(hass: HomeAssistant) -> Non
 
     # Cleanup: unload the entry to stop timers
     await hass.config_entries.async_unload(result["result"].entry_id)
+    await hass.async_block_till_done()
 
 
 async def test_config_flow_auto_discovers_areas(hass: HomeAssistant) -> None:
@@ -225,3 +229,4 @@ async def test_config_flow_auto_discovers_areas(hass: HomeAssistant) -> None:
 
     # Cleanup: unload the entry to stop timers
     await hass.config_entries.async_unload(result["result"].entry_id)
+    await hass.async_block_till_done()
