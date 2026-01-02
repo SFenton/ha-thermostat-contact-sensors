@@ -985,9 +985,20 @@ class ThermostatController:
         unsatiated_active = len(active_areas) - satiated_count
         needs_conditioning = unsatiated_active > 0 or critical_count > 0
 
+        # Check if any rooms are configured at all
+        # (if no active AND no inactive areas, no rooms are configured)
+        rooms_configured = len(active_areas) > 0 or len(inactive_areas) > 0
+
         # Determine recommended action
         if len(active_areas) == 0 and critical_count == 0:
-            # No active rooms and no critical rooms - should turn off (idle)
+            # No active rooms and no critical rooms
+            if not rooms_configured:
+                # No rooms configured at all - don't control thermostat
+                thermostat_state.recommended_action = ThermostatAction.NONE
+                thermostat_state.action_reason = "No rooms configured"
+                return thermostat_state
+            
+            # Rooms are configured but none active - should turn off (idle)
             if is_on:
                 can_off, reason = self.can_turn_off(now)
                 if can_off:

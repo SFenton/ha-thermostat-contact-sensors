@@ -741,21 +741,62 @@ class TestEdgeCases:
             min_cycle_off_minutes=5,
         )
 
-    def test_no_active_rooms_returns_none(self, controller, mock_hass):
-        """Test that no active rooms results in TURN_OFF action when thermostat is on."""
+    def test_no_rooms_configured_returns_none(self, controller, mock_hass):
+        """Test that no rooms configured results in NONE action."""
         # Set up thermostat state
         mock_state = MagicMock()
         mock_state.state = HVACMode.HEAT
         mock_state.attributes = {"temperature": 22.0, "current_temperature": 20.0}
         mock_hass.states.get.return_value = mock_state
 
-        # Empty active areas list
+        # No active areas and no inactive areas = no rooms configured
         active_areas = []
         area_temp_sensors = {}
+        inactive_areas = []
 
-        state = controller.evaluate_thermostat_action(active_areas, area_temp_sensors)
+        state = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas
+        )
 
-        # No active rooms means we should turn off the thermostat (idle)
+        # No rooms configured means we don't control the thermostat
+        assert state.active_room_count == 0
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "no rooms configured" in state.action_reason.lower()
+
+    def test_rooms_configured_but_none_active_turns_off(self, controller, mock_hass):
+        """Test that rooms configured but none active results in TURN_OFF when thermostat is on."""
+        # Set up thermostat state
+        mock_state = MagicMock()
+        mock_state.state = HVACMode.HEAT
+        mock_state.attributes = {"temperature": 22.0, "current_temperature": 20.0}
+        mock_hass.states.get.return_value = mock_state
+
+        # No active areas but there are inactive areas (rooms are configured)
+        active_areas = []
+        inactive_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            is_active=False,
+        )
+        # Room temperature is comfortable, not critical
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                return mock_state
+            elif entity_id == TEST_TEMP_SENSOR_1:
+                temp_state = MagicMock()
+                temp_state.state = "21.0"  # Within threshold
+                return temp_state
+            return None
+        mock_hass.states.get.side_effect = get_state
+
+        area_temp_sensors = {TEST_AREA_BEDROOM: [TEST_TEMP_SENSOR_1]}
+        inactive_areas = [inactive_area]
+
+        state = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas
+        )
+
+        # Rooms configured but none active means we should turn off the thermostat (idle)
         assert state.active_room_count == 0
         assert state.recommended_action == ThermostatAction.TURN_OFF
         assert "idle" in state.action_reason.lower()
@@ -768,7 +809,7 @@ class TestEdgeCases:
         mock_state.attributes = {"temperature": 22.0, "current_temperature": 20.0}
         mock_hass.states.get.return_value = mock_state
 
-        # Empty active areas list
+        # No active areas, no inactive areas = no rooms configured
         active_areas = []
         area_temp_sensors = {}
 
