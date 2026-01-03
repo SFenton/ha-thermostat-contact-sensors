@@ -45,6 +45,8 @@ from custom_components.thermostat_contact_sensors.const import (
 from .conftest import (
     TEST_AREA_BEDROOM,
     TEST_AREA_LIVING_ROOM,
+    TEST_MOTION_SENSOR_1,
+    TEST_MOTION_SENSOR_2,
     TEST_NOTIFY_SERVICE,
     TEST_SENSOR_1,
     TEST_SENSOR_2,
@@ -283,7 +285,7 @@ async def test_options_flow_area_config(
         user_input={
             CONF_AREA_ENABLED: True,
             CONF_CONTACT_SENSORS: [],
-            CONF_BINARY_SENSORS: [TEST_SENSOR_1],  # Only select one sensor
+            CONF_BINARY_SENSORS: [TEST_MOTION_SENSOR_1],  # Only select one motion sensor
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],
         },
@@ -294,7 +296,7 @@ async def test_options_flow_area_config(
     assert result["step_id"] == "configure_area_sensors"
 
     # Verify the area config was updated
-    assert mock_config_entry.data[CONF_AREAS][TEST_AREA_LIVING_ROOM][CONF_BINARY_SENSORS] == [TEST_SENSOR_1]
+    assert mock_config_entry.data[CONF_AREAS][TEST_AREA_LIVING_ROOM][CONF_BINARY_SENSORS] == [TEST_MOTION_SENSOR_1]
 
 
 async def test_options_flow_disable_area(
@@ -329,7 +331,7 @@ async def test_options_flow_disable_area(
         user_input={
             CONF_AREA_ENABLED: False,
             CONF_CONTACT_SENSORS: [],
-            CONF_BINARY_SENSORS: [TEST_SENSOR_3],
+            CONF_BINARY_SENSORS: [TEST_MOTION_SENSOR_2],
         },
     )
 
@@ -405,9 +407,9 @@ async def test_options_flow_sensor_count_updates_after_adding(
         user_input={"next_step_id": f"area_{TEST_AREA_LIVING_ROOM}"},
     )
 
-    # Add an additional sensor (TEST_SENSOR_3 from bedroom)
+    # Add an additional motion sensor
     # Keep the existing temperature and other sensors
-    new_binary_sensors = [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3]
+    new_binary_sensors = [TEST_MOTION_SENSOR_1, TEST_MOTION_SENSOR_2]
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
@@ -464,7 +466,7 @@ async def test_options_flow_sensor_count_updates_after_removing(
     )
 
     # Remove all but one sensor
-    reduced_sensors = [TEST_SENSOR_1]
+    reduced_sensors = [TEST_MOTION_SENSOR_1]
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
@@ -524,7 +526,7 @@ async def test_options_flow_enable_disable_areas_shows_correct_count(
         user_input={
             CONF_AREA_ENABLED: True,
             CONF_CONTACT_SENSORS: [],
-            CONF_BINARY_SENSORS: [TEST_SENSOR_1],
+            CONF_BINARY_SENSORS: [TEST_MOTION_SENSOR_1],
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],
         },
