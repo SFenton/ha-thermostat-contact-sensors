@@ -12,7 +12,10 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.thermostat_contact_sensors.const import (
+    CONF_AREA_ENABLED,
+    CONF_AREA_ID,
     CONF_AREAS,
+    CONF_BINARY_SENSORS,
     CONF_CONTACT_SENSORS,
     CONF_THERMOSTAT,
     DOMAIN,
@@ -28,6 +31,16 @@ THERMOSTAT = "climate.main_thermostat"
 CONTACT_SENSOR = "binary_sensor.living_room_window"
 
 
+def get_contact_sensors_from_areas(areas_config: dict) -> list[str]:
+    """Extract all contact sensors from areas config."""
+    contact_sensors = []
+    for area_id, area_config in areas_config.items():
+        if area_config.get(CONF_AREA_ENABLED, True):
+            area_contact_sensors = area_config.get(CONF_CONTACT_SENSORS, [])
+            contact_sensors.extend(area_contact_sensors)
+    return contact_sensors
+
+
 @pytest.fixture
 def config_entry() -> MockConfigEntry:
     """Create a mock config entry."""
@@ -39,6 +52,8 @@ def config_entry() -> MockConfigEntry:
             CONF_THERMOSTAT: THERMOSTAT,
             CONF_AREAS: {
                 "living_room": {
+                    CONF_AREA_ID: "living_room",
+                    CONF_AREA_ENABLED: True,
                     CONF_CONTACT_SENSORS: [CONTACT_SENSOR],
                     CONF_BINARY_SENSORS: [],
                 }
@@ -89,7 +104,7 @@ class TestRespectUserOffSwitch:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=config_entry.entry_id,
-            contact_sensors=config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=config_entry.options,
             areas_config=config_entry.data[CONF_AREAS],
@@ -117,7 +132,7 @@ class TestRespectUserOffSwitch:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=config_entry.entry_id,
-            contact_sensors=config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=config_entry.options,
             areas_config=config_entry.data[CONF_AREAS],
@@ -149,7 +164,7 @@ class TestRespectUserOffSwitch:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=config_entry.entry_id,
-            contact_sensors=config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=config_entry.options,
             areas_config=config_entry.data[CONF_AREAS],
@@ -224,7 +239,7 @@ class TestRespectUserOffBehavior:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=config_entry.entry_id,
-            contact_sensors=config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=config_entry.options,
             areas_config=config_entry.data[CONF_AREAS],
@@ -288,7 +303,7 @@ class TestRespectUserOffBehavior:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=config_entry.entry_id,
-            contact_sensors=config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=config_entry.options,
             areas_config=config_entry.data[CONF_AREAS],
@@ -337,7 +352,7 @@ class TestRespectUserOffBehavior:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=config_entry.entry_id,
-            contact_sensors=config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=config_entry.options,
             areas_config=config_entry.data[CONF_AREAS],
@@ -385,7 +400,7 @@ class TestRespectUserOffBehavior:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=config_entry.entry_id,
-            contact_sensors=config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=config_entry.options,
             areas_config=config_entry.data[CONF_AREAS],

@@ -5,6 +5,7 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv-*/
 venv/
 ENV/
 
@@ -22,6 +23,11 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+install.log
+logs.yaml
 
 # Original automation file (not part of the integration)
 original-automation.yaml
