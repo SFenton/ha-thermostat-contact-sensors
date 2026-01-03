@@ -11,6 +11,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_AREAS,
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
+    CONF_CONTACT_SENSORS,
     CONF_GRACE_PERIOD_MINUTES,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
@@ -281,6 +282,7 @@ async def test_options_flow_area_config(
         result["flow_id"],
         user_input={
             CONF_AREA_ENABLED: True,
+            CONF_CONTACT_SENSORS: [],
             CONF_BINARY_SENSORS: [TEST_SENSOR_1],  # Only select one sensor
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],
@@ -326,6 +328,7 @@ async def test_options_flow_disable_area(
         result["flow_id"],
         user_input={
             CONF_AREA_ENABLED: False,
+            CONF_CONTACT_SENSORS: [],
             CONF_BINARY_SENSORS: [TEST_SENSOR_3],
         },
     )
@@ -409,6 +412,7 @@ async def test_options_flow_sensor_count_updates_after_adding(
         result["flow_id"],
         user_input={
             CONF_AREA_ENABLED: True,
+            CONF_CONTACT_SENSORS: [],
             CONF_BINARY_SENSORS: new_binary_sensors,
         },
     )
@@ -465,6 +469,7 @@ async def test_options_flow_sensor_count_updates_after_removing(
         result["flow_id"],
         user_input={
             CONF_AREA_ENABLED: True,
+            CONF_CONTACT_SENSORS: [],
             CONF_BINARY_SENSORS: reduced_sensors,
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],
@@ -518,6 +523,7 @@ async def test_options_flow_enable_disable_areas_shows_correct_count(
         result["flow_id"],
         user_input={
             CONF_AREA_ENABLED: True,
+            CONF_CONTACT_SENSORS: [],
             CONF_BINARY_SENSORS: [TEST_SENSOR_1],
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],

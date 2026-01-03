@@ -65,7 +65,7 @@ class TestDiagnostics:
 
         config_entry = diagnostics["config_entry"]
         assert config_entry["entry_id"] == mock_config_entry.entry_id
-        assert config_entry["version"] == 2
+        assert config_entry["version"] == 3
         assert config_entry["title"] == mock_config_entry.title
 
         await hass.config_entries.async_unload(mock_config_entry.entry_id)

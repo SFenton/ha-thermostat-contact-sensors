@@ -8,7 +8,10 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.thermostat_contact_sensors.const import (
+    CONF_AREA_ENABLED,
+    CONF_AREA_ID,
     CONF_AREAS,
+    CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
     CONF_NOTIFICATION_TAG,
@@ -18,6 +21,8 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_NOTIFY_TITLE_PAUSED,
     CONF_NOTIFY_TITLE_RESUMED,
     CONF_OPEN_TIMEOUT,
+    CONF_SENSORS,
+    CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
     DOMAIN,
 )

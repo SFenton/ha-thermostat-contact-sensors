@@ -21,6 +21,8 @@ from custom_components.thermostat_contact_sensors.sensor import (
 from .conftest import (
     TEST_AREA_BEDROOM,
     TEST_AREA_LIVING_ROOM,
+    TEST_MOTION_SENSOR_1,
+    TEST_MOTION_SENSOR_2,
     TEST_SENSOR_1,
     TEST_SENSOR_2,
     TEST_SENSOR_3,
@@ -121,7 +123,7 @@ class TestRoomOccupancySensor:
         entity_id = f"sensor.test_thermostat_contact_sensors_living_room_occupancy"
 
         # Trigger occupancy sensor
-        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         state = hass.states.get(entity_id)
@@ -147,7 +149,7 @@ class TestRoomOccupancySensor:
         entity_id = f"sensor.test_thermostat_contact_sensors_living_room_occupancy"
 
         # Trigger occupancy sensor
-        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         state = hass.states.get(entity_id)
@@ -155,7 +157,7 @@ class TestRoomOccupancySensor:
 
         assert len(occupied_sensors) >= 1
         sensor_ids = [s.get("entity_id") for s in occupied_sensors]
-        assert TEST_SENSOR_1 in sensor_ids
+        assert TEST_MOTION_SENSOR_1 in sensor_ids
 
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
 
@@ -173,7 +175,7 @@ class TestRoomOccupancySensor:
         entity_id = f"sensor.test_thermostat_contact_sensors_living_room_occupancy"
 
         # Trigger occupancy
-        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         state = hass.states.get(entity_id)
@@ -199,10 +201,10 @@ class TestRoomOccupancySensor:
         entity_id = f"sensor.test_thermostat_contact_sensors_living_room_occupancy"
 
         # Trigger then clear occupancy
-        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
-        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_OFF, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         state = hass.states.get(entity_id)
@@ -304,7 +306,7 @@ class TestRoomOccupancySensor:
         entity_id = "sensor.test_thermostat_contact_sensors_living_room_occupancy"
 
         # First turn the sensor ON so we can later turn it OFF
-        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         # Get the coordinator from runtime_data
@@ -325,7 +327,7 @@ class TestRoomOccupancySensor:
 
         # Now turn the sensor OFF to trigger unoccupied state change
         # This should enter grace period
-        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_OFF, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         state = hass.states.get(entity_id)
@@ -354,7 +356,7 @@ class TestRoomOccupancySensor:
         entity_id = "sensor.test_thermostat_contact_sensors_living_room_occupancy"
 
         # First turn sensor ON
-        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         # Get the coordinator from runtime_data
@@ -367,14 +369,14 @@ class TestRoomOccupancySensor:
         area.is_active = True
 
         # Turn off sensor (enter grace period)
-        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_OFF, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         state = hass.states.get(entity_id)
         assert state.attributes.get("is_in_grace_period") is True
 
         # Turn on sensor again (re-occupy during grace period)
-        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
+        hass.states.async_set(TEST_MOTION_SENSOR_1, STATE_ON, {"friendly_name": "Motion Sensor"})
         await hass.async_block_till_done()
 
         state = hass.states.get(entity_id)

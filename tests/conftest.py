@@ -53,6 +53,8 @@ TEST_THERMOSTAT = "climate.test_thermostat"
 TEST_SENSOR_1 = "binary_sensor.front_door_contact"
 TEST_SENSOR_2 = "binary_sensor.back_window_contact"
 TEST_SENSOR_3 = "binary_sensor.garage_door_contact"
+TEST_MOTION_SENSOR_1 = "binary_sensor.living_room_motion"  # Motion sensor for occupancy
+TEST_MOTION_SENSOR_2 = "binary_sensor.bedroom_motion"  # Motion sensor for occupancy
 TEST_TEMP_SENSOR_1 = "sensor.living_room_temperature"
 TEST_OTHER_SENSOR_1 = "sensor.living_room_humidity"
 TEST_NOTIFY_SERVICE = "notify.test_notify"
@@ -78,7 +80,7 @@ def get_test_areas_config() -> dict[str, dict]:
             CONF_AREA_ID: TEST_AREA_LIVING_ROOM,
             CONF_AREA_ENABLED: True,
             CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2],  # Door/window sensors for pause
-            CONF_BINARY_SENSORS: [],  # Motion/occupancy sensors
+            CONF_BINARY_SENSORS: [TEST_MOTION_SENSOR_1],  # Motion/occupancy sensors
             CONF_TEMPERATURE_SENSORS: [TEST_TEMP_SENSOR_1],
             CONF_SENSORS: [TEST_OTHER_SENSOR_1],
         },
@@ -86,7 +88,7 @@ def get_test_areas_config() -> dict[str, dict]:
             CONF_AREA_ID: TEST_AREA_BEDROOM,
             CONF_AREA_ENABLED: True,
             CONF_CONTACT_SENSORS: [TEST_SENSOR_3],  # Door/window sensors for pause
-            CONF_BINARY_SENSORS: [],  # Motion/occupancy sensors
+            CONF_BINARY_SENSORS: [TEST_MOTION_SENSOR_2],  # Motion/occupancy sensors
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],
         },
@@ -185,6 +187,18 @@ async def setup_test_entities(hass: HomeAssistant) -> None:
         TEST_SENSOR_3,
         STATE_OFF,
         {"friendly_name": "Garage Door Contact", "device_class": "garage_door"},
+    )
+
+    # Set up motion sensors (all off initially)
+    hass.states.async_set(
+        TEST_MOTION_SENSOR_1,
+        STATE_OFF,
+        {"friendly_name": "Living Room Motion", "device_class": "motion"},
+    )
+    hass.states.async_set(
+        TEST_MOTION_SENSOR_2,
+        STATE_OFF,
+        {"friendly_name": "Bedroom Motion", "device_class": "motion"},
     )
 
     await hass.async_block_till_done()

@@ -368,6 +368,10 @@ class TestContactSensorEffects:
         """Test that closing all contacts resumes thermostat after timeout."""
         integration_config_entry.add_to_hass(hass)
 
+        # Ensure temperature is below target so thermostat stays on after resume
+        hass.states.async_set(TEMP_LIVING_ROOM, "18.0", {"unit_of_measurement": "°C"})
+        await hass.async_block_till_done()
+
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
@@ -377,6 +381,17 @@ class TestContactSensorEffects:
             areas_config=integration_config_entry.data[CONF_AREAS],
         )
         await coordinator.async_setup()
+
+        # Make living room active so thermostat evaluation keeps it on
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas[AREA_LIVING_ROOM] = AreaOccupancyState(
+            area_id=AREA_LIVING_ROOM,
+            area_name="Living Room",
+            binary_sensors=[OCCUPANCY_LIVING_ROOM],
+            occupied_binary_sensors={OCCUPANCY_LIVING_ROOM},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
 
         # Open contact and trigger pause
         hass.states.async_set(CONTACT_LIVING_ROOM, STATE_ON)
@@ -396,8 +411,10 @@ class TestContactSensorEffects:
 
         # Verify thermostat is resumed
         assert coordinator.is_paused is False
-        # Should have restored previous mode (HEAT)
-        assert mock_climate_service_integration["set_hvac_mode"][-1]["hvac_mode"] == HVACMode.HEAT
+        # Should have restored previous mode (HEAT) - and since room is active and
+        # not satiated, the immediate evaluation should keep it on
+        last_call = mock_climate_service_integration["set_hvac_mode"][-1]
+        assert last_call["hvac_mode"] == HVACMode.HEAT
 
         await coordinator.async_shutdown()
 
