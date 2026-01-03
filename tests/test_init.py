@@ -206,12 +206,20 @@ async def test_multiple_config_entries(
     second_entry = MockConfigEntry(
         domain=DOMAIN,
         title="Second Thermostat Config",
-        version=2,  # Must match current config version to skip migration
+        version=3,  # Must match current config version to skip migration
         data={
             "name": "Second Thermostat Config",
-            CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
             CONF_THERMOSTAT: "climate.second_thermostat",
-            CONF_AREAS: {},  # Required for v2
+            CONF_AREAS: {
+                "second_area": {
+                    CONF_AREA_ID: "second_area",
+                    CONF_AREA_ENABLED: True,
+                    CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
+                    CONF_BINARY_SENSORS: [],
+                    CONF_TEMPERATURE_SENSORS: [],
+                    CONF_SENSORS: [],
+                },
+            },
         },
         options={
             CONF_OPEN_TIMEOUT: 2,

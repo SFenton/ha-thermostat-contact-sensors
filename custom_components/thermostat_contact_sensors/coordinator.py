@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
@@ -88,7 +89,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # State tracking
         self.is_paused = False
         self.previous_hvac_mode: str | None = None
-        self.open_sensors: list[str] = []
+        # Dict of entity_id -> timestamp when sensor opened
+        self._open_sensor_times: dict[str, float] = {}
         self.trigger_sensor: str | None = None
         self.respect_user_off: bool = False  # Default: always resume thermostat
 
@@ -179,9 +181,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         return self._options.get(CONF_NOTIFY_SERVICE, "")
 
     @property
+    def open_sensors(self) -> list[str]:
+        """Return list of currently open sensors (for backwards compatibility)."""
+        return list(self._open_sensor_times.keys())
+
+    @property
     def open_count(self) -> int:
         """Return count of open sensors."""
-        return len(self.open_sensors)
+        return len(self._open_sensor_times)
 
     @property
     def open_doors_count(self) -> int:
@@ -502,12 +509,18 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         return control_state
 
     def _update_open_sensors(self) -> None:
-        """Update the list of currently open sensors."""
-        self.open_sensors = []
+        """Update the dict of currently open sensors with timestamps."""
+        current_time = time.monotonic()
+        new_open_sensors: dict[str, float] = {}
         for sensor in self.contact_sensors:
             state = self.hass.states.get(sensor)
             if state and state.state == STATE_ON:
-                self.open_sensors.append(sensor)
+                # Preserve existing timestamp if sensor was already open
+                if sensor in self._open_sensor_times:
+                    new_open_sensors[sensor] = self._open_sensor_times[sensor]
+                else:
+                    new_open_sensors[sensor] = current_time
+        self._open_sensor_times = new_open_sensors
 
     def _cancel_open_timer(self) -> None:
         """Cancel the open timeout timer."""
@@ -521,6 +534,52 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self._close_timer:
             self._close_timer.cancel()
             self._close_timer = None
+
+    def _recalculate_open_timer(self) -> None:
+        """Recalculate the open timer based on the earliest still-open sensor.
+        
+        Called when the original triggering sensor closes but others remain open.
+        The new timer should expire when the earliest still-open sensor has been
+        open for the full timeout duration.
+        """
+        if not self._open_sensor_times:
+            self._cancel_open_timer()
+            return
+
+        # Find the sensor that has been open the longest (earliest timestamp)
+        earliest_sensor = min(self._open_sensor_times.keys(), 
+                              key=lambda s: self._open_sensor_times[s])
+        earliest_time = self._open_sensor_times[earliest_sensor]
+        
+        # Calculate how much time remains until this sensor hits the timeout
+        current_time = time.monotonic()
+        elapsed = current_time - earliest_time
+        remaining = (self.open_timeout * 60) - elapsed
+        
+        # Cancel the old timer
+        self._cancel_open_timer()
+        
+        if remaining <= 0:
+            # Timer should have already fired - trigger immediately
+            _LOGGER.debug(
+                "Recalculated timer expired immediately (sensor %s open for %.1f min)",
+                earliest_sensor,
+                elapsed / 60,
+            )
+            self._pending_open_sensor = earliest_sensor
+            self.hass.async_create_task(self._async_open_timeout_expired())
+        else:
+            # Schedule new timer for the remaining time
+            self._pending_open_sensor = earliest_sensor
+            self._open_timer = self.hass.loop.call_later(
+                remaining,
+                lambda: self.hass.async_create_task(self._async_open_timeout_expired()),
+            )
+            _LOGGER.debug(
+                "Recalculated open timer: %.1f min remaining for sensor %s",
+                remaining / 60,
+                earliest_sensor,
+            )
 
     @callback
     def _async_thermostat_state_changed(self, event) -> None:
@@ -613,6 +672,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Handle a sensor being opened."""
         _LOGGER.debug("Sensor opened: %s", entity_id)
 
+        # Record the open timestamp for this sensor
+        if entity_id not in self._open_sensor_times:
+            self._open_sensor_times[entity_id] = time.monotonic()
+
         # Cancel any close timer since something opened
         self._cancel_close_timer()
 
@@ -620,7 +683,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self.is_paused:
             return
 
-        # If no open timer running, start one
+        # If no open timer running, start one for this sensor
         if self._open_timer is None:
             self._pending_open_sensor = entity_id
             self._open_timer = self.hass.loop.call_later(
@@ -637,15 +700,23 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Handle a sensor being closed."""
         _LOGGER.debug("Sensor closed: %s", entity_id)
 
-        # If this was the pending sensor and no others are open, cancel the timer
+        # Remove this sensor from the open timestamps
+        self._open_sensor_times.pop(entity_id, None)
+
+        # If not paused, handle timer recalculation
         if not self.is_paused:
-            if self._pending_open_sensor == entity_id and len(self.open_sensors) == 0:
+            if len(self._open_sensor_times) == 0:
+                # All sensors closed - cancel the timer
                 self._cancel_open_timer()
-                _LOGGER.debug("Cancelled open timer - sensor closed before timeout")
+                _LOGGER.debug("Cancelled open timer - all sensors closed before timeout")
+            elif self._pending_open_sensor == entity_id and self._open_timer is not None:
+                # The triggering sensor closed but others are still open
+                # Recalculate timer based on earliest still-open sensor
+                self._recalculate_open_timer()
             return
 
         # If paused and all sensors are now closed, start close timer
-        if self.is_paused and len(self.open_sensors) == 0:
+        if self.is_paused and len(self._open_sensor_times) == 0:
             if self._close_timer is None:
                 self._close_timer = self.hass.loop.call_later(
                     self.close_timeout * 60,
@@ -758,6 +829,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         self.is_paused = False
         self.trigger_sensor = None
+
+        # Immediately evaluate thermostat state to handle satiation
+        # This ensures we don't blindly turn the thermostat on if rooms are already
+        # at target temperature, or correctly turn it on if rooms need conditioning
+        await self.async_update_thermostat_state()
+
+        # Update vents based on new state
+        await self.async_update_vents()
 
         # Notify listeners
         self.async_set_updated_data(None)

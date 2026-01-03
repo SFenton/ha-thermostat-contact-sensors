@@ -118,7 +118,8 @@ def get_integration_areas_config() -> dict[str, dict]:
         AREA_LIVING_ROOM: {
             CONF_AREA_ID: AREA_LIVING_ROOM,
             CONF_AREA_ENABLED: True,
-            CONF_BINARY_SENSORS: [OCCUPANCY_LIVING_ROOM],
+            CONF_CONTACT_SENSORS: [CONTACT_LIVING_ROOM],  # Door/window for pause
+            CONF_BINARY_SENSORS: [OCCUPANCY_LIVING_ROOM],  # Motion for occupancy
             CONF_TEMPERATURE_SENSORS: [TEMP_LIVING_ROOM],
             CONF_SENSORS: [],
             CONF_VENTS: [VENT_LIVING_ROOM],
@@ -126,7 +127,8 @@ def get_integration_areas_config() -> dict[str, dict]:
         AREA_BEDROOM: {
             CONF_AREA_ID: AREA_BEDROOM,
             CONF_AREA_ENABLED: True,
-            CONF_BINARY_SENSORS: [OCCUPANCY_BEDROOM],
+            CONF_CONTACT_SENSORS: [CONTACT_BEDROOM],  # Door/window for pause
+            CONF_BINARY_SENSORS: [OCCUPANCY_BEDROOM],  # Motion for occupancy
             CONF_TEMPERATURE_SENSORS: [TEMP_BEDROOM],
             CONF_SENSORS: [],
             CONF_VENTS: [VENT_BEDROOM],
@@ -134,7 +136,8 @@ def get_integration_areas_config() -> dict[str, dict]:
         AREA_OFFICE: {
             CONF_AREA_ID: AREA_OFFICE,
             CONF_AREA_ENABLED: True,
-            CONF_BINARY_SENSORS: [OCCUPANCY_OFFICE],
+            CONF_CONTACT_SENSORS: [CONTACT_OFFICE],  # Door/window for pause
+            CONF_BINARY_SENSORS: [OCCUPANCY_OFFICE],  # Motion for occupancy
             CONF_TEMPERATURE_SENSORS: [TEMP_OFFICE],
             CONF_SENSORS: [],
             CONF_VENTS: [VENT_OFFICE],
@@ -142,6 +145,7 @@ def get_integration_areas_config() -> dict[str, dict]:
         AREA_KITCHEN: {
             CONF_AREA_ID: AREA_KITCHEN,
             CONF_AREA_ENABLED: True,
+            CONF_CONTACT_SENSORS: [],  # No contact sensors in kitchen
             CONF_BINARY_SENSORS: [OCCUPANCY_KITCHEN],
             CONF_TEMPERATURE_SENSORS: [TEMP_KITCHEN],
             CONF_SENSORS: [],
@@ -150,6 +154,7 @@ def get_integration_areas_config() -> dict[str, dict]:
         AREA_HALLWAY: {
             CONF_AREA_ID: AREA_HALLWAY,
             CONF_AREA_ENABLED: True,
+            CONF_CONTACT_SENSORS: [],  # No contact sensors in hallway
             CONF_BINARY_SENSORS: [],  # No occupancy sensors in hallway
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],
@@ -158,6 +163,7 @@ def get_integration_areas_config() -> dict[str, dict]:
         AREA_BASEMENT: {
             CONF_AREA_ID: AREA_BASEMENT,
             CONF_AREA_ENABLED: True,
+            CONF_CONTACT_SENSORS: [],  # No contact sensors in basement
             CONF_BINARY_SENSORS: [],
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],
@@ -166,16 +172,25 @@ def get_integration_areas_config() -> dict[str, dict]:
     }
 
 
+def get_contact_sensors_from_areas(areas_config: dict[str, dict]) -> list[str]:
+    """Extract all contact sensors from areas config (mirroring async_setup_entry behavior)."""
+    contact_sensors = []
+    for area_id, area_config in areas_config.items():
+        if area_config.get(CONF_AREA_ENABLED, True):
+            area_contact_sensors = area_config.get(CONF_CONTACT_SENSORS, [])
+            contact_sensors.extend(area_contact_sensors)
+    return contact_sensors
+
+
 @pytest.fixture
 def integration_config_entry() -> MockConfigEntry:
     """Create a config entry for integration testing."""
     return MockConfigEntry(
         domain=DOMAIN,
         title="Integration Test",
-        version=2,
+        version=3,
         data={
             "name": "Integration Test",
-            CONF_CONTACT_SENSORS: [CONTACT_LIVING_ROOM, CONTACT_BEDROOM, CONTACT_OFFICE],
             CONF_THERMOSTAT: THERMOSTAT,
             CONF_AREAS: get_integration_areas_config(),
         },
@@ -311,7 +326,7 @@ class TestContactSensorEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -356,7 +371,7 @@ class TestContactSensorEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -401,7 +416,7 @@ class TestContactSensorEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -465,7 +480,7 @@ class TestOccupancyVentEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -515,7 +530,7 @@ class TestOccupancyVentEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -566,7 +581,7 @@ class TestOccupancyVentEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -619,7 +634,7 @@ class TestTemperatureEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -667,7 +682,7 @@ class TestTemperatureEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -710,6 +725,352 @@ class TestTemperatureEffects:
 
 
 # =============================================================================
+# Test Class: Contact Sensor Pause Precedence
+# =============================================================================
+
+
+class TestContactSensorPausePrecedence:
+    """Test that contact sensor pause takes precedence over thermostat control."""
+
+    @pytest.mark.asyncio
+    async def test_pause_prevents_thermostat_turn_on_even_when_unsatiated(
+        self,
+        hass: HomeAssistant,
+        integration_config_entry: MockConfigEntry,
+        setup_integration_entities: None,
+        mock_climate_service_integration: dict,
+        mock_cover_service: dict,
+    ):
+        """Test that thermostat stays off when paused, even if rooms need heating.
+        
+        Scenario: Rooms are cold (unsatiated), thermostat would normally turn on,
+        but a door is open so thermostat should stay paused/off.
+        """
+        integration_config_entry.add_to_hass(hass)
+
+        # Temperature is 18°C, target is 22°C - definitely needs heating
+        hass.states.async_set(TEMP_LIVING_ROOM, "18.0", {"unit_of_measurement": "°C"})
+        await hass.async_block_till_done()
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=integration_config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=integration_config_entry.options,
+            areas_config=integration_config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # Make living room active (needs heating)
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas[AREA_LIVING_ROOM] = AreaOccupancyState(
+            area_id=AREA_LIVING_ROOM,
+            area_name="Living Room",
+            binary_sensors=[OCCUPANCY_LIVING_ROOM],
+            occupied_binary_sensors={OCCUPANCY_LIVING_ROOM},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        # Open a contact sensor and trigger pause
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_ON)
+        await hass.async_block_till_done()
+        await coordinator._async_open_timeout_expired()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+        mock_climate_service_integration["set_hvac_mode"].clear()
+
+        # Now try to update thermostat state - should NOT turn on
+        await coordinator.async_update_thermostat_state()
+        await hass.async_block_till_done()
+
+        # Thermostat should stay off (no turn-on calls while paused)
+        turn_on_calls = [c for c in mock_climate_service_integration["set_hvac_mode"] 
+                         if c["hvac_mode"] != HVACMode.OFF]
+        assert len(turn_on_calls) == 0, "Thermostat should not turn on while paused"
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_resume_immediately_evaluates_thermostat_state(
+        self,
+        hass: HomeAssistant,
+        integration_config_entry: MockConfigEntry,
+        setup_integration_entities: None,
+        mock_climate_service_integration: dict,
+        mock_cover_service: dict,
+    ):
+        """Test that resume from pause immediately evaluates thermostat state.
+        
+        When doors close and resume happens, we should immediately evaluate
+        whether the thermostat should be on or off based on current satiation.
+        """
+        options = dict(integration_config_entry.options)
+        options[CONF_MIN_CYCLE_ON_MINUTES] = 0  # No cycle protection for test
+        options[CONF_MIN_CYCLE_OFF_MINUTES] = 0
+        integration_config_entry.add_to_hass(hass)
+
+        # Temperature is 18°C, target is 22°C - needs heating
+        hass.states.async_set(TEMP_LIVING_ROOM, "18.0", {"unit_of_measurement": "°C"})
+        await hass.async_block_till_done()
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=integration_config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=options,
+            areas_config=integration_config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # Make living room active
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas[AREA_LIVING_ROOM] = AreaOccupancyState(
+            area_id=AREA_LIVING_ROOM,
+            area_name="Living Room",
+            binary_sensors=[OCCUPANCY_LIVING_ROOM],
+            occupied_binary_sensors={OCCUPANCY_LIVING_ROOM},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        # Open contact and pause
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_ON)
+        await hass.async_block_till_done()
+        await coordinator._async_open_timeout_expired()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Close contact and resume
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_OFF)
+        await hass.async_block_till_done()
+        await coordinator._async_close_timeout_expired()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+
+        # Thermostat state should have been evaluated on resume
+        # The last thermostat state should reflect current conditions
+        state = coordinator._last_thermostat_state
+        assert state is not None
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_satiated_room_stays_off_after_resume(
+        self,
+        hass: HomeAssistant,
+        integration_config_entry: MockConfigEntry,
+        setup_integration_entities: None,
+        mock_climate_service_integration: dict,
+        mock_cover_service: dict,
+    ):
+        """Test that if all rooms are satiated on resume, thermostat may turn off.
+        
+        Scenario: Door opens, thermostat pauses. While door is open, the room
+        reaches target temperature (satiated). Door closes, resume happens.
+        Thermostat should evaluate and potentially stay off or turn off if satiated.
+        """
+        options = dict(integration_config_entry.options)
+        options[CONF_MIN_CYCLE_ON_MINUTES] = 0
+        options[CONF_MIN_CYCLE_OFF_MINUTES] = 0
+        integration_config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=integration_config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=options,
+            areas_config=integration_config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # Make living room active
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas[AREA_LIVING_ROOM] = AreaOccupancyState(
+            area_id=AREA_LIVING_ROOM,
+            area_name="Living Room",
+            binary_sensors=[OCCUPANCY_LIVING_ROOM],
+            occupied_binary_sensors={OCCUPANCY_LIVING_ROOM},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        # Open contact and pause
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_ON)
+        await hass.async_block_till_done()
+        await coordinator._async_open_timeout_expired()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Room reaches target temperature while paused
+        hass.states.async_set(TEMP_LIVING_ROOM, "22.5", {"unit_of_measurement": "°C"})
+        await hass.async_block_till_done()
+
+        mock_climate_service_integration["set_hvac_mode"].clear()
+
+        # Close contact and resume
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_OFF)
+        await hass.async_block_till_done()
+        await coordinator._async_close_timeout_expired()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+
+        # Verify thermostat state was evaluated
+        state = coordinator._last_thermostat_state
+        assert state is not None
+
+        # Room should be satiated now
+        if AREA_LIVING_ROOM in state.room_states:
+            assert state.room_states[AREA_LIVING_ROOM].is_satiated is True
+
+        await coordinator.async_shutdown()
+
+
+# =============================================================================
+# Test Class: Timer Recalculation Integration
+# =============================================================================
+
+
+class TestTimerRecalculationIntegration:
+    """Integration tests for timer recalculation when sensors close while others remain open."""
+
+    @pytest.mark.asyncio
+    async def test_garage_opens_theater_opens_garage_closes_timer_recalculates(
+        self,
+        hass: HomeAssistant,
+        integration_config_entry: MockConfigEntry,
+        setup_integration_entities: None,
+        mock_climate_service_integration: dict,
+        mock_cover_service: dict,
+    ):
+        """Test the exact scenario from the bug report.
+        
+        T=0: Garage (living_room) opens - timer starts
+        T=2: Theater (bedroom) opens
+        T=3: Garage closes - timer should recalculate based on theater
+        
+        Timer should NOT fire at original T=5, should fire at T=7 (5 min after theater opened)
+        """
+        options = dict(integration_config_entry.options)
+        options[CONF_OPEN_TIMEOUT] = 5  # 5 minute timeout
+        integration_config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=integration_config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=options,
+            areas_config=integration_config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # T=0: Living room window (acting as "garage") opens
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_ON)
+        await hass.async_block_till_done()
+
+        assert coordinator._open_timer is not None
+        assert coordinator._pending_open_sensor == CONTACT_LIVING_ROOM
+        living_room_open_time = coordinator._open_sensor_times[CONTACT_LIVING_ROOM]
+
+        # T=2: Bedroom window (acting as "theater") opens
+        await asyncio.sleep(0.1)  # Simulate time passing
+        hass.states.async_set(CONTACT_BEDROOM, STATE_ON)
+        await hass.async_block_till_done()
+
+        bedroom_open_time = coordinator._open_sensor_times[CONTACT_BEDROOM]
+        assert bedroom_open_time > living_room_open_time  # Bedroom opened later
+
+        # Both sensors tracked
+        assert len(coordinator.open_sensors) == 2
+
+        # T=3: Living room closes - should recalculate timer for bedroom
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_OFF)
+        await hass.async_block_till_done()
+
+        # Timer should now be based on bedroom
+        assert coordinator._pending_open_sensor == CONTACT_BEDROOM
+        assert CONTACT_LIVING_ROOM not in coordinator._open_sensor_times
+        assert CONTACT_BEDROOM in coordinator._open_sensor_times
+
+        # Should NOT be paused yet
+        assert coordinator.is_paused is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_multiple_sensors_close_in_sequence(
+        self,
+        hass: HomeAssistant,
+        integration_config_entry: MockConfigEntry,
+        setup_integration_entities: None,
+        mock_climate_service_integration: dict,
+        mock_cover_service: dict,
+    ):
+        """Test closing multiple sensors in sequence recalculates correctly each time."""
+        options = dict(integration_config_entry.options)
+        options[CONF_OPEN_TIMEOUT] = 5
+        integration_config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=integration_config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=options,
+            areas_config=integration_config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # Open three sensors in sequence
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_ON)
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.05)
+
+        hass.states.async_set(CONTACT_BEDROOM, STATE_ON)
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.05)
+
+        hass.states.async_set(CONTACT_OFFICE, STATE_ON)
+        await hass.async_block_till_done()
+
+        assert len(coordinator.open_sensors) == 3
+        assert coordinator._pending_open_sensor == CONTACT_LIVING_ROOM
+
+        # Close living room (first one) - should recalculate to bedroom
+        hass.states.async_set(CONTACT_LIVING_ROOM, STATE_OFF)
+        await hass.async_block_till_done()
+
+        assert coordinator._pending_open_sensor == CONTACT_BEDROOM
+        assert len(coordinator.open_sensors) == 2
+
+        # Close bedroom - should recalculate to office
+        hass.states.async_set(CONTACT_BEDROOM, STATE_OFF)
+        await hass.async_block_till_done()
+
+        assert coordinator._pending_open_sensor == CONTACT_OFFICE
+        assert len(coordinator.open_sensors) == 1
+
+        # Close office - should cancel timer entirely
+        hass.states.async_set(CONTACT_OFFICE, STATE_OFF)
+        await hass.async_block_till_done()
+
+        assert coordinator._open_timer is None
+        assert len(coordinator.open_sensors) == 0
+        assert coordinator.is_paused is False
+
+        await coordinator.async_shutdown()
+
+
+# =============================================================================
 # Test Class: Critical Temperature Effects
 # =============================================================================
 
@@ -737,7 +1098,7 @@ class TestCriticalTemperatureEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -787,7 +1148,7 @@ class TestCriticalTemperatureEffects:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -841,7 +1202,7 @@ class TestMinimumVentsOpen:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -883,7 +1244,7 @@ class TestMinimumVentsOpen:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -931,7 +1292,7 @@ class TestFullSystemIntegration:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -991,7 +1352,7 @@ class TestFullSystemIntegration:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -1050,7 +1411,7 @@ class TestFullSystemIntegration:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -1111,7 +1472,7 @@ class TestFullSystemIntegration:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -1186,7 +1547,7 @@ class TestEdgeCases:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -1225,7 +1586,7 @@ class TestEdgeCases:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -1270,7 +1631,7 @@ class TestEdgeCases:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],
@@ -1298,10 +1659,9 @@ class TestEdgeCases:
         config_entry = MockConfigEntry(
             domain=DOMAIN,
             title="Empty Areas Test",
-            version=2,
+            version=3,
             data={
                 "name": "Empty Areas Test",
-                CONF_CONTACT_SENSORS: [CONTACT_LIVING_ROOM],
                 CONF_THERMOSTAT: THERMOSTAT,
                 CONF_AREAS: {},  # No areas
             },
@@ -1319,7 +1679,7 @@ class TestEdgeCases:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=config_entry.entry_id,
-            contact_sensors=config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=[],  # No contact sensors when no areas
             thermostat=THERMOSTAT,
             options=config_entry.options,
             areas_config={},
@@ -1347,7 +1707,7 @@ class TestEdgeCases:
         coordinator = ThermostatContactSensorsCoordinator(
             hass=hass,
             config_entry_id=integration_config_entry.entry_id,
-            contact_sensors=integration_config_entry.data[CONF_CONTACT_SENSORS],
+            contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
             options=integration_config_entry.options,
             areas_config=integration_config_entry.data[CONF_AREAS],

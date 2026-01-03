@@ -108,13 +108,19 @@ class TestCoordinatorSetup:
         hass: HomeAssistant,
         coordinator: ThermostatContactSensorsCoordinator,
     ) -> None:
-        """Test coordinator detects initially open sensors."""
-        # Open a sensor before setup
+        """Test coordinator detects initially open sensors and starts timer.
+        
+        This tests the critical scenario where Home Assistant restarts while a
+        door/window is already open. The coordinator must start the open timer
+        on setup to ensure the thermostat gets paused after the timeout.
+        """
+        # Open a sensor before setup (simulates HA restart with door open)
         hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
         await hass.async_block_till_done()
 
         await coordinator.async_setup()
 
+        # Verify open sensors detected
         assert TEST_SENSOR_1 in coordinator.open_sensors
         assert coordinator.open_count == 1
 
@@ -905,3 +911,188 @@ class TestTemperatureSensorStateChange:
         await hass.async_block_till_done()
 
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+
+class TestTimerRecalculation:
+    """Tests for timer recalculation when sensors close while others remain open."""
+
+    async def test_triggering_sensor_closes_others_open_recalculates_timer(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that closing the triggering sensor recalculates timer based on earliest still-open sensor.
+        
+        Scenario:
+        T=0: Garage opens (timer starts, expires at T=5)
+        T=2: Theater opens
+        T=3: Garage closes (theater has been open 1 min, timer should expire at T=7)
+        T=5: Old timer would have fired here - should NOT fire
+        T=7: New timer fires (theater open for 5 min)
+        """
+        coordinator._options[CONF_OPEN_TIMEOUT] = 5  # 5 minute timeout
+
+        await coordinator.async_setup()
+
+        # T=0: Garage opens - starts timer
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        assert coordinator._open_timer is not None
+        assert coordinator._pending_open_sensor == TEST_SENSOR_1
+        garage_open_time = coordinator._open_sensor_times.get(TEST_SENSOR_1)
+        assert garage_open_time is not None
+
+        # Wait a bit then open theater
+        await asyncio.sleep(0.1)  # Simulate ~2 min passing (scaled)
+        
+        # T=2: Theater opens
+        hass.states.async_set(TEST_SENSOR_2, STATE_ON, {"friendly_name": "Theater Door"})
+        await hass.async_block_till_done()
+
+        theater_open_time = coordinator._open_sensor_times.get(TEST_SENSOR_2)
+        assert theater_open_time is not None
+        assert theater_open_time > garage_open_time  # Theater opened later
+
+        # Verify both sensors tracked
+        assert len(coordinator.open_sensors) == 2
+
+        # T=3: Garage closes - should recalculate timer
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        # Timer should be recalculated for theater
+        assert coordinator._pending_open_sensor == TEST_SENSOR_2
+        assert TEST_SENSOR_1 not in coordinator._open_sensor_times
+        assert TEST_SENSOR_2 in coordinator._open_sensor_times
+
+        # Not yet paused
+        assert coordinator.is_paused is False
+
+        await coordinator.async_shutdown()
+
+    async def test_all_sensors_close_before_timeout_cancels_timer(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test that closing all sensors cancels the timer entirely."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 5
+
+        await coordinator.async_setup()
+
+        # Open two sensors
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        hass.states.async_set(TEST_SENSOR_2, STATE_ON, {"friendly_name": "Theater Door"})
+        await hass.async_block_till_done()
+
+        assert coordinator._open_timer is not None
+        assert len(coordinator.open_sensors) == 2
+
+        # Close both sensors
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Garage Door"})
+        hass.states.async_set(TEST_SENSOR_2, STATE_OFF, {"friendly_name": "Theater Door"})
+        await hass.async_block_till_done()
+
+        # Timer should be cancelled
+        assert coordinator._open_timer is None
+        assert len(coordinator.open_sensors) == 0
+
+        await coordinator.async_shutdown()
+
+    async def test_non_triggering_sensor_closes_no_recalculation(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test that closing a non-triggering sensor doesn't recalculate timer."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 5
+
+        await coordinator.async_setup()
+
+        # Open garage first (triggering sensor)
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        await asyncio.sleep(0.05)
+
+        # Open theater second
+        hass.states.async_set(TEST_SENSOR_2, STATE_ON, {"friendly_name": "Theater Door"})
+        await hass.async_block_till_done()
+
+        original_pending = coordinator._pending_open_sensor
+        assert original_pending == TEST_SENSOR_1  # Garage is triggering sensor
+
+        # Close theater (NOT the triggering sensor)
+        hass.states.async_set(TEST_SENSOR_2, STATE_OFF, {"friendly_name": "Theater Door"})
+        await hass.async_block_till_done()
+
+        # Timer should still be for garage (no recalculation needed)
+        assert coordinator._pending_open_sensor == TEST_SENSOR_1
+        assert coordinator._open_timer is not None
+
+        await coordinator.async_shutdown()
+
+    async def test_recalculation_triggers_immediate_if_already_expired(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that recalculation triggers immediately if the new sensor has exceeded timeout."""
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01  # Very short timeout (0.6 seconds)
+
+        await coordinator.async_setup()
+
+        # Open sensor 1 (triggering)
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        # Open sensor 2 immediately after
+        hass.states.async_set(TEST_SENSOR_2, STATE_ON, {"friendly_name": "Theater Door"})
+        await hass.async_block_till_done()
+
+        # Wait for the timeout to pass for both
+        await asyncio.sleep(1)
+
+        # Close sensor 1 - should trigger recalculation and immediate fire
+        # because sensor 2 has already been open longer than timeout
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        # Should be paused (immediate trigger on recalculation)
+        await asyncio.sleep(0.1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        await coordinator.async_shutdown()
+
+    async def test_open_sensor_timestamps_preserved_on_update(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test that open sensor timestamps are preserved when _update_open_sensors is called."""
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        original_time = coordinator._open_sensor_times.get(TEST_SENSOR_1)
+        assert original_time is not None
+
+        # Wait a bit
+        await asyncio.sleep(0.1)
+
+        # Manually call update (simulates state refresh)
+        coordinator._update_open_sensors()
+
+        # Timestamp should be preserved
+        assert coordinator._open_sensor_times.get(TEST_SENSOR_1) == original_time
+
+        await coordinator.async_shutdown()

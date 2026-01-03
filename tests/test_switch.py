@@ -34,10 +34,15 @@ def config_entry() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title="Test Thermostat",
+        version=3,
         data={
             CONF_THERMOSTAT: THERMOSTAT,
-            CONF_CONTACT_SENSORS: [CONTACT_SENSOR],
-            CONF_AREAS: {},
+            CONF_AREAS: {
+                "living_room": {
+                    CONF_CONTACT_SENSORS: [CONTACT_SENSOR],
+                    CONF_BINARY_SENSORS: [],
+                }
+            },
         },
         options={},
     )

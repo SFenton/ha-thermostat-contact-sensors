@@ -85,6 +85,49 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
         _LOGGER.info("Migration to version 2 successful")
 
+    if config_entry.version == 2:
+        # Version 2 -> 3: Split binary_sensors into contact_sensors and binary_sensors
+        # Previously all binary sensors were treated as contact sensors for pause feature
+        # Now contact_sensors (door/window) are separate from binary_sensors (motion/occupancy)
+        new_data = {**config_entry.data}
+        entity_reg = er.async_get(hass)
+
+        # Device classes that indicate contact sensors (door/window)
+        contact_device_classes = {"door", "window", "garage_door", "opening"}
+
+        areas_config = new_data.get(CONF_AREAS, {})
+        for area_id, area_config in areas_config.items():
+            # Get all binary sensors currently configured
+            all_binary = area_config.get(CONF_BINARY_SENSORS, [])
+
+            # Split into contact sensors and other binary sensors
+            contact_sensors = []
+            other_binary = []
+
+            for sensor_id in all_binary:
+                entity = entity_reg.async_get(sensor_id)
+                if entity:
+                    device_class = entity.device_class or entity.original_device_class
+                    if device_class in contact_device_classes:
+                        contact_sensors.append(sensor_id)
+                    else:
+                        other_binary.append(sensor_id)
+                else:
+                    # Entity not found, keep in binary (occupancy) list
+                    other_binary.append(sensor_id)
+
+            # Update area config
+            area_config[CONF_CONTACT_SENSORS] = contact_sensors
+            area_config[CONF_BINARY_SENSORS] = other_binary
+
+        new_data[CONF_AREAS] = areas_config
+        hass.config_entries.async_update_entry(config_entry, data=new_data)
+        config_entry.version = 3
+
+        _LOGGER.info(
+            "Migration to version 3 successful - split contact sensors from binary sensors"
+        )
+
     return True
 
 
@@ -94,18 +137,24 @@ async def async_setup_entry(
     """Set up Thermostat Contact Sensors from a config entry."""
     _LOGGER.debug("Setting up Thermostat Contact Sensors: %s", entry.title)
 
-    # Get contact sensors from legacy config or from areas config
-    contact_sensors = entry.data.get(CONF_CONTACT_SENSORS, [])
-
     # Get areas config
     areas_config = entry.data.get(CONF_AREAS, {})
 
-    # If using new areas config, gather all binary sensors from enabled areas
+    # Gather contact sensors from enabled areas (door/window sensors for pause feature)
+    contact_sensors = []
     if areas_config:
-        contact_sensors = []
         for area_id, area_config in areas_config.items():
             if area_config.get(CONF_AREA_ENABLED, True):
-                contact_sensors.extend(area_config.get(CONF_BINARY_SENSORS, []))
+                # Use CONF_CONTACT_SENSORS if available, fall back to legacy CONF_BINARY_SENSORS
+                area_contact_sensors = area_config.get(CONF_CONTACT_SENSORS)
+                if area_contact_sensors is not None:
+                    contact_sensors.extend(area_contact_sensors)
+                # Note: Don't fall back to CONF_BINARY_SENSORS - those are for occupancy
+    else:
+        # Legacy config: use top-level contact_sensors
+        contact_sensors = entry.data.get(CONF_CONTACT_SENSORS, [])
+
+    _LOGGER.debug("Monitoring %d contact sensors for pause feature: %s", len(contact_sensors), contact_sensors)
 
     # Create coordinator
     coordinator = ThermostatContactSensorsCoordinator(

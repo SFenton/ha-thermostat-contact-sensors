@@ -77,14 +77,16 @@ def get_test_areas_config() -> dict[str, dict]:
         TEST_AREA_LIVING_ROOM: {
             CONF_AREA_ID: TEST_AREA_LIVING_ROOM,
             CONF_AREA_ENABLED: True,
-            CONF_BINARY_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2],
+            CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2],  # Door/window sensors for pause
+            CONF_BINARY_SENSORS: [],  # Motion/occupancy sensors
             CONF_TEMPERATURE_SENSORS: [TEST_TEMP_SENSOR_1],
             CONF_SENSORS: [TEST_OTHER_SENSOR_1],
         },
         TEST_AREA_BEDROOM: {
             CONF_AREA_ID: TEST_AREA_BEDROOM,
             CONF_AREA_ENABLED: True,
-            CONF_BINARY_SENSORS: [TEST_SENSOR_3],
+            CONF_CONTACT_SENSORS: [TEST_SENSOR_3],  # Door/window sensors for pause
+            CONF_BINARY_SENSORS: [],  # Motion/occupancy sensors
             CONF_TEMPERATURE_SENSORS: [],
             CONF_SENSORS: [],
         },
@@ -97,10 +99,9 @@ def mock_config_entry() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title="Test Thermostat Contact Sensors",
-        version=2,  # Set to version 2 to skip migration
+        version=3,  # Set to version 3 to skip migration (uses per-area contact_sensors)
         data={
             "name": "Test Thermostat Contact Sensors",
-            CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3],
             CONF_THERMOSTAT: TEST_THERMOSTAT,
             CONF_AREAS: get_test_areas_config(),
         },
@@ -129,9 +130,9 @@ def mock_config_entry_no_notify() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title="Test Thermostat No Notify",
+        version=3,  # Set to version 3 to skip migration
         data={
             "name": "Test Thermostat No Notify",
-            CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
             CONF_THERMOSTAT: TEST_THERMOSTAT,
             CONF_AREAS: get_test_areas_config(),
         },
@@ -291,7 +292,6 @@ def get_test_config_data() -> dict[str, Any]:
     """Get test configuration data."""
     return {
         "name": "Test Thermostat Contact Sensors",
-        CONF_CONTACT_SENSORS: [TEST_SENSOR_1, TEST_SENSOR_2, TEST_SENSOR_3],
         CONF_THERMOSTAT: TEST_THERMOSTAT,
         CONF_AREAS: get_test_areas_config(),
     }

@@ -70,12 +70,17 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+# Device classes for contact sensors (door/window sensors that trigger pause)
+CONTACT_SENSOR_DEVICE_CLASSES = {"door", "window", "garage_door", "opening"}
+
+
 def get_areas_with_sensors(hass: HomeAssistant) -> dict[str, dict]:
     """Get all areas and their associated sensors.
 
     Returns a dict of area_id -> {
         "name": str,
-        "binary_sensors": list of entity_ids,
+        "binary_sensors": list of entity_ids (for occupancy - motion, presence, etc.),
+        "contact_sensors": list of entity_ids (door/window sensors for pause),
         "temperature_sensors": list of entity_ids,
         "sensors": list of entity_ids (non-temperature),
         "covers": list of entity_ids (cover domain entities),
@@ -90,6 +95,7 @@ def get_areas_with_sensors(hass: HomeAssistant) -> dict[str, dict]:
         areas_data[area.id] = {
             "name": area.name,
             "binary_sensors": [],
+            "contact_sensors": [],
             "temperature_sensors": [],
             "sensors": [],
             "covers": [],
@@ -110,7 +116,13 @@ def get_areas_with_sensors(hass: HomeAssistant) -> dict[str, dict]:
         entity_id = entity.entity_id
 
         if entity.domain == BINARY_SENSOR_DOMAIN:
-            areas_data[entity.area_id]["binary_sensors"].append(entity_id)
+            # Check if it's a contact sensor (door/window) by device_class
+            device_class = entity.device_class or entity.original_device_class
+            if device_class in CONTACT_SENSOR_DEVICE_CLASSES:
+                areas_data[entity.area_id]["contact_sensors"].append(entity_id)
+            else:
+                # Other binary sensors (motion, presence, etc.) for occupancy
+                areas_data[entity.area_id]["binary_sensors"].append(entity_id)
         elif entity.domain == SENSOR_DOMAIN:
             # Check if it's a temperature sensor by device_class
             if entity.original_device_class == "temperature" or (
@@ -135,6 +147,7 @@ def build_default_areas_config(hass: HomeAssistant) -> dict[str, dict]:
             CONF_AREA_ID: area_id,
             CONF_AREA_ENABLED: True,
             CONF_BINARY_SENSORS: area_info["binary_sensors"],
+            CONF_CONTACT_SENSORS: area_info["contact_sensors"],
             CONF_TEMPERATURE_SENSORS: area_info["temperature_sensors"],
             CONF_SENSORS: area_info["sensors"],
             CONF_VENTS: [],  # Vents are not auto-assigned
@@ -148,7 +161,7 @@ class ThermostatContactSensorsConfigFlow(
 ):
     """Handle a config flow for Thermostat Contact Sensors."""
 
-    VERSION = 2
+    VERSION = 3
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -685,12 +698,14 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 saved_config = areas_config[area_id]
                 sensor_count = (
                     len(saved_config.get(CONF_BINARY_SENSORS, []))
+                    + len(saved_config.get(CONF_CONTACT_SENSORS, []))
                     + len(saved_config.get(CONF_TEMPERATURE_SENSORS, []))
                     + len(saved_config.get(CONF_SENSORS, []))
                 )
             else:
                 sensor_count = (
                     len(area_info["binary_sensors"])
+                    + len(area_info["contact_sensors"])
                     + len(area_info["temperature_sensors"])
                     + len(area_info["sensors"])
                 )
@@ -733,6 +748,7 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 CONF_AREA_ID: area_id,
                 CONF_AREA_ENABLED: user_input.get(CONF_AREA_ENABLED, True),
                 CONF_BINARY_SENSORS: user_input.get(CONF_BINARY_SENSORS, []),
+                CONF_CONTACT_SENSORS: user_input.get(CONF_CONTACT_SENSORS, []),
                 CONF_TEMPERATURE_SENSORS: user_input.get(CONF_TEMPERATURE_SENSORS, []),
                 CONF_SENSORS: user_input.get(CONF_SENSORS, []),
                 CONF_VENTS: user_input.get(CONF_VENTS, []),
@@ -769,7 +785,20 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
             ): selector.BooleanSelector(),
         }
 
-        # Add binary sensors if any exist in this area
+        # Always show contact sensors field (door/window sensors that trigger thermostat pause)
+        schema_dict[vol.Optional(
+            CONF_CONTACT_SENSORS,
+            default=current_area_config.get(
+                CONF_CONTACT_SENSORS, area_info.get("contact_sensors", [])
+            ),
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=BINARY_SENSOR_DOMAIN,
+                multiple=True,
+            )
+        )
+
+        # Add binary sensors if any exist in this area (for occupancy detection)
         if area_info["binary_sensors"]:
             schema_dict[vol.Optional(
                 CONF_BINARY_SENSORS,
