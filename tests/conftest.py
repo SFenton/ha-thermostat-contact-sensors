@@ -240,10 +240,14 @@ def mock_climate_service(hass: HomeAssistant) -> AsyncMock:
 
 @pytest.fixture
 async def setup_area_registry(hass: HomeAssistant) -> None:
-    """Set up area registry with test areas."""
+    """Set up area registry with test areas.
+    
+    Creates areas with names that will generate IDs matching TEST_AREA_* constants.
+    """
     area_reg = ar.async_get(hass)
 
-    # Create test areas (async_create takes name as first positional arg)
+    # Create test areas - the IDs are auto-generated as slugified names
+    # "Living Room" -> "living_room", "Bedroom" -> "bedroom"
     area_reg.async_create(name="Living Room")
     area_reg.async_create(name="Bedroom")
 
@@ -278,6 +282,25 @@ async def setup_entity_registry(hass: HomeAssistant, setup_area_registry) -> Non
         "garage_door_contact",
         suggested_object_id="garage_door_contact",
         original_device_class="garage_door",
+    )
+    entity_reg.async_update_entity(entry.entity_id, area_id=TEST_AREA_BEDROOM)
+
+    # Register motion sensors for occupancy detection
+    entry = entity_reg.async_get_or_create(
+        "binary_sensor",
+        "test",
+        "living_room_motion",
+        suggested_object_id="living_room_motion",
+        original_device_class="motion",
+    )
+    entity_reg.async_update_entity(entry.entity_id, area_id=TEST_AREA_LIVING_ROOM)
+
+    entry = entity_reg.async_get_or_create(
+        "binary_sensor",
+        "test",
+        "bedroom_motion",
+        suggested_object_id="bedroom_motion",
+        original_device_class="motion",
     )
     entity_reg.async_update_entity(entry.entity_id, area_id=TEST_AREA_BEDROOM)
 

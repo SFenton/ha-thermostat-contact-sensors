@@ -7,7 +7,12 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
-from homeassistant.exceptions import ServiceValidationError
+
+# ServiceValidationError was added in HA 2023.8, fall back to HomeAssistantError for older versions
+try:
+    from homeassistant.exceptions import ServiceValidationError
+except ImportError:
+    from homeassistant.exceptions import HomeAssistantError as ServiceValidationError
 
 from .const import (
     CONF_AREA_ENABLED,

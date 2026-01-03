@@ -798,19 +798,19 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
             )
         )
 
-        # Add binary sensors if any exist in this area (for occupancy detection)
-        if area_info["binary_sensors"]:
-            schema_dict[vol.Optional(
-                CONF_BINARY_SENSORS,
-                default=current_area_config.get(
-                    CONF_BINARY_SENSORS, area_info["binary_sensors"]
-                ),
-            )] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=BINARY_SENSOR_DOMAIN,
-                    multiple=True,
-                )
+        # Always show binary sensors field so users can add sensors
+        # even if none were auto-detected in this area (for occupancy detection)
+        schema_dict[vol.Optional(
+            CONF_BINARY_SENSORS,
+            default=current_area_config.get(
+                CONF_BINARY_SENSORS, area_info.get("binary_sensors", [])
+            ),
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=BINARY_SENSOR_DOMAIN,
+                multiple=True,
             )
+        )
 
         # Always show temperature sensors field so users can add sensors
         # even if none were auto-detected with device_class=temperature
@@ -826,17 +826,16 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
             )
         )
 
-        # Add other sensors if any exist in this area
-        if area_info["sensors"]:
-            schema_dict[vol.Optional(
-                CONF_SENSORS,
-                default=current_area_config.get(CONF_SENSORS, area_info["sensors"]),
-            )] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=SENSOR_DOMAIN,
-                    multiple=True,
-                )
+        # Always show other sensors field so users can add sensors
+        schema_dict[vol.Optional(
+            CONF_SENSORS,
+            default=current_area_config.get(CONF_SENSORS, area_info.get("sensors", [])),
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=SENSOR_DOMAIN,
+                multiple=True,
             )
+        )
 
         # Always show vents field so users can add vents
         schema_dict[vol.Optional(

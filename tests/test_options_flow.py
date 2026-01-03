@@ -324,14 +324,15 @@ async def test_options_flow_disable_area(
         user_input={"next_step_id": f"area_{TEST_AREA_BEDROOM}"},
     )
 
-    # Disable the area - only include fields that exist in the schema
-    # The bedroom area has binary_sensors but no temperature_sensors or sensors
+    # Disable the area - include all fields in the schema
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
             CONF_AREA_ENABLED: False,
             CONF_CONTACT_SENSORS: [],
             CONF_BINARY_SENSORS: [TEST_MOTION_SENSOR_2],
+            CONF_TEMPERATURE_SENSORS: [],
+            CONF_SENSORS: [],
         },
     )
 
@@ -416,6 +417,8 @@ async def test_options_flow_sensor_count_updates_after_adding(
             CONF_AREA_ENABLED: True,
             CONF_CONTACT_SENSORS: [],
             CONF_BINARY_SENSORS: new_binary_sensors,
+            CONF_TEMPERATURE_SENSORS: [],
+            CONF_SENSORS: [],
         },
     )
 
