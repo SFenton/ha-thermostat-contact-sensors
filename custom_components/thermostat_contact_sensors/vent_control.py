@@ -345,8 +345,10 @@ class VentController:
         """Calculate priority order for keeping minimum vents open.
 
         When we need to keep vents open for back pressure prevention, we prioritize:
-        - For HEAT mode: coldest rooms first (they need the heat most)
-        - For COOL mode: hottest rooms first (they need the cooling most)
+        1. Critical rooms (temperature emergency)
+        2. Active rooms (people actively there)
+        3. Temperature-based: coldest rooms for HEAT, hottest for COOL
+        4. Occupied rooms (presence but no activity)
         - Fallback: absolute distance from target
 
         Args:
@@ -363,17 +365,17 @@ class VentController:
             for vent in area_state.vents:
                 priority_score = 0.0
 
-                # Active rooms get highest priority
-                if area_state.should_open and "Active" in (area_state.open_reason or ""):
+                # Critical rooms get highest priority
+                if area_state.should_open and "Critical" in (area_state.open_reason or ""):
+                    priority_score += 2000.0
+
+                # Active rooms get second priority
+                elif area_state.should_open and "Active" in (area_state.open_reason or ""):
                     priority_score += 1000.0
 
-                # Occupied rooms get second priority
+                # Occupied rooms get low priority (temperature-based beats this)
                 elif area_state.should_open and "Occupied" in (area_state.open_reason or ""):
-                    priority_score += 500.0
-
-                # Critical rooms get very high priority
-                elif area_state.should_open and "Critical" in (area_state.open_reason or ""):
-                    priority_score += 2000.0
+                    priority_score += 50.0
 
                 # Temperature-based priority for non-active/occupied/critical rooms
                 # For minimum vent selection, we want rooms that actually need conditioning

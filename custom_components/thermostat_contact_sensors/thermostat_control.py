@@ -25,8 +25,9 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
-from homeassistant.components.climate import HVACMode
+from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 from homeassistant.const import (
+    ATTR_SUPPORTED_FEATURES,
     ATTR_TEMPERATURE,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
@@ -55,6 +56,13 @@ ATTR_TARGET_TEMP_HIGH = "target_temp_high"
 ATTR_TARGET_TEMP_LOW = "target_temp_low"
 ATTR_HVAC_MODE = "hvac_mode"
 ATTR_CURRENT_TEMPERATURE = "current_temperature"
+ATTR_FAN_MODE = "fan_mode"
+ATTR_FAN_MODES = "fan_modes"
+
+# Common fan mode values
+FAN_MODE_ON = "on"
+FAN_MODE_AUTO = "auto"
+FAN_MODE_OFF = "off"
 
 
 class ThermostatAction(Enum):
@@ -364,6 +372,10 @@ class ThermostatController:
         self._we_turned_off: bool = False  # Track if integration turned off thermostat
         self._previous_hvac_mode: str | None = None  # Track mode before we turned off
 
+        # Fan mode tracking
+        self._previous_fan_mode: str | None = None  # Track fan mode before we changed it
+        self._we_changed_fan_mode: bool = False  # Track if we changed fan mode
+
         # Stored target temperatures (captured when thermostat is ON)
         self._stored_target_temp: float | None = None
         self._stored_target_temp_low: float | None = None
@@ -467,6 +479,84 @@ class ThermostatController:
             return hvac_mode, is_on
         except ValueError:
             return None, False
+
+    def supports_fan_mode(self) -> bool:
+        """Check if the thermostat supports fan mode control.
+
+        Returns:
+            True if the thermostat supports fan mode.
+        """
+        state = self.hass.states.get(self.thermostat_entity_id)
+        if state is None:
+            return False
+
+        supported_features = state.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
+        return bool(supported_features & ClimateEntityFeature.FAN_MODE)
+
+    def get_fan_mode(self) -> str | None:
+        """Get the current fan mode.
+
+        Returns:
+            The current fan mode string, or None if unavailable.
+        """
+        state = self.hass.states.get(self.thermostat_entity_id)
+        if state is None:
+            return None
+
+        return state.attributes.get(ATTR_FAN_MODE)
+
+    def get_available_fan_modes(self) -> list[str]:
+        """Get the list of available fan modes.
+
+        Returns:
+            List of available fan mode strings.
+        """
+        state = self.hass.states.get(self.thermostat_entity_id)
+        if state is None:
+            return []
+
+        return state.attributes.get(ATTR_FAN_MODES, [])
+
+    def _get_best_fan_on_mode(self) -> str | None:
+        """Get the best fan mode to use when turning fan on.
+
+        Prefers 'on' but falls back to other high-airflow modes.
+
+        Returns:
+            The fan mode to use, or None if no suitable mode found.
+        """
+        available = self.get_available_fan_modes()
+        if not available:
+            return None
+
+        # Preference order for "fan on" modes
+        preferred = [FAN_MODE_ON, "high", "medium", "low"]
+        for mode in preferred:
+            if mode in available:
+                return mode
+
+        # Return first available if none of the preferred modes exist
+        return available[0] if available else None
+
+    def _get_best_fan_off_mode(self) -> str | None:
+        """Get the best fan mode to use when turning fan off/auto.
+
+        Prefers 'auto' but falls back to 'off'.
+
+        Returns:
+            The fan mode to use, or None if no suitable mode found.
+        """
+        available = self.get_available_fan_modes()
+        if not available:
+            return None
+
+        # Preference order for "fan off/auto" modes
+        preferred = [FAN_MODE_AUTO, FAN_MODE_OFF]
+        for mode in preferred:
+            if mode in available:
+                return mode
+
+        return None
 
     def get_target_temperatures(
         self,
@@ -1157,6 +1247,32 @@ class ThermostatController:
                 blocking=True,
             )
 
+            # Set fan to ON when heating/cooling to ensure airflow
+            if self.supports_fan_mode():
+                fan_on_mode = self._get_best_fan_on_mode()
+                if fan_on_mode:
+                    current_fan_mode = self.get_fan_mode()
+                    # Store previous fan mode if we haven't already
+                    if not self._we_changed_fan_mode and current_fan_mode:
+                        self._previous_fan_mode = current_fan_mode
+
+                    if current_fan_mode != fan_on_mode:
+                        _LOGGER.info(
+                            "Setting fan mode to '%s' for active conditioning (was '%s')",
+                            fan_on_mode,
+                            current_fan_mode,
+                        )
+                        await self.hass.services.async_call(
+                            "climate",
+                            "set_fan_mode",
+                            {
+                                "entity_id": self.thermostat_entity_id,
+                                "fan_mode": fan_on_mode,
+                            },
+                            blocking=True,
+                        )
+                        self._we_changed_fan_mode = True
+
             # Update cycle tracking and clear our turn-off flag
             self._last_turn_on_time = dt_util.utcnow()
             self._we_turned_off = False
@@ -1178,6 +1294,32 @@ class ThermostatController:
                 "off",
             ):
                 self._previous_hvac_mode = current_state.state
+
+            # Set fan to AUTO/OFF when not conditioning to save energy
+            if self.supports_fan_mode():
+                fan_off_mode = self._get_best_fan_off_mode()
+                if fan_off_mode:
+                    current_fan_mode = self.get_fan_mode()
+                    # Store previous fan mode if we haven't already
+                    if not self._we_changed_fan_mode and current_fan_mode:
+                        self._previous_fan_mode = current_fan_mode
+
+                    if current_fan_mode != fan_off_mode:
+                        _LOGGER.info(
+                            "Setting fan mode to '%s' when turning off (was '%s')",
+                            fan_off_mode,
+                            current_fan_mode,
+                        )
+                        await self.hass.services.async_call(
+                            "climate",
+                            "set_fan_mode",
+                            {
+                                "entity_id": self.thermostat_entity_id,
+                                "fan_mode": fan_off_mode,
+                            },
+                            blocking=True,
+                        )
+                        self._we_changed_fan_mode = True
 
             await self.hass.services.async_call(
                 "climate",
@@ -1212,6 +1354,8 @@ class ThermostatController:
         state_data = {
             "we_turned_off": self._we_turned_off,
             "previous_hvac_mode": self._previous_hvac_mode,
+            "previous_fan_mode": self._previous_fan_mode,
+            "we_changed_fan_mode": self._we_changed_fan_mode,
             "stored_target_temp": self._stored_target_temp,
             "stored_target_temp_low": self._stored_target_temp_low,
             "stored_target_temp_high": self._stored_target_temp_high,
@@ -1221,9 +1365,10 @@ class ThermostatController:
         await self._store.async_save(state_data)
         _LOGGER.debug(
             "Saved thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s, "
-            "target_temps=(%s, %s, %s)",
+            "previous_fan_mode=%s, target_temps=(%s, %s, %s)",
             self._we_turned_off,
             self._previous_hvac_mode,
+            self._previous_fan_mode,
             self._stored_target_temp,
             self._stored_target_temp_low,
             self._stored_target_temp_high,
@@ -1245,6 +1390,12 @@ class ThermostatController:
         if stored_data.get("previous_hvac_mode"):
             self._previous_hvac_mode = stored_data["previous_hvac_mode"]
 
+        # Restore fan mode tracking
+        if stored_data.get("previous_fan_mode"):
+            self._previous_fan_mode = stored_data["previous_fan_mode"]
+        if stored_data.get("we_changed_fan_mode"):
+            self._we_changed_fan_mode = True
+
         # Restore stored target temperatures
         if stored_data.get("stored_target_temp") is not None:
             self._stored_target_temp = stored_data["stored_target_temp"]
@@ -1255,9 +1406,10 @@ class ThermostatController:
 
         _LOGGER.debug(
             "Restored thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s, "
-            "target_temps=(%s, %s, %s) (saved at %s)",
+            "previous_fan_mode=%s, target_temps=(%s, %s, %s) (saved at %s)",
             self._we_turned_off,
             self._previous_hvac_mode,
+            self._previous_fan_mode,
             self._stored_target_temp,
             self._stored_target_temp_low,
             self._stored_target_temp_high,

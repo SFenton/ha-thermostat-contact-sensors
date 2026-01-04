@@ -1056,3 +1056,65 @@ class TestDistanceFromTarget:
         
         assert hot_vent.should_be_open is True, "Hot room vent should stay open in COOL mode"
         assert cold_vent.should_be_open is False, "Cold room vent should close in COOL mode"
+
+    def test_temperature_priority_beats_occupied_bonus_for_minimum_vents(self, controller):
+        """Test that temperature-based priority beats the occupied bonus for minimum vents.
+        
+        When selecting which inactive rooms should stay open for minimum vents,
+        a very cold room should beat a slightly cold room even if the slightly cold
+        room was recently occupied, because temperature need outweighs occupancy bonus.
+        
+        Priority scores:
+        - Cold room (55°F): (80 - 55) * 10 = 250 points
+        - Warm room (70°F): (80 - 70) * 10 = 100 points (occupancy bonus doesn't apply
+          since neither room is currently active/occupied in minimum vents selection)
+        """
+        controller._min_vents_open = 1  # Only keep one vent open
+        
+        self._setup_vents(controller, {
+            "cover.vent_warm": {"is_open": True, "members": 1},
+            "cover.vent_cold": {"is_open": True, "members": 1},
+        })
+
+        area_vent_configs = {
+            "area_warm": ["cover.vent_warm"],
+            "area_cold": ["cover.vent_cold"],
+        }
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        # Warm room (close to target - doesn't need heat as much)
+        room_warm = RoomTemperatureState(
+            area_id="area_warm",
+            area_name="Warm Room",
+            is_satiated=False,
+            determining_temperature=70.0,  # Close to target
+            target_temperature=72.0,
+        )
+
+        # Cold room (far from target - needs heat more)
+        room_cold = RoomTemperatureState(
+            area_id="area_cold",
+            area_name="Cold Room",
+            is_satiated=False,
+            determining_temperature=55.0,  # Very cold, far from target
+            target_temperature=72.0,
+        )
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vent_configs,
+            active_areas=[],  # Neither is active
+            occupied_areas=[],  # Neither is occupied - both inactive
+            room_temp_states={
+                "area_warm": room_warm,
+                "area_cold": room_cold,
+            },
+            hvac_mode=HVACMode.HEAT,
+            now=now,
+        )
+
+        # The cold room should get priority for minimum vents due to higher temp-based score
+        cold_vent = control_state.area_states["area_cold"].vents[0]
+        warm_vent = control_state.area_states["area_warm"].vents[0]
+        
+        assert cold_vent.should_be_open is True, "Cold room should get priority in HEAT mode"
+        assert warm_vent.should_be_open is False, "Warm room should not get priority over cold room"
