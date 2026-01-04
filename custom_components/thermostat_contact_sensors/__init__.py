@@ -126,8 +126,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
             area_config[CONF_BINARY_SENSORS] = other_binary
 
         new_data[CONF_AREAS] = areas_config
-        hass.config_entries.async_update_entry(config_entry, data=new_data)
-        config_entry.version = 3
+        hass.config_entries.async_update_entry(config_entry, data=new_data, version=3)
 
         _LOGGER.info(
             "Migration to version 3 successful - split contact sensors from binary sensors"
