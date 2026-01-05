@@ -2043,8 +2043,8 @@ class TestStoredTargetTemperatures:
         # Should return stored value
         assert target == 72.0
 
-    def test_current_temps_used_when_off_but_user_turned_off(self, controller, mock_hass):
-        """Test current (None) temps are returned when user turned off thermostat."""
+    def test_stored_temps_used_when_off_even_if_user_turned_off(self, controller, mock_hass):
+        """Test stored temps are returned when user turned off thermostat (for display)."""
         # First, get temps while ON to store them
         mock_state_on = MagicMock()
         mock_state_on.state = HVACMode.HEAT
@@ -2062,8 +2062,9 @@ class TestStoredTargetTemperatures:
 
         target, low, high = controller.get_target_temperatures()
 
-        # Should return None (current value), not stored
-        assert target is None
+        # Should return stored value for display purposes (virtual thermostats, sensors)
+        # even when user turned it off - we always need targets for display
+        assert target == 72.0
 
     def test_stored_temps_for_heat_cool_mode(self, controller, mock_hass):
         """Test that heat_cool temps (low/high) are stored and restored."""
