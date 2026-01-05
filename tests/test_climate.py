@@ -223,9 +223,13 @@ class TestAreaVirtualThermostat:
         # Check HVAC mode is heat_cool
         assert state.state == HVACMode.HEAT_COOL
         
-        # Check default target temperatures
-        assert state.attributes.get(ATTR_TARGET_TEMP_LOW) == DEFAULT_TARGET_TEMP_LOW
-        assert state.attributes.get(ATTR_TARGET_TEMP_HIGH) == DEFAULT_TARGET_TEMP_HIGH
+        # Check default target temperatures via entity's internal properties
+        # (state attributes get unit-converted by HA, so check entity directly)
+        coordinator = config_entry.runtime_data
+        entity = coordinator.area_thermostats.get("living_room")
+        assert entity is not None
+        assert entity.target_temperature_low == DEFAULT_TARGET_TEMP_LOW
+        assert entity.target_temperature_high == DEFAULT_TARGET_TEMP_HIGH
 
         await hass.config_entries.async_unload(config_entry.entry_id)
 
@@ -457,9 +461,13 @@ class TestAreaVirtualThermostat:
         state = hass.states.get(entity_id)
         assert state is not None
         
-        # Check min/max temperatures
-        assert state.attributes.get("min_temp") == DEFAULT_MIN_TEMP
-        assert state.attributes.get("max_temp") == DEFAULT_MAX_TEMP
+        # Check min/max temperatures via entity's internal properties
+        # (state attributes get unit-converted by HA, so check entity directly)
+        coordinator = config_entry.runtime_data
+        entity = coordinator.area_thermostats.get("living_room")
+        assert entity is not None
+        assert entity.min_temp == DEFAULT_MIN_TEMP
+        assert entity.max_temp == DEFAULT_MAX_TEMP
 
         await hass.config_entries.async_unload(config_entry.entry_id)
 
