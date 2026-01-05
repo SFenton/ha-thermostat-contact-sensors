@@ -296,12 +296,21 @@ async def _async_cleanup_disabled_area_entities(
     ]
 
     if not disabled_area_ids:
+        _LOGGER.debug("No disabled areas to clean up")
         return
 
-    _LOGGER.debug("Cleaning up entities for disabled areas: %s", disabled_area_ids)
+    _LOGGER.info("Cleaning up entities for disabled areas: %s", disabled_area_ids)
 
     # Entity unique_id suffixes for area-specific entities
     area_entity_suffixes = ["_thermostat", "_occupancy", "_temperature"]
+
+    # Log all entities from our integration for debugging
+    our_entities = [
+        (e.entity_id, e.unique_id)
+        for e in entity_registry.entities.values()
+        if e.config_entry_id == entry.entry_id
+    ]
+    _LOGGER.info("All entities from this integration: %s", our_entities)
 
     # Find and remove entities for disabled areas
     entities_to_remove = []
@@ -310,15 +319,20 @@ async def _async_cleanup_disabled_area_entities(
         if entity_entry.config_entry_id != entry.entry_id:
             continue
 
+        _LOGGER.debug(
+            "Checking entity: %s with unique_id: %s",
+            entity_entry.entity_id, entity_entry.unique_id
+        )
+
         # Check if this entity belongs to a disabled area
         for area_id in disabled_area_ids:
             for suffix in area_entity_suffixes:
                 expected_unique_id = f"{entry.entry_id}_{area_id}{suffix}"
                 if entity_entry.unique_id == expected_unique_id:
                     entities_to_remove.append(entity_entry.entity_id)
-                    _LOGGER.debug(
-                        "Marking entity for removal: %s (area %s disabled)",
-                        entity_entry.entity_id, area_id
+                    _LOGGER.info(
+                        "Marking entity for removal: %s (unique_id=%s, area %s disabled)",
+                        entity_entry.entity_id, entity_entry.unique_id, area_id
                     )
 
     # Remove the entities

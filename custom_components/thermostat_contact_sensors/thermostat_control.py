@@ -31,10 +31,12 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
@@ -187,13 +189,13 @@ class ThermostatState:
 
 
 def get_temperature_from_state(state: State | None) -> float | None:
-    """Extract temperature value from a sensor state.
+    """Extract temperature value from a sensor state and convert to Celsius.
 
     Args:
         state: The state object for the temperature sensor.
 
     Returns:
-        The temperature as a float, or None if unavailable/invalid.
+        The temperature in Celsius as a float, or None if unavailable/invalid.
     """
     if state is None:
         return None
@@ -202,9 +204,19 @@ def get_temperature_from_state(state: State | None) -> float | None:
         return None
 
     try:
-        return float(state.state)
+        temp = float(state.state)
     except (ValueError, TypeError):
         return None
+
+    # Convert to Celsius if the sensor reports in Fahrenheit
+    # This ensures all internal calculations use a consistent unit
+    unit = state.attributes.get("unit_of_measurement")
+    if unit == UnitOfTemperature.FAHRENHEIT:
+        temp = TemperatureConverter.convert(
+            temp, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.CELSIUS
+        )
+
+    return temp
 
 
 def is_room_satiated_for_heat(
@@ -579,22 +591,37 @@ class ThermostatController:
         target_temp_low = attrs.get(ATTR_TARGET_TEMP_LOW)
         target_temp_high = attrs.get(ATTR_TARGET_TEMP_HIGH)
 
-        # Convert to float if present
+        # Get the thermostat's temperature unit for conversion
+        thermostat_unit = attrs.get("temperature_unit") or attrs.get("unit_of_measurement")
+
+        # Convert to float if present, and convert to Celsius if needed
         if target_temp is not None:
             try:
                 target_temp = float(target_temp)
+                if thermostat_unit == UnitOfTemperature.FAHRENHEIT:
+                    target_temp = TemperatureConverter.convert(
+                        target_temp, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.CELSIUS
+                    )
             except (ValueError, TypeError):
                 target_temp = None
 
         if target_temp_low is not None:
             try:
                 target_temp_low = float(target_temp_low)
+                if thermostat_unit == UnitOfTemperature.FAHRENHEIT:
+                    target_temp_low = TemperatureConverter.convert(
+                        target_temp_low, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.CELSIUS
+                    )
             except (ValueError, TypeError):
                 target_temp_low = None
 
         if target_temp_high is not None:
             try:
                 target_temp_high = float(target_temp_high)
+                if thermostat_unit == UnitOfTemperature.FAHRENHEIT:
+                    target_temp_high = TemperatureConverter.convert(
+                        target_temp_high, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.CELSIUS
+                    )
             except (ValueError, TypeError):
                 target_temp_high = None
 
