@@ -599,30 +599,41 @@ class ThermostatController:
                 target_temp_high = None
 
         # If we have valid values, store them for when thermostat is OFF
+        # Also persist to storage whenever values change
+        values_changed = False
         if target_temp is not None:
+            if self._stored_target_temp != target_temp:
+                values_changed = True
             self._stored_target_temp = target_temp
         if target_temp_low is not None:
+            if self._stored_target_temp_low != target_temp_low:
+                values_changed = True
             self._stored_target_temp_low = target_temp_low
         if target_temp_high is not None:
+            if self._stored_target_temp_high != target_temp_high:
+                values_changed = True
             self._stored_target_temp_high = target_temp_high
 
-        # If thermostat is OFF and we turned it off, use stored values
+        # Persist to storage if values changed
+        if values_changed and self._store:
+            self.hass.async_create_task(self._async_save_state())
+
+        # Always use stored values as fallback when thermostat values are unavailable
+        # This handles: thermostat OFF, reboot when OFF, or mode without certain targets
+        final_target_temp = target_temp if target_temp is not None else self._stored_target_temp
+        final_target_temp_low = target_temp_low if target_temp_low is not None else self._stored_target_temp_low
+        final_target_temp_high = target_temp_high if target_temp_high is not None else self._stored_target_temp_high
+
         hvac_mode, _ = self.get_thermostat_state()
-        if hvac_mode == HVACMode.OFF and self._we_turned_off:
+        if hvac_mode == HVACMode.OFF or target_temp is None or target_temp_low is None or target_temp_high is None:
             _LOGGER.debug(
-                "Thermostat is OFF (we turned it off) - using stored target temps: "
-                "temp=%s, low=%s, high=%s",
-                self._stored_target_temp,
-                self._stored_target_temp_low,
-                self._stored_target_temp_high,
-            )
-            return (
-                self._stored_target_temp,
-                self._stored_target_temp_low,
-                self._stored_target_temp_high,
+                "Using stored/merged target temps: temp=%s, low=%s, high=%s",
+                final_target_temp,
+                final_target_temp_low,
+                final_target_temp_high,
             )
 
-        return target_temp, target_temp_low, target_temp_high
+        return final_target_temp, final_target_temp_low, final_target_temp_high
 
     def get_temperature_sensors_for_area(self, area_id: str) -> list[str]:
         """Get list of temperature sensor entity IDs for an area.
@@ -1010,12 +1021,15 @@ class ThermostatController:
                     evaluation_hvac_mode = HVACMode.HEAT
                     _LOGGER.debug("No previous mode, defaulting to HEAT for satiation evaluation")
             else:
-                # User turned it off - respect their choice
-                thermostat_state.recommended_action = ThermostatAction.NONE
-                thermostat_state.action_reason = "Thermostat is off (user choice)"
-                return thermostat_state
+                # User turned it off - still evaluate room temps for display purposes
+                # but we won't take any thermostat actions
+                evaluation_hvac_mode = HVACMode.HEAT  # Use HEAT as default for evaluation
+                _LOGGER.debug("Thermostat is off (user choice) - evaluating temps but taking no action")
 
-        # Evaluate each active room for satiation
+        # Flag if user turned thermostat off - used to skip action at end
+        user_turned_off = hvac_mode == HVACMode.OFF and not self._we_turned_off
+
+        # Evaluate each active room for satiation (always, even when OFF for display)
         thermostat_state.active_room_count = len(active_areas)
         satiated_count = 0
 
@@ -1078,6 +1092,13 @@ class ThermostatController:
         # Check if any rooms are configured at all
         # (if no active AND no inactive areas, no rooms are configured)
         rooms_configured = len(active_areas) > 0 or len(inactive_areas) > 0
+
+        # If user turned thermostat off, don't recommend any action
+        # (but we've still evaluated room temps above for display purposes)
+        if user_turned_off:
+            thermostat_state.recommended_action = ThermostatAction.NONE
+            thermostat_state.action_reason = "Thermostat is off (user choice)"
+            return thermostat_state
 
         # Determine recommended action
         if len(active_areas) == 0 and critical_count == 0:
