@@ -377,37 +377,28 @@ class TestAreaVirtualThermostat:
         config_entry: MockConfigEntry,
         setup_climate_entities: None,
     ):
-        """Test that setting HVAC mode to anything other than heat_cool is ignored."""
+        """Test that setting HVAC mode to anything other than heat_cool is ignored.
+        
+        Note: We test by calling the entity method directly because HA's
+        climate platform validates HVAC modes before calling the entity.
+        """
         config_entry.add_to_hass(hass)
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Get entity ID from registry
-        from homeassistant.helpers import entity_registry as er
-        entity_reg = er.async_get(hass)
-        entity_id = entity_reg.async_get_entity_id(
-            CLIMATE_DOMAIN, 
-            DOMAIN, 
-            f"{config_entry.entry_id}_living_room_thermostat"
-        )
-        assert entity_id is not None
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        
+        # Get the virtual thermostat entity directly
+        assert hasattr(coordinator, "area_thermostats")
+        thermostat = coordinator.area_thermostats.get("living_room")
+        assert thermostat is not None
 
-        # Try to set HVAC mode to heat (should be ignored)
-        await hass.services.async_call(
-            CLIMATE_DOMAIN,
-            SERVICE_SET_HVAC_MODE,
-            {
-                ATTR_ENTITY_ID: entity_id,
-                ATTR_HVAC_MODE: HVACMode.HEAT,
-            },
-            blocking=True,
-        )
+        # Call async_set_hvac_mode directly with an invalid mode
+        await thermostat.async_set_hvac_mode(HVACMode.HEAT)
         await hass.async_block_till_done()
 
-        state = hass.states.get(entity_id)
-        assert state is not None
         # Mode should still be heat_cool
-        assert state.state == HVACMode.HEAT_COOL
+        assert thermostat.hvac_mode == HVACMode.HEAT_COOL
 
         await hass.config_entries.async_unload(config_entry.entry_id)
 
