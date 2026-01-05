@@ -282,3 +282,71 @@ async def test_coordinator_cleanup_on_unload(
 
     # Verify cleanup
     assert coordinator._unsub_state_change is None
+
+
+async def test_disabled_area_entities_are_removed(
+    hass: HomeAssistant,
+    mock_climate_service,
+) -> None:
+    """Test that entities for disabled areas are removed from registry."""
+    from homeassistant.helpers import entity_registry as er
+
+    # Create config with an enabled area
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Test Thermostat",
+        version=3,
+        data={
+            "name": "Test Thermostat",
+            CONF_THERMOSTAT: TEST_THERMOSTAT,
+            CONF_AREAS: {
+                "living_room": {
+                    CONF_AREA_ID: "living_room",
+                    CONF_AREA_ENABLED: True,
+                    CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
+                    CONF_BINARY_SENSORS: [],
+                    CONF_TEMPERATURE_SENSORS: [],
+                },
+            },
+        },
+        options={},
+        entry_id="test_entry_disable",
+    )
+
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Verify entity was created
+    entity_reg = er.async_get(hass)
+    occupancy_entity = entity_reg.async_get_entity_id(
+        "sensor", DOMAIN, f"{config_entry.entry_id}_living_room_occupancy"
+    )
+    assert occupancy_entity is not None
+
+    climate_entity = entity_reg.async_get_entity_id(
+        "climate", DOMAIN, f"{config_entry.entry_id}_living_room_thermostat"
+    )
+    assert climate_entity is not None
+
+    # Update config to disable the area
+    new_data = {**config_entry.data}
+    new_data[CONF_AREAS]["living_room"][CONF_AREA_ENABLED] = False
+    hass.config_entries.async_update_entry(config_entry, data=new_data)
+
+    # Trigger options update (which calls our cleanup)
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Verify entities were removed
+    occupancy_entity = entity_reg.async_get_entity_id(
+        "sensor", DOMAIN, f"{config_entry.entry_id}_living_room_occupancy"
+    )
+    assert occupancy_entity is None
+
+    climate_entity = entity_reg.async_get_entity_id(
+        "climate", DOMAIN, f"{config_entry.entry_id}_living_room_thermostat"
+    )
+    assert climate_entity is None
+
+    await hass.config_entries.async_unload(config_entry.entry_id)

@@ -141,6 +141,9 @@ async def async_setup_entry(
     """Set up Thermostat Contact Sensors from a config entry."""
     _LOGGER.debug("Setting up Thermostat Contact Sensors: %s", entry.title)
 
+    # Clean up entities for disabled areas (in case config changed)
+    await _async_cleanup_disabled_area_entities(hass, entry)
+
     # Get areas config
     areas_config = entry.data.get(CONF_AREAS, {})
 
@@ -266,6 +269,59 @@ async def async_update_options(
     """Handle options update."""
     _LOGGER.debug("Updating options for: %s", entry.title)
 
+    # Clean up entities for disabled areas before reload
+    await _async_cleanup_disabled_area_entities(hass, entry)
+
     # When areas or thermostat change, we need to reload the integration
     # to rebuild the coordinator with new sensors
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def _async_cleanup_disabled_area_entities(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Remove entities for disabled areas from the entity registry.
+    
+    When an area is disabled, we should clean up all entities associated with
+    that area so they don't remain as orphaned/unavailable entities.
+    """
+    entity_registry = er.async_get(hass)
+    areas_config = entry.data.get(CONF_AREAS, {})
+
+    # Find disabled areas
+    disabled_area_ids = [
+        area_id
+        for area_id, area_config in areas_config.items()
+        if not area_config.get(CONF_AREA_ENABLED, True)
+    ]
+
+    if not disabled_area_ids:
+        return
+
+    _LOGGER.debug("Cleaning up entities for disabled areas: %s", disabled_area_ids)
+
+    # Entity unique_id suffixes for area-specific entities
+    area_entity_suffixes = ["_thermostat", "_occupancy", "_temperature"]
+
+    # Find and remove entities for disabled areas
+    entities_to_remove = []
+    for entity_entry in entity_registry.entities.values():
+        # Only process entities from our integration
+        if entity_entry.config_entry_id != entry.entry_id:
+            continue
+
+        # Check if this entity belongs to a disabled area
+        for area_id in disabled_area_ids:
+            for suffix in area_entity_suffixes:
+                expected_unique_id = f"{entry.entry_id}_{area_id}{suffix}"
+                if entity_entry.unique_id == expected_unique_id:
+                    entities_to_remove.append(entity_entry.entity_id)
+                    _LOGGER.debug(
+                        "Marking entity for removal: %s (area %s disabled)",
+                        entity_entry.entity_id, area_id
+                    )
+
+    # Remove the entities
+    for entity_id in entities_to_remove:
+        entity_registry.async_remove(entity_id)
+        _LOGGER.info("Removed entity %s (area disabled)", entity_id)

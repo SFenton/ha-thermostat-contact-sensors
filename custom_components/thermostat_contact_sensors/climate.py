@@ -21,7 +21,7 @@ from homeassistant.const import (
     CONF_NAME,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -87,6 +87,9 @@ async def async_setup_entry(
             entities.append(
                 AreaVirtualThermostat(coordinator, entry, area_id)
             )
+
+    # Create the global virtual thermostat
+    entities.append(GlobalVirtualThermostat(coordinator, entry))
 
     async_add_entities(entities)
 
@@ -266,8 +269,15 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         # No action needed, already in heat_cool mode
         self.async_write_ha_state()
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set new target temperatures."""
+    async def async_set_temperature(
+        self, _from_global: bool = False, **kwargs: Any
+    ) -> None:
+        """Set new target temperatures.
+        
+        Args:
+            _from_global: If True, skip notifying global thermostat (to prevent loops)
+            **kwargs: Standard Home Assistant climate arguments
+        """
         low = kwargs.get("target_temp_low")
         high = kwargs.get("target_temp_high")
 
@@ -294,6 +304,12 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
             )
 
         self.async_write_ha_state()
+
+        # Notify global thermostat to recalculate (unless this came from global)
+        if not _from_global:
+            coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+            if hasattr(coordinator, "global_thermostat") and coordinator.global_thermostat:
+                coordinator.global_thermostat.async_recalculate_from_areas()
 
         _LOGGER.info(
             "Virtual thermostat %s targets updated: heat=%s, cool=%s",
@@ -322,5 +338,324 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         from .const import CONF_TEMPERATURE_SENSORS
         temp_sensors = area_config.get(CONF_TEMPERATURE_SENSORS, [])
         attrs["temperature_sensors"] = temp_sensors
+
+        return attrs
+
+
+@dataclass
+class GlobalThermostatExtraStoredData(ExtraStoredData):
+    """Extra stored data for global thermostat."""
+
+    target_temp_low: float
+    target_temp_high: float
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a dict representation of the extra data."""
+        return {
+            "target_temp_low": self.target_temp_low,
+            "target_temp_high": self.target_temp_high,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self | None:
+        """Initialize extra data from a dict."""
+        if data is None:
+            return None
+        try:
+            return cls(
+                target_temp_low=float(data["target_temp_low"]),
+                target_temp_high=float(data["target_temp_high"]),
+            )
+        except (KeyError, ValueError, TypeError):
+            return None
+
+
+class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
+    """Global virtual thermostat that aggregates all area thermostats.
+    
+    This climate entity provides a master control over all area thermostats:
+    - Heating target = MAX of all area heating targets
+    - Cooling target = MIN of all area cooling targets
+    
+    When the user adjusts this thermostat:
+    - Raising heat: All areas with lower heat targets are raised to match
+    - Lowering cool: All areas with higher cool targets are lowered to match
+    """
+
+    _attr_has_entity_name = True
+    _attr_hvac_modes = [HVACMode.HEAT_COOL]
+    _attr_hvac_mode = HVACMode.HEAT_COOL
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+    )
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_target_temperature_step = DEFAULT_TEMP_STEP
+    _attr_min_temp = DEFAULT_MIN_TEMP
+    _attr_max_temp = DEFAULT_MAX_TEMP
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the global virtual thermostat."""
+        super().__init__(coordinator)
+        self._entry = entry
+
+        self._attr_unique_id = f"{entry.entry_id}_global_thermostat"
+        self._attr_name = "Global Virtual Thermostat"
+
+        # Initialize target temperatures with defaults
+        self._target_temp_low: float = DEFAULT_TARGET_TEMP_LOW
+        self._target_temp_high: float = DEFAULT_TARGET_TEMP_HIGH
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state and register with coordinator."""
+        await super().async_added_to_hass()
+
+        restored = False
+
+        # Try to restore from extra stored data first
+        if (extra_data := await self.async_get_last_extra_data()) is not None:
+            if (stored := GlobalThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None:
+                self._target_temp_low = stored.target_temp_low
+                self._target_temp_high = stored.target_temp_high
+                restored = True
+                _LOGGER.info(
+                    "Restored global thermostat from extra data: heat=%s, cool=%s",
+                    self._target_temp_low, self._target_temp_high
+                )
+
+        # Fall back to restoring from state attributes
+        if not restored:
+            if (last_state := await self.async_get_last_state()) is not None:
+                if last_state.attributes:
+                    if (low := last_state.attributes.get("target_temp_low")) is not None:
+                        try:
+                            self._target_temp_low = float(low)
+                            restored = True
+                        except (ValueError, TypeError):
+                            pass
+                    if (high := last_state.attributes.get("target_temp_high")) is not None:
+                        try:
+                            self._target_temp_high = float(high)
+                            restored = True
+                        except (ValueError, TypeError):
+                            pass
+                if restored:
+                    _LOGGER.info(
+                        "Restored global thermostat from state: heat=%s, cool=%s",
+                        self._target_temp_low, self._target_temp_high
+                    )
+
+        # Register this thermostat with the coordinator
+        self._register_with_coordinator()
+
+        # Recalculate from area thermostats after a brief delay
+        # (to ensure all area thermostats are registered first)
+        self.hass.async_create_task(self._async_initial_recalculate())
+
+    async def _async_initial_recalculate(self) -> None:
+        """Recalculate after initial setup."""
+        # Wait for area thermostats to be registered
+        await self.hass.async_block_till_done()
+        self.async_recalculate_from_areas()
+
+    def _register_with_coordinator(self) -> None:
+        """Register this global thermostat with the coordinator."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        coordinator.global_thermostat = self
+
+    @property
+    def extra_restore_state_data(self) -> GlobalThermostatExtraStoredData:
+        """Return extra state data to be stored for restore on restart."""
+        return GlobalThermostatExtraStoredData(
+            target_temp_low=self._target_temp_low,
+            target_temp_high=self._target_temp_high,
+        )
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    @property
+    def hvac_mode(self) -> HVACMode:
+        """Return current HVAC mode - always heat_cool."""
+        return HVACMode.HEAT_COOL
+
+    @property
+    def target_temperature_low(self) -> float:
+        """Return the low target temperature (heating target)."""
+        return self._target_temp_low
+
+    @property
+    def target_temperature_high(self) -> float:
+        """Return the high target temperature (cooling target)."""
+        return self._target_temp_high
+
+    @property
+    def current_temperature(self) -> float | None:
+        """Return the current temperature - average across all areas."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+        if not hasattr(coordinator, "area_thermostats"):
+            return None
+
+        temps = []
+        for area_thermostat in coordinator.area_thermostats.values():
+            temp = area_thermostat.current_temperature
+            if temp is not None:
+                temps.append(temp)
+
+        if temps:
+            return sum(temps) / len(temps)
+        return None
+
+    @callback
+    def async_recalculate_from_areas(self) -> None:
+        """Recalculate global targets from area thermostats.
+        
+        Global heating = MAX of all area heating targets
+        Global cooling = MIN of all area cooling targets
+        """
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+        if not hasattr(coordinator, "area_thermostats") or not coordinator.area_thermostats:
+            return
+
+        heat_targets = []
+        cool_targets = []
+
+        for area_thermostat in coordinator.area_thermostats.values():
+            heat_targets.append(area_thermostat.target_temperature_low)
+            cool_targets.append(area_thermostat.target_temperature_high)
+
+        if heat_targets:
+            new_heat = max(heat_targets)
+            if new_heat != self._target_temp_low:
+                self._target_temp_low = new_heat
+                _LOGGER.debug("Global heat target updated to %s", self._target_temp_low)
+
+        if cool_targets:
+            new_cool = min(cool_targets)
+            if new_cool != self._target_temp_high:
+                self._target_temp_high = new_cool
+                _LOGGER.debug("Global cool target updated to %s", self._target_temp_high)
+
+        self.async_write_ha_state()
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set HVAC mode - only heat_cool is supported."""
+        if hvac_mode != HVACMode.HEAT_COOL:
+            _LOGGER.warning(
+                "Global thermostat only supports heat_cool mode, ignoring %s",
+                hvac_mode
+            )
+            return
+        self.async_write_ha_state()
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        """Set new target temperatures and propagate to area thermostats.
+        
+        Propagation logic ensures display consistency:
+        - Heat: If new global heat < area's heat, lower that area (ceiling behavior)
+        - Cool: If new global cool > area's cool, raise that area (floor behavior)
+        
+        This ensures when you lower the displayed heat or raise the displayed cool,
+        the outlier areas are brought in line and the display reflects your setting.
+        """
+        new_low = kwargs.get("target_temp_low")
+        new_high = kwargs.get("target_temp_high")
+
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+        if new_low is not None:
+            new_low = float(new_low)
+            self._target_temp_low = new_low
+
+            # If global heat is lower than an area's heat, lower that area
+            # This ensures display consistency (display shows MAX, so lower outliers)
+            if hasattr(coordinator, "area_thermostats"):
+                for area_id, area_thermostat in coordinator.area_thermostats.items():
+                    if area_thermostat.target_temperature_low > new_low:
+                        _LOGGER.debug(
+                            "Lowering %s heat target from %s to %s",
+                            area_id, area_thermostat.target_temperature_low, new_low
+                        )
+                        # Use _from_global=True to prevent infinite loop
+                        await area_thermostat.async_set_temperature(
+                            _from_global=True,
+                            target_temp_low=new_low,
+                            target_temp_high=area_thermostat.target_temperature_high,
+                        )
+
+        if new_high is not None:
+            new_high = float(new_high)
+            self._target_temp_high = new_high
+
+            # If global cool is higher than an area's cool, raise that area
+            # This ensures display consistency (display shows MIN, so raise outliers)
+            if hasattr(coordinator, "area_thermostats"):
+                for area_id, area_thermostat in coordinator.area_thermostats.items():
+                    if area_thermostat.target_temperature_high < new_high:
+                        _LOGGER.debug(
+                            "Raising %s cool target from %s to %s",
+                            area_id, area_thermostat.target_temperature_high, new_high
+                        )
+                        # Use _from_global=True to prevent infinite loop
+                        await area_thermostat.async_set_temperature(
+                            _from_global=True,
+                            target_temp_low=area_thermostat.target_temperature_low,
+                            target_temp_high=new_high,
+                        )
+
+        # Validate that low <= high
+        if self._target_temp_low > self._target_temp_high:
+            _LOGGER.warning(
+                "Global heating target (%s) is higher than cooling target (%s), swapping",
+                self._target_temp_low, self._target_temp_high
+            )
+            self._target_temp_low, self._target_temp_high = (
+                self._target_temp_high, self._target_temp_low
+            )
+
+        # Recalculate from areas to ensure display consistency
+        # This makes "wrong direction" operations (raise heat, lower cool) into no-ops
+        # that visually snap back to the actual MAX(heat)/MIN(cool)
+        self.async_recalculate_from_areas()
+
+        _LOGGER.info(
+            "Global thermostat targets updated: heat=%s, cool=%s",
+            self._target_temp_low, self._target_temp_high
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+        attrs = {
+            "monitored_areas": [],
+            "area_count": 0,
+        }
+
+        if hasattr(coordinator, "area_thermostats"):
+            attrs["monitored_areas"] = list(coordinator.area_thermostats.keys())
+            attrs["area_count"] = len(coordinator.area_thermostats)
+
+            # Show individual area targets
+            area_targets = {}
+            for area_id, area_thermostat in coordinator.area_thermostats.items():
+                area_targets[area_id] = {
+                    "heat": area_thermostat.target_temperature_low,
+                    "cool": area_thermostat.target_temperature_high,
+                }
+            attrs["area_targets"] = area_targets
 
         return attrs

@@ -14,6 +14,7 @@ from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CONF_AREA_ENABLED,
     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_CLOSE_TIMEOUT,
     CONF_GRACE_PERIOD_MINUTES,
@@ -216,26 +217,32 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         return self._last_vent_control_state
 
     def get_area_temp_sensors(self) -> dict[str, list[str]]:
-        """Get temperature sensors for each area.
+        """Get temperature sensors for each enabled area.
 
         Returns:
             Dict of area_id -> list of temperature sensor entity IDs.
         """
         result = {}
         for area_id, area_config in self._areas_config.items():
+            # Skip disabled areas
+            if not area_config.get(CONF_AREA_ENABLED, True):
+                continue
             temp_sensors = area_config.get(CONF_TEMPERATURE_SENSORS, [])
             if temp_sensors:
                 result[area_id] = list(temp_sensors)
         return result
 
     def get_area_vents(self) -> dict[str, list[str]]:
-        """Get vents for each area.
+        """Get vents for each enabled area.
 
         Returns:
             Dict of area_id -> list of vent entity IDs.
         """
         result = {}
         for area_id, area_config in self._areas_config.items():
+            # Skip disabled areas
+            if not area_config.get(CONF_AREA_ENABLED, True):
+                continue
             vents = area_config.get(CONF_VENTS, [])
             if vents:
                 result[area_id] = list(vents)
@@ -249,6 +256,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """
         result = {}
         for area_id, area_config in self._areas_config.items():
+            # Skip disabled areas
+            if not area_config.get(CONF_AREA_ENABLED, True):
+                continue
             delay = area_config.get(CONF_AREA_VENT_OPEN_DELAY_SECONDS)
             if delay is not None:
                 result[area_id] = delay

@@ -182,12 +182,12 @@ class TestAreaVirtualThermostat:
             and entity.domain == CLIMATE_DOMAIN
         ]
         
-        # Should have 2 enabled areas (living_room and bedroom)
-        assert len(climate_entities) == 2
+        # Should have 2 enabled areas (living_room and bedroom) + 1 global thermostat = 3
+        assert len(climate_entities) == 3
         
         # Verify no thermostat for disabled room
         disabled_entity = entity_reg.async_get_entity_id(
-            CLIMATE_DOMAIN, 
+            CLIMATE_DOMAIN,
             DOMAIN, 
             f"{config_entry.entry_id}_disabled_room_thermostat"
         )
@@ -543,3 +543,246 @@ class TestAreaVirtualThermostatRegistration:
         )
 
         await hass.config_entries.async_unload(config_entry.entry_id)
+
+
+class TestGlobalVirtualThermostat:
+    """Test the GlobalVirtualThermostat entity."""
+
+    @pytest.mark.asyncio
+    async def test_global_thermostat_created(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that a global thermostat is created."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        
+        # Check that coordinator has global_thermostat
+        assert hasattr(coordinator, "global_thermostat")
+        assert coordinator.global_thermostat is not None
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_thermostat_displays_max_heat_min_cool(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that global thermostat displays MAX(heat) and MIN(cool)."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        
+        # Set different temperatures on area thermostats
+        living_room = coordinator.area_thermostats["living_room"]
+        bedroom = coordinator.area_thermostats["bedroom"]
+        
+        await living_room.async_set_temperature(
+            target_temp_low=20.0, target_temp_high=26.0
+        )
+        await bedroom.async_set_temperature(
+            target_temp_low=22.0, target_temp_high=24.0
+        )
+        await hass.async_block_till_done()
+        
+        global_thermostat = coordinator.global_thermostat
+        
+        # Global should show MAX(20, 22) = 22 for heat
+        # Global should show MIN(26, 24) = 24 for cool
+        assert global_thermostat.target_temperature_low == 22.0
+        assert global_thermostat.target_temperature_high == 24.0
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_lower_heat_propagates_to_areas(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that lowering global heat lowers areas above that value."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        
+        # Set different temperatures on area thermostats
+        living_room = coordinator.area_thermostats["living_room"]
+        bedroom = coordinator.area_thermostats["bedroom"]
+        
+        # Living room: heat=20, cool=26
+        # Bedroom: heat=22, cool=24
+        await living_room.async_set_temperature(
+            _from_global=True,  # Avoid triggering global recalc
+            target_temp_low=20.0, target_temp_high=26.0
+        )
+        await bedroom.async_set_temperature(
+            _from_global=True,
+            target_temp_low=22.0, target_temp_high=24.0
+        )
+        
+        global_thermostat = coordinator.global_thermostat
+        global_thermostat.async_recalculate_from_areas()
+        
+        # Global shows heat=22 (MAX). Lower it to 21.
+        await global_thermostat.async_set_temperature(
+            target_temp_low=21.0, target_temp_high=24.0
+        )
+        await hass.async_block_till_done()
+        
+        # Bedroom was at 22, should be lowered to 21
+        assert bedroom.target_temperature_low == 21.0
+        # Living room was at 20, should stay at 20 (not above 21)
+        assert living_room.target_temperature_low == 20.0
+        # Global should now show 21 (MAX of 20, 21)
+        assert global_thermostat.target_temperature_low == 21.0
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_raise_cool_propagates_to_areas(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that raising global cool raises areas below that value."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        
+        living_room = coordinator.area_thermostats["living_room"]
+        bedroom = coordinator.area_thermostats["bedroom"]
+        
+        # Living room: heat=20, cool=26
+        # Bedroom: heat=22, cool=24
+        await living_room.async_set_temperature(
+            _from_global=True,
+            target_temp_low=20.0, target_temp_high=26.0
+        )
+        await bedroom.async_set_temperature(
+            _from_global=True,
+            target_temp_low=22.0, target_temp_high=24.0
+        )
+        
+        global_thermostat = coordinator.global_thermostat
+        global_thermostat.async_recalculate_from_areas()
+        
+        # Global shows cool=24 (MIN). Raise it to 25.
+        await global_thermostat.async_set_temperature(
+            target_temp_low=22.0, target_temp_high=25.0
+        )
+        await hass.async_block_till_done()
+        
+        # Bedroom was at 24, should be raised to 25
+        assert bedroom.target_temperature_high == 25.0
+        # Living room was at 26, should stay at 26 (not below 25)
+        assert living_room.target_temperature_high == 26.0
+        # Global should now show 25 (MIN of 26, 25)
+        assert global_thermostat.target_temperature_high == 25.0
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_raise_heat_snaps_back(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that raising global heat (wrong direction) snaps back."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        
+        living_room = coordinator.area_thermostats["living_room"]
+        bedroom = coordinator.area_thermostats["bedroom"]
+        
+        # Set both to heat=21
+        await living_room.async_set_temperature(
+            _from_global=True,
+            target_temp_low=21.0, target_temp_high=26.0
+        )
+        await bedroom.async_set_temperature(
+            _from_global=True,
+            target_temp_low=21.0, target_temp_high=24.0
+        )
+        
+        global_thermostat = coordinator.global_thermostat
+        global_thermostat.async_recalculate_from_areas()
+        
+        # Global shows heat=21. Try to raise it to 23 (invalid direction).
+        await global_thermostat.async_set_temperature(
+            target_temp_low=23.0, target_temp_high=24.0
+        )
+        await hass.async_block_till_done()
+        
+        # No area is above 23, so nothing changes
+        # Recalculate snaps it back to MAX = 21
+        assert global_thermostat.target_temperature_low == 21.0
+        # Areas unchanged
+        assert living_room.target_temperature_low == 21.0
+        assert bedroom.target_temperature_low == 21.0
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_lower_cool_snaps_back(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that lowering global cool (wrong direction) snaps back."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        
+        living_room = coordinator.area_thermostats["living_room"]
+        bedroom = coordinator.area_thermostats["bedroom"]
+        
+        # Set both to cool=25
+        await living_room.async_set_temperature(
+            _from_global=True,
+            target_temp_low=20.0, target_temp_high=25.0
+        )
+        await bedroom.async_set_temperature(
+            _from_global=True,
+            target_temp_low=22.0, target_temp_high=25.0
+        )
+        
+        global_thermostat = coordinator.global_thermostat
+        global_thermostat.async_recalculate_from_areas()
+        
+        # Global shows cool=25. Try to lower it to 23 (invalid direction).
+        await global_thermostat.async_set_temperature(
+            target_temp_low=22.0, target_temp_high=23.0
+        )
+        await hass.async_block_till_done()
+        
+        # No area is below 23, so nothing changes
+        # Recalculate snaps it back to MIN = 25
+        assert global_thermostat.target_temperature_high == 25.0
+        # Areas unchanged
+        assert living_room.target_temperature_high == 25.0
+        assert bedroom.target_temperature_high == 25.0
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
