@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
+    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
@@ -404,7 +405,9 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
 
     _attr_has_entity_name = True
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = "°"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = "°F"
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:thermometer"
 
     def __init__(
@@ -447,7 +450,9 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
         room_state = self._get_room_state()
         if room_state is None:
             return None
-        return room_state.determining_temperature
+        if room_state.determining_temperature is None:
+            return None
+        return round(room_state.determining_temperature, 1)
 
     @property
     def icon(self) -> str:

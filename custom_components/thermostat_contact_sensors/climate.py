@@ -22,6 +22,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.util.unit_conversion import TemperatureConverter
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -34,12 +35,11 @@ from .coordinator import ThermostatContactSensorsCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# Default temperature values (in Fahrenheit, converted to Celsius for storage)
-# 71°F ≈ 21.5°C, 78°F ≈ 25.5°C (rounded to 0.5 step)
-DEFAULT_MIN_TEMP = 7.0  # Minimum setpoint temperature (°C)
-DEFAULT_MAX_TEMP = 35.0  # Maximum setpoint temperature (°C)
-DEFAULT_TARGET_TEMP_LOW = 21.5  # Default heating target (°C) - ~71°F
-DEFAULT_TARGET_TEMP_HIGH = 25.5  # Default cooling target (°C) - ~78°F
+# Default temperature values in Fahrenheit
+DEFAULT_MIN_TEMP = 45.0  # Minimum setpoint temperature (°F)
+DEFAULT_MAX_TEMP = 95.0  # Maximum setpoint temperature (°F)
+DEFAULT_TARGET_TEMP_LOW = 71.0  # Default heating target (°F)
+DEFAULT_TARGET_TEMP_HIGH = 78.0  # Default cooling target (°F)
 DEFAULT_TEMP_STEP = 0.5  # Temperature step increment
 
 
@@ -109,7 +109,7 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
     )
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_temperature_unit = UnitOfTemperature.FAHRENHEIT
     _attr_target_temperature_step = DEFAULT_TEMP_STEP
     _attr_min_temp = DEFAULT_MIN_TEMP
     _attr_max_temp = DEFAULT_MAX_TEMP
@@ -249,12 +249,12 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
 
         # Return the determining temperature if available
         if room_state.determining_temperature is not None:
-            return room_state.determining_temperature
+            return round(room_state.determining_temperature, 1)
 
         # If no determining temp, try to get average of all readings
         if room_state.sensor_readings:
             readings = list(room_state.sensor_readings.values())
-            return sum(readings) / len(readings)
+            return round(sum(readings) / len(readings), 1)
 
         return None
 
@@ -388,7 +388,7 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
     )
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_temperature_unit = UnitOfTemperature.FAHRENHEIT
     _attr_target_temperature_step = DEFAULT_TEMP_STEP
     _attr_min_temp = DEFAULT_MIN_TEMP
     _attr_max_temp = DEFAULT_MAX_TEMP
@@ -514,7 +514,7 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
                 temps.append(temp)
 
         if temps:
-            return sum(temps) / len(temps)
+            return round(sum(temps) / len(temps), 1)
         return None
 
     @callback
