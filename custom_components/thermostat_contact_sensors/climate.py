@@ -348,12 +348,14 @@ class GlobalThermostatExtraStoredData(ExtraStoredData):
 
     target_temp_low: float
     target_temp_high: float
+    hvac_mode: str
 
     def as_dict(self) -> dict[str, Any]:
         """Return a dict representation of the extra data."""
         return {
             "target_temp_low": self.target_temp_low,
             "target_temp_high": self.target_temp_high,
+            "hvac_mode": self.hvac_mode,
         }
 
     @classmethod
@@ -365,6 +367,7 @@ class GlobalThermostatExtraStoredData(ExtraStoredData):
             return cls(
                 target_temp_low=float(data["target_temp_low"]),
                 target_temp_high=float(data["target_temp_high"]),
+                hvac_mode=str(data.get("hvac_mode", HVACMode.OFF)),
             )
         except (KeyError, ValueError, TypeError):
             return None
@@ -377,14 +380,15 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     - Heating target = MAX of all area heating targets
     - Cooling target = MIN of all area cooling targets
     
+    Supports HEAT, COOL, and OFF modes (no HEAT_COOL).
+    
     When the user adjusts this thermostat:
     - Raising heat: All areas with lower heat targets are raised to match
     - Lowering cool: All areas with higher cool targets are lowered to match
     """
 
     _attr_has_entity_name = True
-    _attr_hvac_modes = [HVACMode.HEAT_COOL]
-    _attr_hvac_mode = HVACMode.HEAT_COOL
+    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
     )
@@ -405,7 +409,8 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         self._attr_unique_id = f"{entry.entry_id}_global_thermostat"
         self._attr_name = "Global Virtual Thermostat"
 
-        # Initialize target temperatures with defaults
+        # Initialize HVAC mode and target temperatures with defaults
+        self._hvac_mode: HVACMode = HVACMode.OFF
         self._target_temp_low: float = DEFAULT_TARGET_TEMP_LOW
         self._target_temp_high: float = DEFAULT_TARGET_TEMP_HIGH
 
@@ -420,15 +425,20 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
             if (stored := GlobalThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None:
                 self._target_temp_low = stored.target_temp_low
                 self._target_temp_high = stored.target_temp_high
+                self._hvac_mode = HVACMode(stored.hvac_mode)
                 restored = True
                 _LOGGER.info(
-                    "Restored global thermostat from extra data: heat=%s, cool=%s",
-                    self._target_temp_low, self._target_temp_high
+                    "Restored global thermostat from extra data: mode=%s, heat=%s, cool=%s",
+                    self._hvac_mode, self._target_temp_low, self._target_temp_high
                 )
 
         # Fall back to restoring from state attributes
         if not restored:
             if (last_state := await self.async_get_last_state()) is not None:
+                # Restore hvac_mode from state
+                if last_state.state in [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]:
+                    self._hvac_mode = HVACMode(last_state.state)
+                    restored = True
                 if last_state.attributes:
                     if (low := last_state.attributes.get("target_temp_low")) is not None:
                         try:
@@ -444,8 +454,8 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
                             pass
                 if restored:
                     _LOGGER.info(
-                        "Restored global thermostat from state: heat=%s, cool=%s",
-                        self._target_temp_low, self._target_temp_high
+                        "Restored global thermostat from state: mode=%s, heat=%s, cool=%s",
+                        self._hvac_mode, self._target_temp_low, self._target_temp_high
                     )
 
         # Register this thermostat with the coordinator
@@ -472,6 +482,7 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         return GlobalThermostatExtraStoredData(
             target_temp_low=self._target_temp_low,
             target_temp_high=self._target_temp_high,
+            hvac_mode=self._hvac_mode,
         )
 
     @property
@@ -486,8 +497,17 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode:
-        """Return current HVAC mode - always heat_cool."""
-        return HVACMode.HEAT_COOL
+        """Return current HVAC mode."""
+        return self._hvac_mode
+
+    @property
+    def target_temperature(self) -> float | None:
+        """Return the target temperature for HEAT or COOL mode."""
+        if self._hvac_mode == HVACMode.HEAT:
+            return self._target_temp_low
+        elif self._hvac_mode == HVACMode.COOL:
+            return self._target_temp_high
+        return None
 
     @property
     def target_temperature_low(self) -> float:
@@ -551,13 +571,15 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         self.async_write_ha_state()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set HVAC mode - only heat_cool is supported."""
-        if hvac_mode != HVACMode.HEAT_COOL:
+        """Set HVAC mode - supports OFF, HEAT, COOL."""
+        if hvac_mode not in [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]:
             _LOGGER.warning(
-                "Global thermostat only supports heat_cool mode, ignoring %s",
+                "Global thermostat only supports OFF, HEAT, COOL modes, ignoring %s",
                 hvac_mode
             )
             return
+        self._hvac_mode = hvac_mode
+        _LOGGER.info("Global thermostat mode set to %s", hvac_mode)
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:

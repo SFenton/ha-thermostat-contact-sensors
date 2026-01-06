@@ -147,6 +147,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 CONF_UNOCCUPIED_COOLING_THRESHOLD, DEFAULT_UNOCCUPIED_COOLING_THRESHOLD
             ),
             area_thermostats_getter=lambda: getattr(self, "area_thermostats", {}),
+            global_thermostat_getter=lambda: getattr(self, "global_thermostat", None),
         )
 
         # Vent controller

@@ -339,6 +339,7 @@ class ThermostatController:
         unoccupied_heating_threshold: float = DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
         unoccupied_cooling_threshold: float = DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
         area_thermostats_getter: callable | None = None,
+        global_thermostat_getter: callable | None = None,
     ) -> None:
         """Initialize the thermostat controller.
 
@@ -355,11 +356,13 @@ class ThermostatController:
             unoccupied_cooling_threshold: Degrees above cool target that triggers
                 cooling in unoccupied rooms.
             area_thermostats_getter: Callback to get dict of area_id -> AreaVirtualThermostat.
+            global_thermostat_getter: Callback to get the GlobalVirtualThermostat.
         """
         self.hass = hass
         self.thermostat_entity_id = thermostat_entity_id
         self.occupancy_tracker = occupancy_tracker
         self._area_thermostats_getter = area_thermostats_getter
+        self._global_thermostat_getter = global_thermostat_getter
 
         self._temperature_deadband = temperature_deadband
         self._min_cycle_on_minutes = min_cycle_on_minutes
@@ -564,7 +567,13 @@ class ThermostatController:
     def get_target_temperatures(
         self,
     ) -> tuple[float | None, float | None, float | None]:
-        """Get target temperatures from the thermostat.
+        """Get target temperatures from the global virtual thermostat.
+
+        The global virtual thermostat aggregates targets from all area thermostats:
+        - Heating target = MAX of all area heating targets
+        - Cooling target = MIN of all area cooling targets
+
+        Falls back to physical thermostat if global virtual thermostat is not available.
 
         Returns:
             Tuple of (target_temperature, target_temp_low, target_temp_high).
@@ -572,6 +581,32 @@ class ThermostatController:
             - target_temp_low: Heating setpoint for HEAT_COOL mode
             - target_temp_high: Cooling setpoint for HEAT_COOL mode
         """
+        # First, try to get targets from the global virtual thermostat
+        if self._global_thermostat_getter:
+            global_thermostat = self._global_thermostat_getter()
+            if global_thermostat is not None:
+                target_temp_low = global_thermostat.target_temperature_low
+                target_temp_high = global_thermostat.target_temperature_high
+
+                # For HEAT/COOL modes, use low/high respectively
+                hvac_mode, _ = self.get_thermostat_state()
+                if hvac_mode == HVACMode.HEAT:
+                    target_temp = target_temp_low
+                elif hvac_mode == HVACMode.COOL:
+                    target_temp = target_temp_high
+                else:
+                    # For HEAT_COOL or other modes, use midpoint
+                    target_temp = (target_temp_low + target_temp_high) / 2 if target_temp_low and target_temp_high else None
+
+                _LOGGER.debug(
+                    "Using global virtual thermostat targets: temp=%s, low=%s, high=%s",
+                    target_temp,
+                    target_temp_low,
+                    target_temp_high,
+                )
+                return target_temp, target_temp_low, target_temp_high
+
+        # Fall back to physical thermostat
         state = self.hass.states.get(self.thermostat_entity_id)
         if state is None:
             return None, None, None

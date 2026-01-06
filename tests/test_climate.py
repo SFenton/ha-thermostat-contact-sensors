@@ -794,3 +794,120 @@ class TestGlobalVirtualThermostat:
 
         await hass.config_entries.async_unload(config_entry.entry_id)
 
+    @pytest.mark.asyncio
+    async def test_global_thermostat_hvac_modes(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that global thermostat supports OFF, HEAT, COOL modes only."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        global_thermostat = coordinator.global_thermostat
+
+        # Check supported modes
+        assert HVACMode.OFF in global_thermostat.hvac_modes
+        assert HVACMode.HEAT in global_thermostat.hvac_modes
+        assert HVACMode.COOL in global_thermostat.hvac_modes
+        assert HVACMode.HEAT_COOL not in global_thermostat.hvac_modes
+
+        # Default mode should be OFF
+        assert global_thermostat.hvac_mode == HVACMode.OFF
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_thermostat_set_hvac_mode(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test setting HVAC mode on global thermostat."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        global_thermostat = coordinator.global_thermostat
+
+        # Set to HEAT
+        await global_thermostat.async_set_hvac_mode(HVACMode.HEAT)
+        assert global_thermostat.hvac_mode == HVACMode.HEAT
+
+        # Set to COOL
+        await global_thermostat.async_set_hvac_mode(HVACMode.COOL)
+        assert global_thermostat.hvac_mode == HVACMode.COOL
+
+        # Set to OFF
+        await global_thermostat.async_set_hvac_mode(HVACMode.OFF)
+        assert global_thermostat.hvac_mode == HVACMode.OFF
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_thermostat_rejects_heat_cool_mode(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that global thermostat rejects HEAT_COOL mode."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        global_thermostat = coordinator.global_thermostat
+
+        # Set to HEAT first
+        await global_thermostat.async_set_hvac_mode(HVACMode.HEAT)
+        assert global_thermostat.hvac_mode == HVACMode.HEAT
+
+        # Try to set HEAT_COOL - should be rejected, mode stays HEAT
+        await global_thermostat.async_set_hvac_mode(HVACMode.HEAT_COOL)
+        assert global_thermostat.hvac_mode == HVACMode.HEAT
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_thermostat_target_temperature_by_mode(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that target_temperature returns correct value based on mode."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        global_thermostat = coordinator.global_thermostat
+
+        # Set known target temps
+        living_room = coordinator.area_thermostats["living_room"]
+        await living_room.async_set_temperature(
+            _from_global=True,
+            target_temp_low=20.0, target_temp_high=25.0
+        )
+        global_thermostat.async_recalculate_from_areas()
+
+        # In OFF mode, target_temperature should be None
+        await global_thermostat.async_set_hvac_mode(HVACMode.OFF)
+        assert global_thermostat.target_temperature is None
+
+        # In HEAT mode, target_temperature should be heat target (low)
+        await global_thermostat.async_set_hvac_mode(HVACMode.HEAT)
+        assert global_thermostat.target_temperature == global_thermostat.target_temperature_low
+
+        # In COOL mode, target_temperature should be cool target (high)
+        await global_thermostat.async_set_hvac_mode(HVACMode.COOL)
+        assert global_thermostat.target_temperature == global_thermostat.target_temperature_high
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
