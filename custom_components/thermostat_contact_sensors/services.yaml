@@ -33,3 +33,27 @@ recalculate:
       example: "abc123def456"
       selector:
         text:
+
+pause_integration:
+  name: Pause Integration
+  description: Completely pause the integration - stops all thermostat control, contact sensor monitoring, and vent control. The thermostat and vents remain in their current state.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry ID of the thermostat contact sensors integration.
+      required: true
+      example: "abc123def456"
+      selector:
+        text:
+
+resume_integration:
+  name: Resume Integration
+  description: Resume the integration after being paused - re-enables all automation including thermostat control, contact sensor monitoring, and vent control.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry ID of the thermostat contact sensors integration.
+      required: true
+      example: "abc123def456"
+      selector:
+        text:

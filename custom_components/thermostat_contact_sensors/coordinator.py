@@ -88,7 +88,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._options = options
 
         # State tracking
-        self.is_paused = False
+        self.is_paused = False  # Paused by contact sensors
+        self.integration_paused = False  # Completely paused (no automation at all)
         self.previous_hvac_mode: str | None = None
         # Dict of entity_id -> timestamp when sensor opened
         self._open_sensor_times: dict[str, float] = {}
@@ -296,6 +297,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         Returns:
             The updated ThermostatState.
         """
+        # Don't take any actions if integration is completely paused
+        if self.integration_paused:
+            _LOGGER.debug("Skipping thermostat state update - integration paused")
+            return self._last_thermostat_state
+
         # First evaluate the state
         state = self.update_thermostat_state()
 
@@ -477,6 +483,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         Returns:
             The VentControlState with any pending commands executed.
         """
+        # Don't control vents if integration is completely paused
+        if self.integration_paused:
+            _LOGGER.debug("Skipping vent update - integration paused")
+            return self._last_vent_control_state
+
         area_vents = self.get_area_vents()
         if not area_vents:
             return None
@@ -740,6 +751,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_open_timeout_expired(self) -> None:
         """Handle open timeout expiration - pause the thermostat."""
+        # Don't act if integration is completely paused
+        if self.integration_paused:
+            _LOGGER.debug("Open timeout expired but integration is paused - ignoring")
+            return
+
         # Save the trigger sensor before cancelling (cancel clears _pending_open_sensor)
         trigger_sensor = self._pending_open_sensor
 
@@ -790,6 +806,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_close_timeout_expired(self) -> None:
         """Handle close timeout expiration - resume the thermostat."""
+        # Don't act if integration is completely paused
+        if self.integration_paused:
+            _LOGGER.debug("Close timeout expired but integration is paused - ignoring")
+            return
+
         # Cancel timer if still scheduled (e.g., when called manually in tests)
         self._cancel_close_timer()
 
@@ -920,6 +941,52 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(None)
 
         _LOGGER.info("Thermostat resumed via service to mode: %s", self.previous_hvac_mode)
+
+    async def async_pause_integration(self) -> None:
+        """Completely pause the integration - no automation actions at all.
+        
+        This stops the integration from:
+        - Controlling the thermostat based on occupancy/temperatures
+        - Responding to contact sensor open/close events
+        - Adjusting vents
+        
+        The thermostat and vents remain in their current state.
+        """
+        if self.integration_paused:
+            _LOGGER.info("Integration already paused")
+            return
+
+        self.integration_paused = True
+        
+        # Notify listeners to update entity states
+        self.async_set_updated_data(None)
+        
+        _LOGGER.info("Integration completely paused - all automation stopped")
+
+    async def async_resume_integration(self) -> None:
+        """Resume the integration - re-enable all automation.
+        
+        This resumes:
+        - Thermostat control based on occupancy/temperatures
+        - Contact sensor monitoring
+        - Vent control
+        
+        After resuming, forces a recalculation of the current state.
+        """
+        if not self.integration_paused:
+            _LOGGER.info("Integration not paused")
+            return
+
+        self.integration_paused = False
+        
+        # Force immediate recalculation
+        await self.async_update_thermostat_state()
+        await self.async_update_vents()
+        
+        # Notify listeners to update entity states
+        self.async_set_updated_data(None)
+        
+        _LOGGER.info("Integration resumed - automation re-enabled")
 
     async def _async_send_notification(self, paused: bool) -> None:
         """Send a notification about thermostat state change."""

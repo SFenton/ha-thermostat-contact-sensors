@@ -34,6 +34,8 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_PAUSE = "pause"
 SERVICE_RESUME = "resume"
 SERVICE_RECALCULATE = "recalculate"
+SERVICE_PAUSE_INTEGRATION = "pause_integration"
+SERVICE_RESUME_INTEGRATION = "resume_integration"
 ATTR_ENTRY_ID = "entry_id"
 
 # Service schema
@@ -237,6 +239,20 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         coordinator.async_set_updated_data(None)
         _LOGGER.info("Thermostat state recalculated via service call")
 
+    async def async_handle_pause_integration(call: ServiceCall) -> None:
+        """Handle the pause_integration service call - completely stops all automation."""
+        entry_id = call.data[ATTR_ENTRY_ID]
+        coordinator = _get_coordinator_by_entry_id(hass, entry_id)
+        await coordinator.async_pause_integration()
+        _LOGGER.info("Integration completely paused via service call")
+
+    async def async_handle_resume_integration(call: ServiceCall) -> None:
+        """Handle the resume_integration service call - re-enables all automation."""
+        entry_id = call.data[ATTR_ENTRY_ID]
+        coordinator = _get_coordinator_by_entry_id(hass, entry_id)
+        await coordinator.async_resume_integration()
+        _LOGGER.info("Integration resumed via service call")
+
     hass.services.async_register(
         DOMAIN, SERVICE_PAUSE, async_handle_pause, schema=SERVICE_SCHEMA
     )
@@ -245,6 +261,12 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_RECALCULATE, async_handle_recalculate, schema=SERVICE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_PAUSE_INTEGRATION, async_handle_pause_integration, schema=SERVICE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_RESUME_INTEGRATION, async_handle_resume_integration, schema=SERVICE_SCHEMA
     )
 
 
