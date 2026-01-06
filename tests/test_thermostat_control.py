@@ -2192,3 +2192,426 @@ class TestStoredTargetTempsPersistence:
         assert controller._stored_target_temp == 72.0
         assert controller._stored_target_temp_low == 68.0
         assert controller._stored_target_temp_high == 76.0
+
+
+# =============================================================================
+# Tests for Area-Specific Target Temperatures
+# =============================================================================
+
+
+class TestAreaSpecificTargets:
+    """Tests for area-specific virtual thermostat target temperatures."""
+
+    @pytest.fixture
+    def mock_area_thermostat(self):
+        """Create a mock area virtual thermostat."""
+        thermostat = MagicMock()
+        thermostat.target_temperature_low = 72.0
+        thermostat.target_temperature_high = 79.0
+        return thermostat
+
+    @pytest.fixture
+    def mock_area_thermostats(self, mock_area_thermostat):
+        """Create a dict of mock area thermostats."""
+        living_room = MagicMock()
+        living_room.target_temperature_low = 71.0
+        living_room.target_temperature_high = 78.0
+
+        office = MagicMock()
+        office.target_temperature_low = 72.0
+        office.target_temperature_high = 79.0
+
+        music_room = MagicMock()
+        music_room.target_temperature_low = 71.0
+        music_room.target_temperature_high = 78.0
+
+        return {
+            "living_room": living_room,
+            "office": office,
+            "music_room": music_room,
+        }
+
+    def test_get_area_target_temperatures_from_virtual_thermostat(
+        self, hass: HomeAssistant, mock_occupancy_tracker, mock_area_thermostats
+    ):
+        """Test that area targets come from virtual thermostat when available."""
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            area_thermostats_getter=lambda: mock_area_thermostats,
+        )
+
+        # Office has 72/79
+        target, low, high = controller.get_area_target_temperatures("office")
+        assert low == 72.0
+        assert high == 79.0
+        assert target == 75.5  # Average of 72 and 79
+
+        # Living room has 71/78
+        target, low, high = controller.get_area_target_temperatures("living_room")
+        assert low == 71.0
+        assert high == 78.0
+        assert target == 74.5  # Average
+
+    def test_get_area_target_temperatures_falls_back_to_physical(
+        self, hass: HomeAssistant, mock_occupancy_tracker, mock_area_thermostats
+    ):
+        """Test fallback to physical thermostat for unknown areas."""
+        # Set up physical thermostat state
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT_COOL,
+            {
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+                ATTR_TARGET_TEMP_LOW: 70.0,
+                ATTR_TARGET_TEMP_HIGH: 76.0,
+            },
+        )
+
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            area_thermostats_getter=lambda: mock_area_thermostats,
+        )
+
+        # Unknown area should fall back to physical thermostat
+        target, low, high = controller.get_area_target_temperatures("unknown_area")
+        assert low == 70.0
+        assert high == 76.0
+
+    def test_get_area_target_temperatures_no_getter(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
+        """Test that no getter falls back to physical thermostat."""
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT_COOL,
+            {
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+                ATTR_TARGET_TEMP_LOW: 68.0,
+                ATTR_TARGET_TEMP_HIGH: 74.0,
+            },
+        )
+
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            # No area_thermostats_getter
+        )
+
+        target, low, high = controller.get_area_target_temperatures("living_room")
+        assert low == 68.0
+        assert high == 74.0
+
+    @pytest.mark.asyncio
+    async def test_room_satiation_uses_area_specific_targets(
+        self, hass: HomeAssistant, mock_occupancy_tracker, mock_area_thermostats
+    ):
+        """Test that room satiation evaluation uses area-specific targets."""
+        # Set up temperature sensors
+        hass.states.async_set("sensor.living_room_temp", "70.0")
+        hass.states.async_set("sensor.office_temp", "71.0")
+
+        # Physical thermostat at 71/78
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT_COOL,
+            {
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+                ATTR_TARGET_TEMP_LOW: 71.0,
+                ATTR_TARGET_TEMP_HIGH: 78.0,
+            },
+        )
+
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            area_thermostats_getter=lambda: mock_area_thermostats,
+            temperature_deadband=0.5,
+        )
+
+        # Create active areas
+        living_room_area = AreaOccupancyState(
+            area_id="living_room",
+            area_name="Living Room",
+        )
+        office_area = AreaOccupancyState(
+            area_id="office",
+            area_name="Office",
+        )
+
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "office": ["sensor.office_temp"],
+        }
+
+        # Evaluate
+        state = controller.evaluate_thermostat_state(
+            active_areas=[living_room_area, office_area],
+            area_temp_sensors=area_temp_sensors,
+            inactive_areas=[],
+        )
+
+        # Living room: 70°F, target 71°F (deadband 0.5) -> satiated at 70.5+
+        # With 0.5 deadband, satiated when >= 70.5, room is at 70 -> NOT satiated
+        living_room_state = state.room_states["living_room"]
+        assert living_room_state.is_satiated is False
+
+        # Office: 71°F, target 72°F (deadband 0.5) -> satiated at 71.5+
+        # Room is at 71 -> NOT satiated (needs 71.5)
+        office_state = state.room_states["office"]
+        assert office_state.is_satiated is False
+
+    @pytest.mark.asyncio
+    async def test_different_rooms_different_satiation_with_same_temp(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
+        """Test rooms at same temp but different targets have different satiation."""
+        # Both rooms at 71°F
+        hass.states.async_set("sensor.living_room_temp", "71.0")
+        hass.states.async_set("sensor.office_temp", "71.0")
+
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT_COOL,
+            {
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+                ATTR_TARGET_TEMP_LOW: 70.0,
+                ATTR_TARGET_TEMP_HIGH: 78.0,
+            },
+        )
+
+        # Living room: 70/78 targets (71° is satiated for heat)
+        living_room_therm = MagicMock()
+        living_room_therm.target_temperature_low = 70.0
+        living_room_therm.target_temperature_high = 78.0
+
+        # Office: 72/79 targets (71° is NOT satiated for heat)
+        office_therm = MagicMock()
+        office_therm.target_temperature_low = 72.0
+        office_therm.target_temperature_high = 79.0
+
+        area_thermostats = {
+            "living_room": living_room_therm,
+            "office": office_therm,
+        }
+
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            area_thermostats_getter=lambda: area_thermostats,
+            temperature_deadband=0.5,
+        )
+
+        living_room_area = AreaOccupancyState(
+            area_id="living_room",
+            area_name="Living Room",
+        )
+        office_area = AreaOccupancyState(
+            area_id="office",
+            area_name="Office",
+        )
+
+        state = controller.evaluate_thermostat_state(
+            active_areas=[living_room_area, office_area],
+            area_temp_sensors={
+                "living_room": ["sensor.living_room_temp"],
+                "office": ["sensor.office_temp"],
+            },
+            inactive_areas=[],
+        )
+
+        # Living room at 71°F with target 70°F -> satiated (71 >= 70 - 0.5)
+        assert state.room_states["living_room"].is_satiated is True
+
+        # Office at 71°F with target 72°F -> NOT satiated (71 < 72 - 0.5 = 71.5)
+        assert state.room_states["office"].is_satiated is False
+
+        # Should recommend turning on (office needs heating)
+        assert state.recommended_action == ThermostatAction.TURN_ON
+
+    @pytest.mark.asyncio
+    async def test_critical_room_uses_area_specific_targets(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
+        """Test that critical room evaluation uses area-specific targets."""
+        # Music room at 67°F (inactive)
+        hass.states.async_set("sensor.music_room_temp", "67.0")
+
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                ATTR_HVAC_MODE: HVACMode.HEAT,
+                ATTR_TEMPERATURE: 71.0,
+            },
+        )
+
+        # Music room has target 71/78
+        music_room_therm = MagicMock()
+        music_room_therm.target_temperature_low = 71.0
+        music_room_therm.target_temperature_high = 78.0
+
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            area_thermostats_getter=lambda: {"music_room": music_room_therm},
+            unoccupied_heating_threshold=3.0,  # Critical if > 3° below target
+        )
+
+        music_room_area = AreaOccupancyState(
+            area_id="music_room",
+            area_name="Music Room",
+        )
+
+        state = controller.evaluate_thermostat_state(
+            active_areas=[],
+            area_temp_sensors={"music_room": ["sensor.music_room_temp"]},
+            inactive_areas=[music_room_area],
+        )
+
+        # Music room at 67°F, target 71°F, threshold 3°F
+        # 67 < 71 - 3 = 68 -> CRITICAL
+        music_room_state = state.room_states["music_room"]
+        assert music_room_state.is_critical is True
+        assert "below heat target" in music_room_state.critical_reason
+
+    @pytest.mark.asyncio
+    async def test_critical_room_not_critical_with_higher_area_threshold(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
+        """Test room is not critical when area target is lower."""
+        # Room at 67°F
+        hass.states.async_set("sensor.guest_room_temp", "67.0")
+
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                ATTR_HVAC_MODE: HVACMode.HEAT,
+                ATTR_TEMPERATURE: 71.0,  # Physical thermostat at 71
+            },
+        )
+
+        # Guest room has lower target of 65°F (not 71)
+        guest_room_therm = MagicMock()
+        guest_room_therm.target_temperature_low = 65.0
+        guest_room_therm.target_temperature_high = 78.0
+
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            area_thermostats_getter=lambda: {"guest_room": guest_room_therm},
+            unoccupied_heating_threshold=3.0,
+        )
+
+        guest_room_area = AreaOccupancyState(
+            area_id="guest_room",
+            area_name="Guest Room",
+        )
+
+        state = controller.evaluate_thermostat_state(
+            active_areas=[],
+            area_temp_sensors={"guest_room": ["sensor.guest_room_temp"]},
+            inactive_areas=[guest_room_area],
+        )
+
+        # Guest room at 67°F, target 65°F, threshold 3°F
+        # 67 > 65 - 3 = 62 -> NOT critical
+        guest_room_state = state.room_states["guest_room"]
+        assert guest_room_state.is_critical is False
+
+    @pytest.mark.asyncio
+    async def test_mixed_scenario_active_and_critical(
+        self, hass: HomeAssistant, mock_occupancy_tracker
+    ):
+        """Test scenario with active rooms needing heat and critical inactive rooms."""
+        # Living room: 70°F, active
+        hass.states.async_set("sensor.living_room_temp", "70.0")
+        # Music room: 67°F, inactive -> critical
+        hass.states.async_set("sensor.music_room_temp", "67.0")
+        # Office: 72°F, active -> satiated
+        hass.states.async_set("sensor.office_temp", "72.0")
+
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT_COOL,
+            {
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+                ATTR_TARGET_TEMP_LOW: 71.0,
+                ATTR_TARGET_TEMP_HIGH: 78.0,
+            },
+        )
+
+        living_room_therm = MagicMock()
+        living_room_therm.target_temperature_low = 71.0
+        living_room_therm.target_temperature_high = 78.0
+
+        music_room_therm = MagicMock()
+        music_room_therm.target_temperature_low = 71.0
+        music_room_therm.target_temperature_high = 78.0
+
+        office_therm = MagicMock()
+        office_therm.target_temperature_low = 71.0  # Office satiated at 72
+        office_therm.target_temperature_high = 79.0
+
+        area_thermostats = {
+            "living_room": living_room_therm,
+            "music_room": music_room_therm,
+            "office": office_therm,
+        }
+
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            area_thermostats_getter=lambda: area_thermostats,
+            temperature_deadband=0.5,
+            unoccupied_heating_threshold=3.0,
+        )
+
+        living_room_area = AreaOccupancyState(
+            area_id="living_room", area_name="Living Room"
+        )
+        office_area = AreaOccupancyState(
+            area_id="office", area_name="Office"
+        )
+        music_room_area = AreaOccupancyState(
+            area_id="music_room", area_name="Music Room"
+        )
+
+        state = controller.evaluate_thermostat_state(
+            active_areas=[living_room_area, office_area],
+            area_temp_sensors={
+                "living_room": ["sensor.living_room_temp"],
+                "office": ["sensor.office_temp"],
+                "music_room": ["sensor.music_room_temp"],
+            },
+            inactive_areas=[music_room_area],
+        )
+
+        # Verify individual room states
+        assert state.room_states["living_room"].is_active is True
+        assert state.room_states["living_room"].is_satiated is False  # 70 < 70.5
+
+        assert state.room_states["office"].is_active is True
+        assert state.room_states["office"].is_satiated is True  # 72 >= 70.5
+
+        assert state.room_states["music_room"].is_active is False
+        assert state.room_states["music_room"].is_critical is True  # 67 < 68
+
+        # Overall state
+        assert state.active_room_count == 2
+        assert state.satiated_room_count == 1
+        assert state.critical_room_count == 1
+        assert state.all_active_rooms_satiated is False
+
+        # Should turn on (unsatiated active + critical rooms)
+        assert state.recommended_action == ThermostatAction.TURN_ON
