@@ -419,6 +419,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Initial vent control evaluation
         await self.async_update_vents()
 
+        # Check for already-open sensors and start timers if needed
+        self._check_initial_open_sensors()
+
     async def async_shutdown(self) -> None:
         """Shut down the coordinator."""
         self._cancel_open_timer()
@@ -601,6 +604,61 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 "Recalculated open timer: %.1f min remaining for sensor %s",
                 remaining / 60,
                 earliest_sensor,
+            )
+
+    def _check_initial_open_sensors(self) -> None:
+        """Check if any sensors are already open and start timer if needed.
+        
+        This is called on startup, reload, and when resuming the integration
+        to handle sensors that are already open (not just reacting to changes).
+        """
+        # Don't start timers if integration is paused
+        if self.integration_paused:
+            _LOGGER.debug("Skipping initial sensor check - integration paused")
+            return
+            
+        # Update the open sensors dict with current state
+        self._update_open_sensors()
+        
+        # If any sensors are open and we're not already paused, start the timer
+        if self._open_sensor_times and not self.is_paused and self._open_timer is None:
+            # Find the sensor that has been open the longest
+            earliest_sensor = min(
+                self._open_sensor_times.keys(),
+                key=lambda s: self._open_sensor_times[s]
+            )
+            earliest_time = self._open_sensor_times[earliest_sensor]
+            
+            # Calculate remaining time until timeout
+            current_time = time.monotonic()
+            elapsed = current_time - earliest_time
+            remaining = (self.open_timeout * 60) - elapsed
+            
+            if remaining <= 0:
+                # Sensor has been open longer than timeout - trigger immediately
+                _LOGGER.info(
+                    "Sensor %s already open for %.1f min (>= timeout), triggering pause",
+                    earliest_sensor,
+                    elapsed / 60,
+                )
+                self._pending_open_sensor = earliest_sensor
+                self.hass.async_create_task(self._async_open_timeout_expired())
+            else:
+                # Start timer for remaining time
+                self._pending_open_sensor = earliest_sensor
+                self._open_timer = self.hass.loop.call_later(
+                    remaining,
+                    lambda: self.hass.async_create_task(self._async_open_timeout_expired()),
+                )
+                _LOGGER.info(
+                    "Sensor %s already open - started timer for %.1f min remaining",
+                    earliest_sensor,
+                    remaining / 60,
+                )
+        elif self._open_sensor_times and self.is_paused:
+            _LOGGER.debug(
+                "Sensors already open but thermostat is paused: %s",
+                list(self._open_sensor_times.keys()),
             )
 
     @callback
@@ -982,6 +1040,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Force immediate recalculation
         await self.async_update_thermostat_state()
         await self.async_update_vents()
+        
+        # Check for already-open sensors and start timers if needed
+        self._check_initial_open_sensors()
         
         # Notify listeners to update entity states
         self.async_set_updated_data(None)

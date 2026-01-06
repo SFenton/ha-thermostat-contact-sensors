@@ -1096,3 +1096,201 @@ class TestTimerRecalculation:
         assert coordinator._open_sensor_times.get(TEST_SENSOR_1) == original_time
 
         await coordinator.async_shutdown()
+
+
+class TestInitialOpenSensorCheck:
+    """Tests for checking already-open sensors on startup and resume."""
+
+    async def test_sensor_already_open_on_startup_starts_timer(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that if a sensor is already open on startup, a timer is started."""
+        # Set sensor to open BEFORE creating coordinator
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+        options[CONF_OPEN_TIMEOUT] = 1  # 1 minute
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1, TEST_SENSOR_2],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+
+        # Timer should have been started for the already-open sensor
+        assert coordinator._open_timer is not None
+        assert coordinator._pending_open_sensor == TEST_SENSOR_1
+        assert TEST_SENSOR_1 in coordinator._open_sensor_times
+
+        await coordinator.async_shutdown()
+
+    async def test_sensor_open_long_enough_triggers_immediate_pause(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that if a sensor has been open longer than timeout, pause triggers immediately."""
+        # Set sensor to open BEFORE creating coordinator
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+        options[CONF_OPEN_TIMEOUT] = 0  # 0 minute timeout = immediate
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        await hass.async_block_till_done()
+
+        # Should be paused immediately since timeout is 0
+        assert coordinator.is_paused is True
+
+        await coordinator.async_shutdown()
+
+    async def test_resume_integration_checks_open_sensors(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that resuming integration checks for already-open sensors."""
+        options = get_test_config_options()
+        options[CONF_OPEN_TIMEOUT] = 1  # 1 minute
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+
+        # Pause the integration
+        await coordinator.async_pause_integration()
+        assert coordinator.integration_paused is True
+
+        # Open a sensor while paused
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        # No timer should be running while paused
+        assert coordinator._open_timer is None
+
+        # Resume the integration
+        await coordinator.async_resume_integration()
+        await hass.async_block_till_done()
+
+        # Timer should now be started for the open sensor
+        assert coordinator._open_timer is not None
+        assert coordinator._pending_open_sensor == TEST_SENSOR_1
+
+        await coordinator.async_shutdown()
+
+    async def test_no_timer_started_when_integration_paused(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that no timer is started for open sensors when integration is paused."""
+        # Set sensor to open BEFORE creating coordinator
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+        options[CONF_OPEN_TIMEOUT] = 1
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        # Pause integration BEFORE setup
+        coordinator.integration_paused = True
+
+        await coordinator.async_setup()
+
+        # No timer should be started
+        assert coordinator._open_timer is None
+
+        await coordinator.async_shutdown()
+
+    async def test_already_paused_by_contact_no_new_timer(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that if already paused by contact sensor, no duplicate timer is started."""
+        options = get_test_config_options()
+        options[CONF_OPEN_TIMEOUT] = 0  # Immediate pause
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+
+        # Open sensor - should pause immediately
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+        
+        # Clear any timer reference
+        coordinator._cancel_open_timer()
+
+        # Manually call _check_initial_open_sensors (simulating what happens on reload)
+        coordinator._check_initial_open_sensors()
+
+        # Should not start a new timer since already paused
+        assert coordinator._open_timer is None
+
+        await coordinator.async_shutdown()
+
+    async def test_multiple_sensors_open_uses_earliest(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that when multiple sensors are open, the earliest one's timer is used."""
+        # Set both sensors open BEFORE creating coordinator
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.1)  # Small delay
+        hass.states.async_set(TEST_SENSOR_2, STATE_ON, {"friendly_name": "Theater Door"})
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+        options[CONF_OPEN_TIMEOUT] = 1
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1, TEST_SENSOR_2],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+
+        # Timer should be based on sensor 1 (opened first)
+        assert coordinator._open_timer is not None
+        assert coordinator._pending_open_sensor == TEST_SENSOR_1
+
+        await coordinator.async_shutdown()
