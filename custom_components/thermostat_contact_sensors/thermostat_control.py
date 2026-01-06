@@ -755,10 +755,24 @@ class ThermostatController:
                 room_state.satiation_reason = SatiationReason.NO_TEMP_SENSORS
             return room_state
 
+        # Helper: compute average temperature when we can't determine satiation
+        def set_average_temperature() -> None:
+            """Set determining temperature to average of all readings when no target."""
+            readings = list(room_state.sensor_readings.values())
+            avg_temp = sum(readings) / len(readings)
+            # Use the sensor closest to the average as the "determining" sensor
+            closest_sensor = min(
+                room_state.sensor_readings.keys(),
+                key=lambda s: abs(room_state.sensor_readings[s] - avg_temp)
+            )
+            room_state.determining_sensor = closest_sensor
+            room_state.determining_temperature = avg_temp
+
         # Evaluate satiation based on HVAC mode
         if hvac_mode == HVACMode.HEAT:
             if target_temp is None:
                 room_state.satiation_reason = SatiationReason.NO_TARGET_TEMP
+                set_average_temperature()
                 return room_state
 
             is_sat, sensor, temp = is_room_satiated_for_heat(
@@ -775,6 +789,7 @@ class ThermostatController:
         elif hvac_mode == HVACMode.COOL:
             if target_temp is None:
                 room_state.satiation_reason = SatiationReason.NO_TARGET_TEMP
+                set_average_temperature()
                 return room_state
 
             is_sat, sensor, temp = is_room_satiated_for_cool(
@@ -791,6 +806,7 @@ class ThermostatController:
         elif hvac_mode == HVACMode.HEAT_COOL:
             if target_temp_low is None or target_temp_high is None:
                 room_state.satiation_reason = SatiationReason.NO_TARGET_TEMP
+                set_average_temperature()
                 return room_state
 
             is_sat, sensor, temp = is_room_satiated_for_heat_cool(
@@ -809,7 +825,8 @@ class ThermostatController:
             )
 
         else:
-            # For other modes (OFF, FAN_ONLY, etc.), consider satiated
+            # For other modes (OFF, FAN_ONLY, etc.), use average temp and consider satiated
+            set_average_temperature()
             room_state.is_satiated = True
             room_state.satiation_reason = SatiationReason.SATIATED
 
@@ -868,9 +885,23 @@ class ThermostatController:
         # meaningful satiation_reason to indicate we have valid sensor data
         room_state.satiation_reason = SatiationReason.NOT_SATIATED
 
+        # Helper: compute average temperature when we can't determine critical state
+        def set_average_temperature() -> None:
+            """Set determining temperature to average of all readings when no target."""
+            readings = list(room_state.sensor_readings.values())
+            avg_temp = sum(readings) / len(readings)
+            # Use the sensor closest to the average as the "determining" sensor
+            closest_sensor = min(
+                room_state.sensor_readings.keys(),
+                key=lambda s: abs(room_state.sensor_readings[s] - avg_temp)
+            )
+            room_state.determining_sensor = closest_sensor
+            room_state.determining_temperature = avg_temp
+
         # Use most favorable sensor (closest to target) - only critical if whole room is in trouble
         if hvac_mode == HVACMode.HEAT:
             if target_temp is None:
+                set_average_temperature()
                 return room_state
 
             # For heating, use the warmest sensor (most favorable)
@@ -892,6 +923,7 @@ class ThermostatController:
 
         elif hvac_mode == HVACMode.COOL:
             if target_temp is None:
+                set_average_temperature()
                 return room_state
 
             # For cooling, use the coolest sensor (most favorable)
@@ -913,6 +945,7 @@ class ThermostatController:
 
         elif hvac_mode == HVACMode.HEAT_COOL:
             if target_temp_low is None or target_temp_high is None:
+                set_average_temperature()
                 return room_state
 
             # Use most favorable sensors for each mode
@@ -1063,11 +1096,8 @@ class ThermostatController:
             last_off_time=self._last_off_time,
         )
 
-        # If paused by contact sensors, no action from us
-        if self._is_paused_by_contact_sensors:
-            thermostat_state.recommended_action = ThermostatAction.NONE
-            thermostat_state.action_reason = "Paused by open contact sensors"
-            return thermostat_state
+        # Track if paused - we still evaluate rooms for display, but won't take actions
+        is_paused = self._is_paused_by_contact_sensors
 
         # If thermostat is off, check if it was us or the user
         # Track which mode to use for satiation evaluation
@@ -1175,6 +1205,13 @@ class ThermostatController:
         if user_turned_off:
             thermostat_state.recommended_action = ThermostatAction.NONE
             thermostat_state.action_reason = "Thermostat is off (user choice)"
+            return thermostat_state
+
+        # If paused by contact sensors, don't recommend any action
+        # (but we've still evaluated room temps above for display purposes)
+        if is_paused:
+            thermostat_state.recommended_action = ThermostatAction.NONE
+            thermostat_state.action_reason = "Paused by open contact sensors"
             return thermostat_state
 
         # Determine recommended action
