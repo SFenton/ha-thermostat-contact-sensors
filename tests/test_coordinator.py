@@ -6,7 +6,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.climate import HVACMode
+from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
@@ -293,6 +293,172 @@ class TestThermostatPausing:
 
         assert coordinator.is_paused is False
         mock_climate_service.assert_not_called()
+
+        await coordinator.async_shutdown()
+
+    async def test_fan_mode_set_to_auto_when_pausing(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_fan_mode_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that fan mode is set to auto when thermostat pauses."""
+        # Ensure thermostat has fan mode set to "on" with proper supported_features
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "friendly_name": "Test Thermostat",
+                "fan_mode": "on",
+                "fan_modes": ["on", "auto"],
+                "supported_features": ClimateEntityFeature.FAN_MODE,
+            },
+        )
+        await hass.async_block_till_done()
+
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Wait for timeout
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Check that set_fan_mode was called with "auto"
+        mock_fan_mode_service.assert_called()
+        fan_call = mock_fan_mode_service.call_args
+        assert fan_call[0][0].data["fan_mode"] == "auto"
+
+        await coordinator.async_shutdown()
+
+    async def test_fan_mode_not_changed_if_already_auto(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_fan_mode_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that fan mode is not changed if already set to auto."""
+        # Ensure thermostat has fan mode already set to "auto" with proper supported_features
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "friendly_name": "Test Thermostat",
+                "fan_mode": "auto",
+                "fan_modes": ["on", "auto"],
+                "supported_features": ClimateEntityFeature.FAN_MODE,
+            },
+        )
+        await hass.async_block_till_done()
+
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Wait for timeout
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Check that set_fan_mode was NOT called (already auto)
+        mock_fan_mode_service.assert_not_called()
+
+        await coordinator.async_shutdown()
+
+    async def test_fan_mode_not_changed_if_thermostat_does_not_support_fan(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_fan_mode_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that fan mode is not changed if thermostat doesn't support fan modes."""
+        # Set thermostat without fan mode support (no fan_modes attribute)
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "friendly_name": "Test Thermostat",
+                # No fan_mode or fan_modes attributes
+            },
+        )
+        await hass.async_block_till_done()
+
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Wait for timeout
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Check that set_fan_mode was NOT called (no fan support)
+        mock_fan_mode_service.assert_not_called()
+
+        await coordinator.async_shutdown()
+
+    async def test_fan_mode_falls_back_to_off_if_no_auto(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_fan_mode_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test that fan mode falls back to 'off' if 'auto' is not available."""
+        # Set thermostat with only "on" and "off" fan modes (no "auto") with proper supported_features
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "friendly_name": "Test Thermostat",
+                "fan_mode": "on",
+                "fan_modes": ["on", "off"],  # No "auto" available
+                "supported_features": ClimateEntityFeature.FAN_MODE,
+            },
+        )
+        await hass.async_block_till_done()
+
+        coordinator._options[CONF_OPEN_TIMEOUT] = 0.01
+
+        await coordinator.async_setup()
+
+        # Open a sensor
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        # Wait for timeout
+        await asyncio.sleep(1)
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+
+        # Check that set_fan_mode was called with "off" (fallback)
+        mock_fan_mode_service.assert_called()
+        fan_call = mock_fan_mode_service.call_args
+        assert fan_call[0][0].data["fan_mode"] == "off"
 
         await coordinator.async_shutdown()
 

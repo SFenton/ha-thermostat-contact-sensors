@@ -857,7 +857,16 @@ class ThermostatController:
 
         # Handle no valid readings
         if not room_state.sensor_readings:
+            if temperature_sensors:
+                room_state.satiation_reason = SatiationReason.ALL_SENSORS_UNAVAILABLE
+            else:
+                room_state.satiation_reason = SatiationReason.NO_TEMP_SENSORS
             return room_state
+
+        # For inactive rooms, we don't evaluate satiation (they're not participating
+        # in the "is the room comfortable" decision), but we still need to set a
+        # meaningful satiation_reason to indicate we have valid sensor data
+        room_state.satiation_reason = SatiationReason.NOT_SATIATED
 
         # Use most favorable sensor (closest to target) - only critical if whole room is in trouble
         if hvac_mode == HVACMode.HEAT:

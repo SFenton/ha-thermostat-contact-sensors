@@ -95,6 +95,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._open_sensor_times: dict[str, float] = {}
         self.trigger_sensor: str | None = None
         self.respect_user_off: bool = False  # Default: always resume thermostat
+        self._pausing_in_progress = False  # Flag to ignore state changes during pause
 
         # Timeout tracking
         self._open_timer: asyncio.TimerHandle | None = None
@@ -674,6 +675,16 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
             return
 
+        # Ignore state changes while we're in the process of pausing
+        # (we trigger fan mode and hvac mode changes that shouldn't be treated as user overrides)
+        if self._pausing_in_progress:
+            _LOGGER.debug(
+                "Ignoring thermostat state change during pause operation: %s -> %s",
+                old_state.state if old_state else "None",
+                new_state.state,
+            )
+            return
+
         _LOGGER.debug(
             "Thermostat %s changed from %s to %s (is_paused=%s)",
             self.thermostat,
@@ -692,7 +703,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Handle manual overrides while paused
         if self.is_paused:
-            if new_state.state != HVACMode.OFF:
+            # Only detect user override if state actually changed TO non-off
+            # (not just attribute changes where state stays the same)
+            old_hvac_state = old_state.state if old_state else None
+            if new_state.state != HVACMode.OFF and old_hvac_state == HVACMode.OFF:
                 # User manually turned thermostat back on - respect their choice
                 _LOGGER.info(
                     "User manually turned thermostat on to %s while paused. Respecting override.",
@@ -703,7 +717,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 self.trigger_sensor = None
                 self._cancel_close_timer()
                 self.async_set_updated_data(None)
-            elif old_state and old_state.state != HVACMode.OFF:
+            elif old_hvac_state and old_hvac_state != HVACMode.OFF and new_state.state == HVACMode.OFF:
                 # User manually turned thermostat off (it was on from their override)
                 # Update previous_hvac_mode to their last choice so we restore correctly
                 _LOGGER.debug(
@@ -845,12 +859,39 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Store the trigger sensor for notifications
         self.trigger_sensor = trigger_sensor
 
+        # Set flag to ignore thermostat state changes during pause operation
+        self._pausing_in_progress = True
+
         # Get current HVAC mode before turning off
         climate_state = self.hass.states.get(self.thermostat)
         if climate_state:
             self.previous_hvac_mode = climate_state.state
         else:
             self.previous_hvac_mode = HVACMode.AUTO
+
+        # Set fan to auto when pausing to save energy (non-fatal if it fails)
+        try:
+            if self.thermostat_controller.supports_fan_mode():
+                fan_off_mode = self.thermostat_controller._get_best_fan_off_mode()
+                if fan_off_mode:
+                    current_fan_mode = self.thermostat_controller.get_fan_mode()
+                    if current_fan_mode and current_fan_mode != fan_off_mode:
+                        _LOGGER.info(
+                            "Setting fan mode to '%s' when pausing (was '%s')",
+                            fan_off_mode,
+                            current_fan_mode,
+                        )
+                        await self.hass.services.async_call(
+                            CLIMATE_DOMAIN,
+                            "set_fan_mode",
+                            {
+                                "entity_id": self.thermostat,
+                                "fan_mode": fan_off_mode,
+                            },
+                            blocking=True,
+                        )
+        except Exception as ex:
+            _LOGGER.warning("Failed to set fan mode when pausing: %s", ex)
 
         # Turn off the thermostat
         await self.hass.services.async_call(
@@ -864,6 +905,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         )
 
         self.is_paused = True
+        self._pausing_in_progress = False  # Clear flag after pause complete
 
         # Send notification
         await self._async_send_notification(paused=True)
@@ -952,12 +994,39 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info("Pausing thermostat via service call")
 
+        # Set flag to ignore thermostat state changes during pause operation
+        self._pausing_in_progress = True
+
         # Get current HVAC mode before turning off
         climate_state = self.hass.states.get(self.thermostat)
         if climate_state:
             self.previous_hvac_mode = climate_state.state
         else:
             self.previous_hvac_mode = HVACMode.AUTO
+
+        # Set fan to auto when pausing to save energy (non-fatal if it fails)
+        try:
+            if self.thermostat_controller.supports_fan_mode():
+                fan_off_mode = self.thermostat_controller._get_best_fan_off_mode()
+                if fan_off_mode:
+                    current_fan_mode = self.thermostat_controller.get_fan_mode()
+                    if current_fan_mode and current_fan_mode != fan_off_mode:
+                        _LOGGER.info(
+                            "Setting fan mode to '%s' when pausing via service (was '%s')",
+                            fan_off_mode,
+                            current_fan_mode,
+                        )
+                        await self.hass.services.async_call(
+                            CLIMATE_DOMAIN,
+                            "set_fan_mode",
+                            {
+                                "entity_id": self.thermostat,
+                                "fan_mode": fan_off_mode,
+                            },
+                            blocking=True,
+                        )
+        except Exception as ex:
+            _LOGGER.warning("Failed to set fan mode when pausing via service: %s", ex)
 
         # Turn off the thermostat
         await self.hass.services.async_call(
@@ -971,6 +1040,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         )
 
         self.is_paused = True
+        self._pausing_in_progress = False  # Clear flag after pause complete
 
         # Send notification
         await self._async_send_notification(paused=True)

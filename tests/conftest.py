@@ -5,7 +5,11 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
+from homeassistant.components.climate import (
+    DOMAIN as CLIMATE_DOMAIN,
+    ClimateEntityFeature,
+    HVACMode,
+)
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -160,7 +164,7 @@ def mock_config_entry_no_notify() -> MockConfigEntry:
 @pytest.fixture
 async def setup_test_entities(hass: HomeAssistant) -> None:
     """Set up test entities."""
-    # Set up thermostat
+    # Set up thermostat with fan mode support
     hass.states.async_set(
         TEST_THERMOSTAT,
         HVACMode.HEAT,
@@ -169,6 +173,9 @@ async def setup_test_entities(hass: HomeAssistant) -> None:
             "hvac_modes": [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO],
             "current_temperature": 20,
             "temperature": 22,
+            "fan_mode": "on",
+            "fan_modes": ["on", "auto"],
+            "supported_features": ClimateEntityFeature.FAN_MODE,
         },
     )
 
@@ -218,8 +225,9 @@ def mock_notify_service(hass: HomeAssistant) -> AsyncMock:
 
 @pytest.fixture
 def mock_climate_service(hass: HomeAssistant) -> AsyncMock:
-    """Mock the climate set_hvac_mode service."""
-    mock_service = AsyncMock()
+    """Mock the climate set_hvac_mode and set_fan_mode services."""
+    mock_hvac_service = AsyncMock()
+    mock_fan_service = AsyncMock()
 
     async def handle_set_hvac_mode(call):
         """Handle the set_hvac_mode service call."""
@@ -228,14 +236,40 @@ def mock_climate_service(hass: HomeAssistant) -> AsyncMock:
         # Update the state
         current_attrs = hass.states.get(entity_id).attributes if hass.states.get(entity_id) else {}
         hass.states.async_set(entity_id, hvac_mode, current_attrs)
-        await mock_service(call)
+        await mock_hvac_service(call)
+
+    async def handle_set_fan_mode(call):
+        """Handle the set_fan_mode service call."""
+        entity_id = call.data.get("entity_id")
+        fan_mode = call.data.get("fan_mode")
+        # Update the fan_mode attribute
+        state = hass.states.get(entity_id)
+        if state:
+            current_attrs = dict(state.attributes)
+            current_attrs["fan_mode"] = fan_mode
+            hass.states.async_set(entity_id, state.state, current_attrs)
+        await mock_fan_service(call)
 
     hass.services.async_register(
         CLIMATE_DOMAIN,
         "set_hvac_mode",
         handle_set_hvac_mode,
     )
-    return mock_service
+    hass.services.async_register(
+        CLIMATE_DOMAIN,
+        "set_fan_mode",
+        handle_set_fan_mode,
+    )
+    
+    # Return the hvac mock for backward compatibility, but attach fan mock as attribute
+    mock_hvac_service.fan_mode_mock = mock_fan_service
+    return mock_hvac_service
+
+
+@pytest.fixture
+def mock_fan_mode_service(hass: HomeAssistant, mock_climate_service: AsyncMock) -> AsyncMock:
+    """Get the fan mode service mock (registered by mock_climate_service)."""
+    return mock_climate_service.fan_mode_mock
 
 
 @pytest.fixture
