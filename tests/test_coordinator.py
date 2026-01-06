@@ -1133,6 +1133,7 @@ class TestInitialOpenSensorCheck:
     async def test_sensor_open_long_enough_triggers_immediate_pause(
         self,
         hass: HomeAssistant,
+        mock_climate_service,
     ) -> None:
         """Test that if a sensor has been open longer than timeout, pause triggers immediately."""
         # Set sensor to open BEFORE creating coordinator
@@ -1234,6 +1235,7 @@ class TestInitialOpenSensorCheck:
     async def test_already_paused_by_contact_no_new_timer(
         self,
         hass: HomeAssistant,
+        mock_climate_service,
     ) -> None:
         """Test that if already paused by contact sensor, no duplicate timer is started."""
         options = get_test_config_options()
