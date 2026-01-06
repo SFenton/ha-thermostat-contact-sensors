@@ -10,8 +10,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.thermostat_contact_sensors import (
     ATTR_ENTRY_ID,
     SERVICE_PAUSE,
+    SERVICE_PAUSE_INTEGRATION,
     SERVICE_RECALCULATE,
     SERVICE_RESUME,
+    SERVICE_RESUME_INTEGRATION,
 )
 from custom_components.thermostat_contact_sensors.const import (
     CONF_AREA_ENABLED,
@@ -52,6 +54,8 @@ class TestServiceRegistration:
         assert hass.services.has_service(DOMAIN, SERVICE_PAUSE)
         assert hass.services.has_service(DOMAIN, SERVICE_RESUME)
         assert hass.services.has_service(DOMAIN, SERVICE_RECALCULATE)
+        assert hass.services.has_service(DOMAIN, SERVICE_PAUSE_INTEGRATION)
+        assert hass.services.has_service(DOMAIN, SERVICE_RESUME_INTEGRATION)
 
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
 
@@ -340,6 +344,213 @@ class TestRecalculateService:
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_RECALCULATE,
+                {ATTR_ENTRY_ID: "invalid_entry_id"},
+                blocking=True,
+            )
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+
+class TestPauseIntegrationService:
+    """Tests for the pause_integration and resume_integration services."""
+
+    async def test_pause_integration_service(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test that pause_integration service pauses all automation."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+
+        # Verify not paused initially
+        assert coordinator.integration_paused is False
+
+        # Call pause_integration service
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_PAUSE_INTEGRATION,
+            {ATTR_ENTRY_ID: mock_config_entry.entry_id},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        # Verify integration is now paused
+        assert coordinator.integration_paused is True
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_resume_integration_service(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test that resume_integration service resumes automation."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+
+        # Pause first
+        await coordinator.async_pause_integration()
+        assert coordinator.integration_paused is True
+
+        # Call resume_integration service
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_RESUME_INTEGRATION,
+            {ATTR_ENTRY_ID: mock_config_entry.entry_id},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        # Verify integration is no longer paused
+        assert coordinator.integration_paused is False
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_pause_integration_blocks_thermostat_updates(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test that pausing integration blocks thermostat state updates."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+
+        # Pause the integration
+        await coordinator.async_pause_integration()
+        assert coordinator.integration_paused is True
+
+        # Store last state before attempting update
+        last_state = coordinator._last_thermostat_state
+
+        # Try to update thermostat state - should return cached state
+        result = await coordinator.async_update_thermostat_state()
+        
+        # Should return the cached state, not a new evaluation
+        assert result is last_state
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_pause_integration_blocks_vent_updates(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test that pausing integration blocks vent updates."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+
+        # Pause the integration
+        await coordinator.async_pause_integration()
+        assert coordinator.integration_paused is True
+
+        # Store last vent state before attempting update
+        last_vent_state = coordinator._last_vent_control_state
+
+        # Try to update vents - should return cached state
+        result = await coordinator.async_update_vents()
+        
+        # Should return the cached state
+        assert result is last_vent_state
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_pause_integration_already_paused(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test calling pause when already paused is idempotent."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+
+        # Pause twice
+        await coordinator.async_pause_integration()
+        assert coordinator.integration_paused is True
+        
+        await coordinator.async_pause_integration()
+        assert coordinator.integration_paused is True  # Still paused
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_resume_integration_not_paused(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test calling resume when not paused is idempotent."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = mock_config_entry.runtime_data
+
+        # Should not be paused initially
+        assert coordinator.integration_paused is False
+        
+        # Resume when not paused - should be fine
+        await coordinator.async_resume_integration()
+        assert coordinator.integration_paused is False
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_pause_integration_invalid_entry_id(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test that pause_integration raises error for invalid entry ID."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_PAUSE_INTEGRATION,
+                {ATTR_ENTRY_ID: "invalid_entry_id"},
+                blocking=True,
+            )
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    async def test_resume_integration_invalid_entry_id(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: ConfigEntry,
+        mock_climate_service,
+    ) -> None:
+        """Test that resume_integration raises error for invalid entry ID."""
+        mock_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_RESUME_INTEGRATION,
                 {ATTR_ENTRY_ID: "invalid_entry_id"},
                 blocking=True,
             )
