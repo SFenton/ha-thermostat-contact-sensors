@@ -1151,6 +1151,9 @@ class TestInitialOpenSensorCheck:
         )
 
         await coordinator.async_setup()
+        # Need to wait for the async_create_task to complete
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.1)
         await hass.async_block_till_done()
 
         # Should be paused immediately since timeout is 0
@@ -1175,16 +1178,17 @@ class TestInitialOpenSensorCheck:
         )
 
         await coordinator.async_setup()
+        await hass.async_block_till_done()
 
         # Pause the integration
         await coordinator.async_pause_integration()
         assert coordinator.integration_paused is True
 
-        # Open a sensor while paused
+        # Open a sensor while paused - should NOT start a timer
         hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})
         await hass.async_block_till_done()
 
-        # No timer should be running while paused
+        # No timer should be running while paused (handler should skip)
         assert coordinator._open_timer is None
 
         # Resume the integration
@@ -1244,6 +1248,7 @@ class TestInitialOpenSensorCheck:
         )
 
         await coordinator.async_setup()
+        await hass.async_block_till_done()
 
         # Open sensor - should pause immediately
         hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Garage Door"})

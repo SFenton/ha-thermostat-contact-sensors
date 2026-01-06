@@ -752,6 +752,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Handle a sensor being opened."""
         _LOGGER.debug("Sensor opened: %s", entity_id)
 
+        # If integration is completely paused, don't start any timers
+        if self.integration_paused:
+            _LOGGER.debug("Ignoring sensor open - integration paused")
+            return
+
         # Record the open timestamp for this sensor
         if entity_id not in self._open_sensor_times:
             self._open_sensor_times[entity_id] = time.monotonic()
@@ -779,6 +784,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     def _handle_sensor_closed(self, entity_id: str) -> None:
         """Handle a sensor being closed."""
         _LOGGER.debug("Sensor closed: %s", entity_id)
+
+        # If integration is completely paused, just track state but don't manage timers
+        if self.integration_paused:
+            _LOGGER.debug("Ignoring sensor close - integration paused")
+            self._open_sensor_times.pop(entity_id, None)
+            return
 
         # Remove this sensor from the open timestamps
         self._open_sensor_times.pop(entity_id, None)
