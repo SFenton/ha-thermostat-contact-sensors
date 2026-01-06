@@ -144,6 +144,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             unoccupied_cooling_threshold=self._options.get(
                 CONF_UNOCCUPIED_COOLING_THRESHOLD, DEFAULT_UNOCCUPIED_COOLING_THRESHOLD
             ),
+            area_thermostats_getter=lambda: getattr(self, "area_thermostats", {}),
         )
 
         # Vent controller

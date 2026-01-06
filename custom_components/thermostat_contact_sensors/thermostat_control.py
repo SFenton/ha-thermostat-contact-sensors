@@ -338,6 +338,7 @@ class ThermostatController:
         min_cycle_off_minutes: int = DEFAULT_MIN_CYCLE_OFF_MINUTES,
         unoccupied_heating_threshold: float = DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
         unoccupied_cooling_threshold: float = DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
+        area_thermostats_getter: callable | None = None,
     ) -> None:
         """Initialize the thermostat controller.
 
@@ -353,10 +354,12 @@ class ThermostatController:
                 heating in unoccupied rooms.
             unoccupied_cooling_threshold: Degrees above cool target that triggers
                 cooling in unoccupied rooms.
+            area_thermostats_getter: Callback to get dict of area_id -> AreaVirtualThermostat.
         """
         self.hass = hass
         self.thermostat_entity_id = thermostat_entity_id
         self.occupancy_tracker = occupancy_tracker
+        self._area_thermostats_getter = area_thermostats_getter
 
         self._temperature_deadband = temperature_deadband
         self._min_cycle_on_minutes = min_cycle_on_minutes
@@ -634,6 +637,52 @@ class ThermostatController:
             )
 
         return final_target_temp, final_target_temp_low, final_target_temp_high
+
+    def get_area_target_temperatures(
+        self,
+        area_id: str,
+    ) -> tuple[float | None, float | None, float | None]:
+        """Get target temperatures for a specific area.
+
+        This gets the targets from the area's virtual thermostat if available,
+        falling back to the physical thermostat's targets if not.
+
+        Each room uses its own virtual thermostat's heat/cool targets for
+        satiation and critical temperature evaluation.
+
+        Args:
+            area_id: The area to get targets for.
+
+        Returns:
+            Tuple of (target_temperature, target_temp_low, target_temp_high).
+            - target_temperature: Used for HEAT or COOL mode (average of low/high for heat_cool)
+            - target_temp_low: Heating setpoint for HEAT_COOL mode
+            - target_temp_high: Cooling setpoint for HEAT_COOL mode
+        """
+        # Try to get targets from the area's virtual thermostat
+        if self._area_thermostats_getter:
+            area_thermostats = self._area_thermostats_getter()
+            if area_thermostats and area_id in area_thermostats:
+                area_thermostat = area_thermostats[area_id]
+                target_temp_low = area_thermostat.target_temperature_low
+                target_temp_high = area_thermostat.target_temperature_high
+                # For HEAT/COOL modes, use average as the single target
+                # (the virtual thermostat is always in heat_cool mode)
+                target_temp = (target_temp_low + target_temp_high) / 2 if target_temp_low and target_temp_high else None
+                _LOGGER.debug(
+                    "Using area %s virtual thermostat targets: low=%s, high=%s",
+                    area_id,
+                    target_temp_low,
+                    target_temp_high,
+                )
+                return target_temp, target_temp_low, target_temp_high
+
+        # Fall back to physical thermostat targets
+        _LOGGER.debug(
+            "No virtual thermostat for area %s, using physical thermostat targets",
+            area_id,
+        )
+        return self.get_target_temperatures()
 
     def get_temperature_sensors_for_area(self, area_id: str) -> list[str]:
         """Get list of temperature sensor entity IDs for an area.
@@ -1035,13 +1084,17 @@ class ThermostatController:
 
         for area in active_areas:
             temp_sensors = area_temp_sensors.get(area.area_id, [])
+            # Get area-specific target temperatures from virtual thermostat
+            area_target_temp, area_target_temp_low, area_target_temp_high = (
+                self.get_area_target_temperatures(area.area_id)
+            )
             room_state = self.evaluate_room_satiation(
                 area,
                 temp_sensors,
                 evaluation_hvac_mode,
-                target_temp,
-                target_temp_low,
-                target_temp_high,
+                area_target_temp,
+                area_target_temp_low,
+                area_target_temp_high,
             )
             room_state.is_active = True
             thermostat_state.room_states[area.area_id] = room_state
@@ -1065,13 +1118,17 @@ class ThermostatController:
             if not temp_sensors:
                 continue  # No sensors, can't evaluate
 
+            # Get area-specific target temperatures from virtual thermostat
+            area_target_temp, area_target_temp_low, area_target_temp_high = (
+                self.get_area_target_temperatures(area.area_id)
+            )
             room_state = self.evaluate_room_critical(
                 area,
                 temp_sensors,
                 evaluation_hvac_mode,
-                target_temp,
-                target_temp_low,
-                target_temp_high,
+                area_target_temp,
+                area_target_temp_low,
+                area_target_temp_high,
             )
             thermostat_state.room_states[area.area_id] = room_state
 
