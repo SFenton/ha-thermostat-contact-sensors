@@ -2356,7 +2356,7 @@ class TestAreaSpecificTargets:
         }
 
         # Evaluate
-        state = controller.evaluate_thermostat_state(
+        state = controller.evaluate_thermostat_action(
             active_areas=[living_room_area, office_area],
             area_temp_sensors=area_temp_sensors,
             inactive_areas=[],
@@ -2423,7 +2423,7 @@ class TestAreaSpecificTargets:
             area_name="Office",
         )
 
-        state = controller.evaluate_thermostat_state(
+        state = controller.evaluate_thermostat_action(
             active_areas=[living_room_area, office_area],
             area_temp_sensors={
                 "living_room": ["sensor.living_room_temp"],
@@ -2476,7 +2476,7 @@ class TestAreaSpecificTargets:
             area_name="Music Room",
         )
 
-        state = controller.evaluate_thermostat_state(
+        state = controller.evaluate_thermostat_action(
             active_areas=[],
             area_temp_sensors={"music_room": ["sensor.music_room_temp"]},
             inactive_areas=[music_room_area],
@@ -2523,7 +2523,7 @@ class TestAreaSpecificTargets:
             area_name="Guest Room",
         )
 
-        state = controller.evaluate_thermostat_state(
+        state = controller.evaluate_thermostat_action(
             active_areas=[],
             area_temp_sensors={"guest_room": ["sensor.guest_room_temp"]},
             inactive_areas=[guest_room_area],
@@ -2593,7 +2593,7 @@ class TestAreaSpecificTargets:
             area_id="music_room", area_name="Music Room"
         )
 
-        state = controller.evaluate_thermostat_state(
+        state = controller.evaluate_thermostat_action(
             active_areas=[living_room_area, office_area],
             area_temp_sensors={
                 "living_room": ["sensor.living_room_temp"],
