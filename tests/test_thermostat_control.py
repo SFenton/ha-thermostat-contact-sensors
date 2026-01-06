@@ -2203,6 +2203,12 @@ class TestAreaSpecificTargets:
     """Tests for area-specific virtual thermostat target temperatures."""
 
     @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        tracker = MagicMock()
+        return tracker
+
+    @pytest.fixture
     def mock_area_thermostat(self):
         """Create a mock area virtual thermostat."""
         thermostat = MagicMock()
