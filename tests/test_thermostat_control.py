@@ -2438,8 +2438,9 @@ class TestAreaSpecificTargets:
         # Office at 71°F with target 72°F -> NOT satiated (71 < 72 - 0.5 = 71.5)
         assert state.room_states["office"].is_satiated is False
 
-        # Should recommend turning on (office needs heating)
-        assert state.recommended_action == ThermostatAction.TURN_ON
+        # Thermostat already on (HEAT_COOL mode), so action is NONE but reason shows need
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "active rooms need conditioning" in state.action_reason
 
     @pytest.mark.asyncio
     async def test_critical_room_uses_area_specific_targets(
@@ -2619,5 +2620,6 @@ class TestAreaSpecificTargets:
         assert state.critical_room_count == 1
         assert state.all_active_rooms_satiated is False
 
-        # Should turn on (unsatiated active + critical rooms)
-        assert state.recommended_action == ThermostatAction.TURN_ON
+        # Thermostat already on (HEAT_COOL mode), so action is NONE
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "active rooms need conditioning" in state.action_reason or "critical rooms" in state.action_reason

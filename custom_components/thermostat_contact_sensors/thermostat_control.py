@@ -655,7 +655,7 @@ class ThermostatController:
 
         Returns:
             Tuple of (target_temperature, target_temp_low, target_temp_high).
-            - target_temperature: Used for HEAT or COOL mode (average of low/high for heat_cool)
+            - target_temperature: Used for HEAT or COOL mode (uses low for heat, high for cool)
             - target_temp_low: Heating setpoint for HEAT_COOL mode
             - target_temp_high: Cooling setpoint for HEAT_COOL mode
         """
@@ -666,14 +666,25 @@ class ThermostatController:
                 area_thermostat = area_thermostats[area_id]
                 target_temp_low = area_thermostat.target_temperature_low
                 target_temp_high = area_thermostat.target_temperature_high
-                # For HEAT/COOL modes, use average as the single target
-                # (the virtual thermostat is always in heat_cool mode)
-                target_temp = (target_temp_low + target_temp_high) / 2 if target_temp_low and target_temp_high else None
+                
+                # For HEAT mode, target_temp should be target_temp_low
+                # For COOL mode, target_temp should be target_temp_high
+                # Check current HVAC mode to determine which to use
+                hvac_mode, _ = self.get_thermostat_state()
+                if hvac_mode == HVACMode.HEAT:
+                    target_temp = target_temp_low
+                elif hvac_mode == HVACMode.COOL:
+                    target_temp = target_temp_high
+                else:
+                    # For HEAT_COOL or other modes, use average (though low/high will be used directly)
+                    target_temp = (target_temp_low + target_temp_high) / 2 if target_temp_low and target_temp_high else None
+                
                 _LOGGER.debug(
-                    "Using area %s virtual thermostat targets: low=%s, high=%s",
+                    "Using area %s virtual thermostat targets: low=%s, high=%s, temp=%s",
                     area_id,
                     target_temp_low,
                     target_temp_high,
+                    target_temp,
                 )
                 return target_temp, target_temp_low, target_temp_high
 
