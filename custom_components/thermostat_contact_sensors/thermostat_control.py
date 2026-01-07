@@ -566,6 +566,7 @@ class ThermostatController:
 
     def get_target_temperatures(
         self,
+        hvac_mode_override: HVACMode | None = None,
     ) -> tuple[float | None, float | None, float | None]:
         """Get target temperatures from the global virtual thermostat.
 
@@ -574,6 +575,12 @@ class ThermostatController:
         - Cooling target = MIN of all area cooling targets
 
         Falls back to physical thermostat if global virtual thermostat is not available.
+
+        Args:
+            hvac_mode_override: If provided, use this HVAC mode instead of the
+                current thermostat mode for computing target_temp. This is used
+                when the thermostat is OFF but we want to evaluate satiation
+                based on the previous/intended mode.
 
         Returns:
             Tuple of (target_temperature, target_temp_low, target_temp_high).
@@ -589,7 +596,12 @@ class ThermostatController:
                 target_temp_high = global_thermostat.target_temperature_high
 
                 # For HEAT/COOL modes, use low/high respectively
-                hvac_mode, _ = self.get_thermostat_state()
+                # Use override if provided, otherwise check current HVAC mode
+                if hvac_mode_override is not None:
+                    hvac_mode = hvac_mode_override
+                else:
+                    hvac_mode, _ = self.get_thermostat_state()
+                
                 if hvac_mode == HVACMode.HEAT:
                     target_temp = target_temp_low
                 elif hvac_mode == HVACMode.COOL:
@@ -599,10 +611,11 @@ class ThermostatController:
                     target_temp = (target_temp_low + target_temp_high) / 2 if target_temp_low and target_temp_high else None
 
                 _LOGGER.debug(
-                    "Using global virtual thermostat targets: temp=%s, low=%s, high=%s",
+                    "Using global virtual thermostat targets: temp=%s, low=%s, high=%s (mode=%s)",
                     target_temp,
                     target_temp_low,
                     target_temp_high,
+                    hvac_mode,
                 )
                 return target_temp, target_temp_low, target_temp_high
 
@@ -676,6 +689,7 @@ class ThermostatController:
     def get_area_target_temperatures(
         self,
         area_id: str,
+        hvac_mode_override: HVACMode | None = None,
     ) -> tuple[float | None, float | None, float | None]:
         """Get target temperatures for a specific area.
 
@@ -687,6 +701,10 @@ class ThermostatController:
 
         Args:
             area_id: The area to get targets for.
+            hvac_mode_override: If provided, use this HVAC mode instead of the
+                current thermostat mode for computing target_temp. This is used
+                when the thermostat is OFF but we want to evaluate satiation
+                based on the previous/intended mode.
 
         Returns:
             Tuple of (target_temperature, target_temp_low, target_temp_high).
@@ -704,8 +722,12 @@ class ThermostatController:
                 
                 # For HEAT mode, target_temp should be target_temp_low
                 # For COOL mode, target_temp should be target_temp_high
-                # Check current HVAC mode to determine which to use
-                hvac_mode, _ = self.get_thermostat_state()
+                # Use override if provided, otherwise check current HVAC mode
+                if hvac_mode_override is not None:
+                    hvac_mode = hvac_mode_override
+                else:
+                    hvac_mode, _ = self.get_thermostat_state()
+                
                 if hvac_mode == HVACMode.HEAT:
                     target_temp = target_temp_low
                 elif hvac_mode == HVACMode.COOL:
@@ -715,11 +737,12 @@ class ThermostatController:
                     target_temp = (target_temp_low + target_temp_high) / 2 if target_temp_low and target_temp_high else None
                 
                 _LOGGER.debug(
-                    "Using area %s virtual thermostat targets: low=%s, high=%s, temp=%s",
+                    "Using area %s virtual thermostat targets: low=%s, high=%s, temp=%s (mode=%s)",
                     area_id,
                     target_temp_low,
                     target_temp_high,
                     target_temp,
+                    hvac_mode,
                 )
                 return target_temp, target_temp_low, target_temp_high
 
@@ -728,7 +751,7 @@ class ThermostatController:
             "No virtual thermostat for area %s, using physical thermostat targets",
             area_id,
         )
-        return self.get_target_temperatures()
+        return self.get_target_temperatures(hvac_mode_override=hvac_mode_override)
 
     def get_temperature_sensors_for_area(self, area_id: str) -> list[str]:
         """Get list of temperature sensor entity IDs for an area.
@@ -1170,8 +1193,9 @@ class ThermostatController:
         for area in active_areas:
             temp_sensors = area_temp_sensors.get(area.area_id, [])
             # Get area-specific target temperatures from virtual thermostat
+            # Pass evaluation_hvac_mode so we get the correct target even when thermostat is OFF
             area_target_temp, area_target_temp_low, area_target_temp_high = (
-                self.get_area_target_temperatures(area.area_id)
+                self.get_area_target_temperatures(area.area_id, hvac_mode_override=evaluation_hvac_mode)
             )
             room_state = self.evaluate_room_satiation(
                 area,
@@ -1204,8 +1228,9 @@ class ThermostatController:
                 continue  # No sensors, can't evaluate
 
             # Get area-specific target temperatures from virtual thermostat
+            # Pass evaluation_hvac_mode so we get the correct target even when thermostat is OFF
             area_target_temp, area_target_temp_low, area_target_temp_high = (
-                self.get_area_target_temperatures(area.area_id)
+                self.get_area_target_temperatures(area.area_id, hvac_mode_override=evaluation_hvac_mode)
             )
             room_state = self.evaluate_room_critical(
                 area,
