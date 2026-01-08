@@ -283,10 +283,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
 
         # Evaluate what action should be taken
+        # Pass respect_user_off so thermostat control knows whether to override user's off
         self._last_thermostat_state = self.thermostat_controller.evaluate_thermostat_action(
             active_areas=active_areas,
             area_temp_sensors=area_temp_sensors,
             inactive_areas=inactive_areas,
+            respect_user_off=self.respect_user_off,
         )
 
         return self._last_thermostat_state

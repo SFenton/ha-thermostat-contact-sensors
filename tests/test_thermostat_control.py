@@ -1723,10 +1723,8 @@ class TestWeTurnedOffFlag:
         """Test that _we_turned_off is initially False."""
         assert controller._we_turned_off is False
 
-    def test_thermostat_off_treated_as_user_choice_when_flag_false(
-        self, controller, mock_hass
-    ):
-        """Test that thermostat OFF is treated as user choice when we didn't turn it off."""
+    def test_thermostat_off_treated_as_user_choice_when_flag_false(self, controller, mock_hass):
+        """Test that thermostat OFF is treated as user choice when we didn't turn it off and respect_user_off is True."""
         mock_state = MagicMock()
         mock_state.state = HVACMode.OFF
         mock_state.attributes = {}
@@ -1744,11 +1742,60 @@ class TestWeTurnedOffFlag:
         ]
         area_temp_sensors = {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]}
 
-        state = controller.evaluate_thermostat_action(active_areas, area_temp_sensors)
+        # With respect_user_off=True (default), user's off choice is respected
+        state = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, respect_user_off=True
+        )
 
         assert state.hvac_mode == HVACMode.OFF
         assert state.recommended_action == ThermostatAction.NONE
         assert "user choice" in state.action_reason.lower()
+
+    def test_thermostat_off_overridden_when_respect_user_off_false(
+        self, controller, mock_hass
+    ):
+        """Test that thermostat OFF can be overridden when respect_user_off is False."""
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                mock_state = MagicMock()
+                mock_state.state = HVACMode.OFF
+                mock_state.attributes = {
+                    ATTR_TEMPERATURE: 72.0,
+                }
+                return mock_state
+            elif entity_id == TEST_TEMP_SENSOR_1:
+                # Temperature below target - not satiated, should want to turn on
+                mock_state = MagicMock()
+                mock_state.state = "68.0"
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        # Ensure flag is False (user turned it off)
+        controller._we_turned_off = False
+        # Set stored target temp so we have a target to evaluate against
+        controller._stored_target_temp = 72.0
+
+        active_areas = [
+            AreaOccupancyState(
+                area_id=TEST_AREA_LIVING_ROOM,
+                area_name="Living Room",
+                is_active=True,
+            )
+        ]
+        area_temp_sensors = {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]}
+
+        # With respect_user_off=False, integration can turn thermostat back on
+        state = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, respect_user_off=False
+        )
+
+        # Should recommend turning on since room is not satiated
+        # (User's off is not respected)
+        assert state.recommended_action == ThermostatAction.TURN_ON
+        assert "user choice" not in state.action_reason.lower()
 
     def test_thermostat_off_continues_evaluation_when_we_turned_off(
         self, controller, mock_hass

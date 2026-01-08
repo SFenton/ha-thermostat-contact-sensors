@@ -1114,6 +1114,7 @@ class ThermostatController:
         area_temp_sensors: dict[str, list[str]],
         inactive_areas: list[AreaOccupancyState] | None = None,
         now: datetime | None = None,
+        respect_user_off: bool = True,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
 
@@ -1123,12 +1124,16 @@ class ThermostatController:
         - Active room temperature satiation
         - Inactive rooms with critical temperature levels
         - Cycle protection timers
+        - Whether to respect user's choice to turn thermostat off
 
         Args:
             active_areas: List of currently active areas from occupancy tracker.
             area_temp_sensors: Dict of area_id -> list of temperature sensor IDs.
             inactive_areas: List of inactive areas to check for critical temps.
             now: Current time (defaults to utcnow).
+            respect_user_off: If True (default), when the user turns off the
+                thermostat, the integration won't turn it back on. If False,
+                the integration will turn it on when rooms need conditioning.
 
         Returns:
             ThermostatState with the recommended action.
@@ -1179,12 +1184,19 @@ class ThermostatController:
                     _LOGGER.debug("No previous mode, defaulting to HEAT for satiation evaluation")
             else:
                 # User turned it off - still evaluate room temps for display purposes
-                # but we won't take any thermostat actions
+                # If respect_user_off is False, we can still take action
                 evaluation_hvac_mode = HVACMode.HEAT  # Use HEAT as default for evaluation
-                _LOGGER.debug("Thermostat is off (user choice) - evaluating temps but taking no action")
+                if respect_user_off:
+                    _LOGGER.debug("Thermostat is off (user choice) - evaluating temps but taking no action")
+                else:
+                    _LOGGER.debug(
+                        "Thermostat is off (user turned it off) but respect_user_off is False - "
+                        "will evaluate and potentially turn on if rooms need conditioning"
+                    )
 
-        # Flag if user turned thermostat off - used to skip action at end
-        user_turned_off = hvac_mode == HVACMode.OFF and not self._we_turned_off
+        # Flag if user turned thermostat off AND we should respect that choice
+        # When respect_user_off is False, we treat user's off as if we turned it off
+        user_turned_off = hvac_mode == HVACMode.OFF and not self._we_turned_off and respect_user_off
 
         # Evaluate each active room for satiation (always, even when OFF for display)
         thermostat_state.active_room_count = len(active_areas)
@@ -1339,6 +1351,7 @@ class ThermostatController:
         active_areas: list[AreaOccupancyState],
         area_temp_sensors: dict[str, list[str]],
         inactive_areas: list[AreaOccupancyState] | None = None,
+        respect_user_off: bool = True,
     ) -> dict[str, Any]:
         """Get a summary of the current thermostat control state.
 
@@ -1346,12 +1359,14 @@ class ThermostatController:
             active_areas: List of active areas.
             area_temp_sensors: Dict of area_id -> temperature sensor list.
             inactive_areas: List of inactive areas to check for critical temps.
+            respect_user_off: Whether to respect user's choice to turn thermostat off.
 
         Returns:
             Dict with summary information.
         """
         state = self.evaluate_thermostat_action(
-            active_areas, area_temp_sensors, inactive_areas
+            active_areas, area_temp_sensors, inactive_areas,
+            respect_user_off=respect_user_off,
         )
 
         return {
