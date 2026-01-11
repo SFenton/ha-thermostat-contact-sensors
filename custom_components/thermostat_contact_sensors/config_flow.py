@@ -585,15 +585,11 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 # Away mode settings
                 vol.Optional(
                     CONF_AWAY_PRESENCE_ENTITY,
-                    default="",
-                ): vol.Any(
-                    "",
-                    selector.EntitySelector(
-                        selector.EntitySelectorConfig(
-                            domain=["person", "group", "binary_sensor", "input_boolean"],
-                            multiple=False,
-                        )
-                    ),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["person", "group", "binary_sensor", "input_boolean"],
+                        multiple=False,
+                    )
                 ),
                 vol.Optional(
                     CONF_AWAY_HEAT_TEMP_DIFF,
@@ -625,6 +621,14 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 ),
             }
         )
+
+        # Add suggested values for the entity selector (can't use default for optional entity selectors)
+        suggested_values = {}
+        if options.get(CONF_AWAY_PRESENCE_ENTITY):
+            suggested_values[CONF_AWAY_PRESENCE_ENTITY] = options[CONF_AWAY_PRESENCE_ENTITY]
+        
+        if suggested_values:
+            data_schema = self.add_suggested_values_to_schema(data_schema, suggested_values)
 
         return self.async_show_form(
             step_id="global_settings",
