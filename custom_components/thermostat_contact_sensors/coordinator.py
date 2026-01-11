@@ -109,6 +109,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Track last known non-off HVAC mode for manual override detection
         self._last_known_hvac_mode: str | None = None
+        
+        # Track last hvac_action to detect changes
+        self._last_hvac_action: str | None = None
 
         # Listener cleanup
         self._unsub_state_change: callable | None = None
@@ -253,6 +256,26 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     def away_mode_configured(self) -> bool:
         """Return whether away mode has been configured with a presence entity."""
         return bool(self.away_presence_entity)
+
+    def get_physical_thermostat_hvac_action(self) -> str | None:
+        """Get the hvac_action of the physical thermostat.
+        
+        Returns:
+            The hvac_action (heating, cooling, idle, off, etc.) or None if unavailable.
+        """
+        from homeassistant.components.climate import HVACAction
+        
+        state = self.hass.states.get(self.thermostat)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return None
+        
+        hvac_action = state.attributes.get("hvac_action")
+        if hvac_action:
+            try:
+                return HVACAction(hvac_action)
+            except ValueError:
+                return None
+        return None
 
     def _check_presence_entity_state(self) -> bool:
         """Check if the presence entity indicates 'away' state.
@@ -521,6 +544,17 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Check for already-open sensors and start timers if needed
         self._check_initial_open_sensors()
+        
+        # Initialize hvac_action tracking from current physical thermostat state
+        self._last_hvac_action = self._get_current_hvac_action()
+        _LOGGER.debug("Initialized hvac_action tracking: %s", self._last_hvac_action)
+
+    def _get_current_hvac_action(self) -> str | None:
+        """Get the current hvac_action from the physical thermostat."""
+        state = self.hass.states.get(self.thermostat)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return None
+        return state.attributes.get("hvac_action")
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator."""
@@ -880,6 +914,34 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 )
                 if self._last_known_hvac_mode:
                     self.previous_hvac_mode = self._last_known_hvac_mode
+
+        # Check for hvac_action changes
+        old_hvac_action = old_state.attributes.get("hvac_action") if old_state else None
+        new_hvac_action = new_state.attributes.get("hvac_action")
+        
+        # Update virtual thermostats if hvac_action changed, or if transitioning from unknown/unavailable
+        if (new_hvac_action != old_hvac_action or 
+            new_hvac_action != self._last_hvac_action or
+            (old_state and old_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN))):
+            self._last_hvac_action = new_hvac_action
+            _LOGGER.debug(
+                "Physical thermostat hvac_action changed: %s -> %s, updating virtual thermostats",
+                old_hvac_action,
+                new_hvac_action,
+            )
+            self._update_virtual_thermostat_states()
+
+    @callback
+    def _update_virtual_thermostat_states(self) -> None:
+        """Update all virtual thermostat states when hvac_action changes."""
+        # Update area thermostats
+        if hasattr(self, "area_thermostats"):
+            for area_thermostat in self.area_thermostats.values():
+                area_thermostat.async_write_ha_state()
+        
+        # Update global thermostat
+        if hasattr(self, "global_thermostat") and self.global_thermostat:
+            self.global_thermostat.async_write_ha_state()
 
     @callback
     def _async_sensor_state_changed(self, event) -> None:

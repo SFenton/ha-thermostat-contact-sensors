@@ -13,6 +13,7 @@ from typing import Any, Self
 from homeassistant.components.climate import (
     ClimateEntity,
     ClimateEntityFeature,
+    HVACAction,
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -222,6 +223,32 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     def hvac_mode(self) -> HVACMode:
         """Return current HVAC mode - always heat_cool."""
         return HVACMode.HEAT_COOL
+
+    @property
+    def hvac_action(self) -> HVACAction:
+        """Return current HVAC action based on physical thermostat and room satiation.
+        
+        Returns heating/cooling if:
+        1. The physical thermostat is actively heating/cooling
+        2. This room is not satiated (still needs conditioning)
+        
+        Otherwise returns idle.
+        """
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        
+        # Get the physical thermostat's hvac_action
+        physical_action = coordinator.get_physical_thermostat_hvac_action()
+        
+        if physical_action in (HVACAction.HEATING, HVACAction.COOLING):
+            # Check if this room is satiated
+            thermostat_state = coordinator.last_thermostat_state
+            if thermostat_state:
+                room_state = thermostat_state.room_states.get(self._area_id)
+                if room_state and not room_state.is_satiated:
+                    # Room needs conditioning and thermostat is active
+                    return physical_action
+        
+        return HVACAction.IDLE
 
     @property
     def target_temperature_low(self) -> float:
@@ -536,6 +563,27 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     def hvac_mode(self) -> HVACMode:
         """Return current HVAC mode."""
         return self._hvac_mode
+
+    @property
+    def hvac_action(self) -> HVACAction:
+        """Return current HVAC action based on physical thermostat.
+        
+        Returns the physical thermostat's hvac_action if any room needs conditioning,
+        otherwise returns idle.
+        """
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        
+        # Get the physical thermostat's hvac_action
+        physical_action = coordinator.get_physical_thermostat_hvac_action()
+        
+        if physical_action in (HVACAction.HEATING, HVACAction.COOLING):
+            # Check if any area thermostat is actively conditioning
+            if hasattr(coordinator, "area_thermostats"):
+                for area_thermostat in coordinator.area_thermostats.values():
+                    if area_thermostat.hvac_action == physical_action:
+                        return physical_action
+        
+        return HVACAction.IDLE
 
     @property
     def target_temperature(self) -> float | None:

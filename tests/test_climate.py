@@ -1169,3 +1169,202 @@ class TestAwayMode:
 
         await hass.config_entries.async_unload(config_entry_with_away_mode.entry_id)
 
+
+class TestHvacAction:
+    """Tests for hvac_action property on virtual thermostats."""
+
+    @pytest.mark.asyncio
+    async def test_area_thermostat_hvac_action_heating(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test area thermostat shows heating when physical is heating and room needs it."""
+        from homeassistant.components.climate import HVACAction
+        from custom_components.thermostat_contact_sensors.thermostat_control import RoomTemperatureState
+        
+        # Set up physical thermostat in heating state
+        hass.states.async_set(
+            THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "hvac_action": "heating",
+                "current_temperature": 68.0,
+                "temperature": 72.0,
+            },
+        )
+        
+        # Set temperature sensor to be below target (room needs heat)
+        hass.states.async_set("sensor.living_room_temperature", "65.0")
+        await hass.async_block_till_done()
+
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry.runtime_data
+        
+        # Manually set up a room state that is not satiated
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+        coordinator._last_thermostat_state = ThermostatState(thermostat_entity_id=THERMOSTAT)
+        coordinator._last_thermostat_state.room_states["living_room"] = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=False,  # Room needs conditioning
+        )
+
+        area_thermostat = coordinator.area_thermostats["living_room"]
+        
+        # Should show heating since physical is heating and room needs it
+        assert area_thermostat.hvac_action == HVACAction.HEATING
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_area_thermostat_hvac_action_idle_when_satiated(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test area thermostat shows idle when room is satiated even if physical is heating."""
+        from homeassistant.components.climate import HVACAction
+        from custom_components.thermostat_contact_sensors.thermostat_control import RoomTemperatureState
+        
+        # Set up physical thermostat in heating state
+        hass.states.async_set(
+            THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "hvac_action": "heating",
+                "current_temperature": 68.0,
+                "temperature": 72.0,
+            },
+        )
+        
+        # Set temperature sensor to be at target (room is satisfied)
+        hass.states.async_set("sensor.living_room_temperature", "72.0")
+        await hass.async_block_till_done()
+
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry.runtime_data
+        
+        # Manually set up a room state that IS satiated
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+        coordinator._last_thermostat_state = ThermostatState(thermostat_entity_id=THERMOSTAT)
+        coordinator._last_thermostat_state.room_states["living_room"] = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=True,  # Room is satisfied
+        )
+
+        area_thermostat = coordinator.area_thermostats["living_room"]
+        
+        # Should show idle since room is satiated
+        assert area_thermostat.hvac_action == HVACAction.IDLE
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_thermostat_hvac_action_matches_areas(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test global thermostat shows heating when any area is heating."""
+        from homeassistant.components.climate import HVACAction
+        from custom_components.thermostat_contact_sensors.thermostat_control import RoomTemperatureState
+        
+        # Set up physical thermostat in heating state
+        hass.states.async_set(
+            THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "hvac_action": "heating",
+                "current_temperature": 68.0,
+                "temperature": 72.0,
+            },
+        )
+        
+        hass.states.async_set("sensor.living_room_temperature", "65.0")
+        await hass.async_block_till_done()
+
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry.runtime_data
+        
+        # Set up room as needing heat
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+        coordinator._last_thermostat_state = ThermostatState(thermostat_entity_id=THERMOSTAT)
+        coordinator._last_thermostat_state.room_states["living_room"] = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=False,
+        )
+
+        global_thermostat = coordinator.global_thermostat
+        
+        # Global should show heating since an area is heating
+        assert global_thermostat.hvac_action == HVACAction.HEATING
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_thermostat_hvac_action_idle_when_all_satiated(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test global thermostat shows idle when all areas are satiated."""
+        from homeassistant.components.climate import HVACAction
+        from custom_components.thermostat_contact_sensors.thermostat_control import RoomTemperatureState
+        
+        # Set up physical thermostat in idle state
+        hass.states.async_set(
+            THERMOSTAT,
+            HVACMode.HEAT_COOL,
+            {
+                "hvac_action": "idle",
+                "current_temperature": 72.0,
+                "target_temp_low": 70.0,
+                "target_temp_high": 78.0,
+            },
+        )
+        
+        hass.states.async_set("sensor.living_room_temperature", "72.0")
+        await hass.async_block_till_done()
+
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry.runtime_data
+        
+        # Set up room as satiated
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+        coordinator._last_thermostat_state = ThermostatState(thermostat_entity_id=THERMOSTAT)
+        coordinator._last_thermostat_state.room_states["living_room"] = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=True,
+        )
+
+        global_thermostat = coordinator.global_thermostat
+        
+        # Global should show idle since all areas are satiated
+        assert global_thermostat.hvac_action == HVACAction.IDLE
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
