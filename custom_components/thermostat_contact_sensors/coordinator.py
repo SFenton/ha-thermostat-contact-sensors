@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
-from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN, STATE_HOME, STATE_NOT_HOME
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.template import Template
@@ -16,6 +16,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (
     CONF_AREA_ENABLED,
     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
+    CONF_AWAY_COOL_TEMP_DIFF,
+    CONF_AWAY_HEAT_TEMP_DIFF,
+    CONF_AWAY_PRESENCE_ENTITY,
     CONF_CLOSE_TIMEOUT,
     CONF_GRACE_PERIOD_MINUTES,
     CONF_MIN_CYCLE_OFF_MINUTES,
@@ -36,6 +39,8 @@ from .const import (
     CONF_VENT_DEBOUNCE_SECONDS,
     CONF_VENT_OPEN_DELAY_SECONDS,
     CONF_VENTS,
+    DEFAULT_AWAY_COOL_TEMP_DIFF,
+    DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
@@ -109,6 +114,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._unsub_state_change: callable | None = None
         self._unsub_thermostat_state_change: callable | None = None
         self._unsub_temp_sensor_state_change: callable | None = None
+        self._unsub_presence_state_change: callable | None = None
+
+        # Away mode tracking
+        self._is_away: bool = False
 
         # Occupancy tracker
         min_occupancy = self._options.get(
@@ -219,6 +228,52 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     def last_vent_control_state(self) -> VentControlState | None:
         """Return the last evaluated vent control state."""
         return self._last_vent_control_state
+
+    @property
+    def away_presence_entity(self) -> str:
+        """Return the presence entity for away mode detection."""
+        return self._options.get(CONF_AWAY_PRESENCE_ENTITY, "")
+
+    @property
+    def away_heat_temp_diff(self) -> float:
+        """Return the heat temperature adjustment when away."""
+        return self._options.get(CONF_AWAY_HEAT_TEMP_DIFF, DEFAULT_AWAY_HEAT_TEMP_DIFF)
+
+    @property
+    def away_cool_temp_diff(self) -> float:
+        """Return the cool temperature adjustment when away."""
+        return self._options.get(CONF_AWAY_COOL_TEMP_DIFF, DEFAULT_AWAY_COOL_TEMP_DIFF)
+
+    @property
+    def is_away(self) -> bool:
+        """Return whether away mode is currently active."""
+        return self._is_away
+
+    @property
+    def away_mode_configured(self) -> bool:
+        """Return whether away mode has been configured with a presence entity."""
+        return bool(self.away_presence_entity)
+
+    def _check_presence_entity_state(self) -> bool:
+        """Check if the presence entity indicates 'away' state.
+
+        Returns:
+            True if the entity indicates everyone is away, False if home.
+        """
+        entity_id = self.away_presence_entity
+        if not entity_id:
+            return False
+
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False
+
+        # Check various "away" states
+        # person/device_tracker: 'not_home'
+        # binary_sensor/input_boolean: 'off' typically means away
+        # group: 'not_home' for person groups
+        state_value = state.state.lower()
+        return state_value in (STATE_NOT_HOME, STATE_OFF, "false", "away")
 
     def get_area_temp_sensors(self) -> dict[str, list[str]]:
         """Get temperature sensors for each enabled area.
@@ -365,6 +420,32 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             CONF_VENT_DEBOUNCE_SECONDS, DEFAULT_VENT_DEBOUNCE_SECONDS
         )
 
+        # Update away mode - re-subscribe if presence entity changed
+        old_presence_entity = self._options.get(CONF_AWAY_PRESENCE_ENTITY, "")
+        new_presence_entity = options.get(CONF_AWAY_PRESENCE_ENTITY, "")
+        if old_presence_entity != new_presence_entity:
+            # Unsubscribe from old entity
+            if self._unsub_presence_state_change:
+                self._unsub_presence_state_change()
+                self._unsub_presence_state_change = None
+
+            # Subscribe to new entity if configured
+            if new_presence_entity:
+                self._unsub_presence_state_change = async_track_state_change_event(
+                    self.hass,
+                    [new_presence_entity],
+                    self._async_presence_state_changed,
+                )
+                self._is_away = self._check_presence_entity_state()
+                _LOGGER.debug(
+                    "Away mode presence entity changed to %s, is_away: %s",
+                    new_presence_entity,
+                    self._is_away,
+                )
+            else:
+                self._is_away = False
+                _LOGGER.debug("Away mode disabled (no presence entity configured)")
+
     async def async_setup(self) -> None:
         """Set up the coordinator and start listening to state changes."""
         # Initial scan of sensor states
@@ -417,6 +498,21 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self.thermostat,
         )
 
+        # Subscribe to presence entity state changes for away mode
+        if self.away_presence_entity:
+            self._unsub_presence_state_change = async_track_state_change_event(
+                self.hass,
+                [self.away_presence_entity],
+                self._async_presence_state_changed,
+            )
+            # Set initial away state
+            self._is_away = self._check_presence_entity_state()
+            _LOGGER.debug(
+                "Away mode initialized. Presence entity: %s, is_away: %s",
+                self.away_presence_entity,
+                self._is_away,
+            )
+
         # Initial thermostat state evaluation and action execution
         await self.async_update_thermostat_state()
 
@@ -442,6 +538,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self._unsub_temp_sensor_state_change:
             self._unsub_temp_sensor_state_change()
             self._unsub_temp_sensor_state_change = None
+
+        if self._unsub_presence_state_change:
+            self._unsub_presence_state_change()
+            self._unsub_presence_state_change = None
 
         # Shut down thermostat controller (saves state)
         await self.thermostat_controller.async_shutdown()
@@ -483,6 +583,57 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         await self.async_update_thermostat_state()
         await self.async_update_vents()
         self.async_set_updated_data(None)
+
+    @callback
+    def _async_presence_state_changed(self, event) -> None:
+        """Handle presence entity state changes for away mode."""
+        entity_id = event.data.get("entity_id")
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+
+        if new_state is None:
+            return
+
+        # Ignore unavailable/unknown states
+        if new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+
+        was_away = self._is_away
+        self._is_away = self._check_presence_entity_state()
+
+        if was_away != self._is_away:
+            _LOGGER.info(
+                "Away mode changed: %s -> %s (presence entity %s: %s -> %s)",
+                "away" if was_away else "home",
+                "away" if self._is_away else "home",
+                entity_id,
+                old_state.state if old_state else "unknown",
+                new_state.state,
+            )
+            # Trigger async handling of away mode change
+            self.hass.async_create_task(self._async_handle_away_mode_change(was_away))
+
+    async def _async_handle_away_mode_change(self, was_away: bool) -> None:
+        """Handle away mode state change - update virtual thermostats.
+
+        When transitioning to away mode, apply temperature adjustments.
+        When transitioning to home mode, remove adjustments.
+        """
+        if self._is_away:
+            _LOGGER.info(
+                "Entering away mode. Heat adjustment: %s°, Cool adjustment: +%s°",
+                self.away_heat_temp_diff,
+                self.away_cool_temp_diff,
+            )
+        else:
+            _LOGGER.info("Leaving away mode. Restoring home temperatures.")
+
+        # Notify climate entities to update their displayed temperatures
+        self.async_set_updated_data(None)
+
+        # Trigger thermostat state evaluation with new temps
+        await self.async_update_thermostat_state()
+        await self.async_update_vents()
 
     async def async_update_vents(self) -> VentControlState | None:
         """Evaluate and execute vent control.

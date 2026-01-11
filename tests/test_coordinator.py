@@ -1467,3 +1467,210 @@ class TestInitialOpenSensorCheck:
         assert coordinator._pending_open_sensor == TEST_SENSOR_1
 
         await coordinator.async_shutdown()
+
+
+class TestAwayModeCoordinator:
+    """Tests for away mode functionality in the coordinator."""
+
+    async def test_away_mode_not_configured_by_default(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test that away mode is not configured when no presence entity is set."""
+        await coordinator.async_setup()
+        
+        assert coordinator.away_mode_configured is False
+        assert coordinator.is_away is False
+        assert coordinator.away_presence_entity == ""
+        
+        await coordinator.async_shutdown()
+
+    async def test_away_mode_configured_with_presence_entity(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that away mode is configured when presence entity is set."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_AWAY_HEAT_TEMP_DIFF,
+            CONF_AWAY_COOL_TEMP_DIFF,
+        )
+        
+        # Set up person entity
+        hass.states.async_set("person.test_user", "home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+        
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = "person.test_user"
+        options[CONF_AWAY_HEAT_TEMP_DIFF] = -3.0
+        options[CONF_AWAY_COOL_TEMP_DIFF] = 3.0
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        
+        assert coordinator.away_mode_configured is True
+        assert coordinator.away_presence_entity == "person.test_user"
+        assert coordinator.away_heat_temp_diff == -3.0
+        assert coordinator.away_cool_temp_diff == 3.0
+        assert coordinator.is_away is False  # Person is home
+        
+        await coordinator.async_shutdown()
+
+    async def test_away_mode_activates_when_not_home(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that away mode activates when presence entity shows not_home."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_AWAY_HEAT_TEMP_DIFF,
+            CONF_AWAY_COOL_TEMP_DIFF,
+        )
+        
+        # Set up person entity as away
+        hass.states.async_set("person.test_user", "not_home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+        
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = "person.test_user"
+        options[CONF_AWAY_HEAT_TEMP_DIFF] = -3.0
+        options[CONF_AWAY_COOL_TEMP_DIFF] = 3.0
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        
+        assert coordinator.is_away is True
+        
+        await coordinator.async_shutdown()
+
+    async def test_away_mode_responds_to_presence_changes(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that away mode responds to presence entity state changes."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_AWAY_HEAT_TEMP_DIFF,
+            CONF_AWAY_COOL_TEMP_DIFF,
+        )
+        
+        # Start with person home
+        hass.states.async_set("person.test_user", "home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+        
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = "person.test_user"
+        options[CONF_AWAY_HEAT_TEMP_DIFF] = -3.0
+        options[CONF_AWAY_COOL_TEMP_DIFF] = 3.0
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        
+        assert coordinator.is_away is False
+        
+        # Person leaves
+        hass.states.async_set("person.test_user", "not_home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+        
+        assert coordinator.is_away is True
+        
+        # Person returns
+        hass.states.async_set("person.test_user", "home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+        
+        assert coordinator.is_away is False
+        
+        await coordinator.async_shutdown()
+
+    async def test_away_mode_with_binary_sensor(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that away mode works with binary_sensor (off = away)."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_AWAY_HEAT_TEMP_DIFF,
+            CONF_AWAY_COOL_TEMP_DIFF,
+        )
+        
+        # Set up binary sensor as off (away)
+        hass.states.async_set("binary_sensor.home_occupied", STATE_OFF, {"friendly_name": "Home Occupied"})
+        await hass.async_block_till_done()
+        
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = "binary_sensor.home_occupied"
+        options[CONF_AWAY_HEAT_TEMP_DIFF] = -2.0
+        options[CONF_AWAY_COOL_TEMP_DIFF] = 2.0
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        
+        assert coordinator.is_away is True
+        
+        # Turn on (someone home)
+        hass.states.async_set("binary_sensor.home_occupied", STATE_ON, {"friendly_name": "Home Occupied"})
+        await hass.async_block_till_done()
+        
+        assert coordinator.is_away is False
+        
+        await coordinator.async_shutdown()
+
+    async def test_away_mode_cleanup_on_shutdown(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that presence listener is cleaned up on shutdown."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+        )
+        
+        hass.states.async_set("person.test_user", "home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+        
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = "person.test_user"
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        
+        assert coordinator._unsub_presence_state_change is not None
+        
+        await coordinator.async_shutdown()
+        
+        assert coordinator._unsub_presence_state_change is None

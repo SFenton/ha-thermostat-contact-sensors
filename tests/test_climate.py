@@ -911,3 +911,261 @@ class TestGlobalVirtualThermostat:
 
         await hass.config_entries.async_unload(config_entry.entry_id)
 
+
+class TestAwayMode:
+    """Tests for away mode temperature adjustments."""
+
+    @pytest.fixture
+    def config_entry_with_away_mode(self) -> MockConfigEntry:
+        """Create a config entry with away mode configured."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_AWAY_HEAT_TEMP_DIFF,
+            CONF_AWAY_COOL_TEMP_DIFF,
+        )
+        return MockConfigEntry(
+            domain=DOMAIN,
+            title="Test Thermostat with Away Mode",
+            version=3,
+            data={
+                "name": "Test Climate Thermostat",
+                CONF_THERMOSTAT: THERMOSTAT,
+                CONF_AREAS: {
+                    "living_room": {
+                        CONF_AREA_ID: "living_room",
+                        CONF_AREA_ENABLED: True,
+                        CONF_CONTACT_SENSORS: [CONTACT_SENSOR],
+                        CONF_BINARY_SENSORS: [MOTION_SENSOR],
+                        CONF_TEMPERATURE_SENSORS: [TEMP_SENSOR],
+                    },
+                },
+            },
+            options={
+                CONF_AWAY_PRESENCE_ENTITY: "person.test_user",
+                CONF_AWAY_HEAT_TEMP_DIFF: -3.0,
+                CONF_AWAY_COOL_TEMP_DIFF: 3.0,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_away_mode_not_active_when_home(
+        self,
+        hass: HomeAssistant,
+        config_entry_with_away_mode: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that away mode is not active when presence entity shows home."""
+        # Set up person entity as home
+        hass.states.async_set("person.test_user", "home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+
+        config_entry_with_away_mode.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry_with_away_mode.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry_with_away_mode.runtime_data
+        
+        # Should not be in away mode
+        assert coordinator.is_away is False
+        assert coordinator.away_mode_configured is True
+
+        # Temperatures should not have away adjustment
+        area_thermostat = coordinator.area_thermostats["living_room"]
+        base_heat = area_thermostat._target_temp_low
+        base_cool = area_thermostat._target_temp_high
+        
+        # Effective temps should equal base temps
+        assert area_thermostat.effective_target_temp_low == base_heat
+        assert area_thermostat.effective_target_temp_high == base_cool
+        
+        # Display temps (target_temperature_low/high) should also equal base
+        assert area_thermostat.target_temperature_low == base_heat
+        assert area_thermostat.target_temperature_high == base_cool
+
+        await hass.config_entries.async_unload(config_entry_with_away_mode.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_away_mode_active_when_not_home(
+        self,
+        hass: HomeAssistant,
+        config_entry_with_away_mode: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that away mode is active when presence entity shows not_home."""
+        # Set up person entity as away
+        hass.states.async_set("person.test_user", "not_home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+
+        config_entry_with_away_mode.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry_with_away_mode.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry_with_away_mode.runtime_data
+        
+        # Should be in away mode
+        assert coordinator.is_away is True
+        assert coordinator.away_mode_configured is True
+
+        await hass.config_entries.async_unload(config_entry_with_away_mode.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_effective_temps_adjusted_when_away(
+        self,
+        hass: HomeAssistant,
+        config_entry_with_away_mode: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that effective temperatures are adjusted when in away mode."""
+        # Set up person entity as away
+        hass.states.async_set("person.test_user", "not_home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+
+        config_entry_with_away_mode.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry_with_away_mode.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry_with_away_mode.runtime_data
+        area_thermostat = coordinator.area_thermostats["living_room"]
+        
+        base_heat = area_thermostat._target_temp_low
+        base_cool = area_thermostat._target_temp_high
+        
+        # Effective temps should be adjusted
+        # Heat: base + (-3.0) = base - 3
+        # Cool: base + 3.0 = base + 3
+        assert area_thermostat.effective_target_temp_low == base_heat - 3.0
+        assert area_thermostat.effective_target_temp_high == base_cool + 3.0
+        
+        # Display temps should NOT be adjusted (user sees home temps)
+        assert area_thermostat.target_temperature_low == base_heat
+        assert area_thermostat.target_temperature_high == base_cool
+
+        await hass.config_entries.async_unload(config_entry_with_away_mode.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_display_temps_unchanged_when_away(
+        self,
+        hass: HomeAssistant,
+        config_entry_with_away_mode: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that displayed temperatures remain the home values when away."""
+        # Set up person entity as away
+        hass.states.async_set("person.test_user", "not_home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+
+        config_entry_with_away_mode.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry_with_away_mode.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry_with_away_mode.runtime_data
+        area_thermostat = coordinator.area_thermostats["living_room"]
+        
+        # Set known values
+        await area_thermostat.async_set_temperature(target_temp_low=70.0, target_temp_high=78.0)
+        await hass.async_block_till_done()
+        
+        # Display temps should be what user set (home values)
+        assert area_thermostat.target_temperature_low == 70.0
+        assert area_thermostat.target_temperature_high == 78.0
+        
+        # Effective temps should be adjusted
+        assert area_thermostat.effective_target_temp_low == 67.0  # 70 - 3
+        assert area_thermostat.effective_target_temp_high == 81.0  # 78 + 3
+
+        await hass.config_entries.async_unload(config_entry_with_away_mode.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_away_mode_extra_attributes(
+        self,
+        hass: HomeAssistant,
+        config_entry_with_away_mode: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that away mode info is exposed in extra state attributes."""
+        # Set up person entity as away
+        hass.states.async_set("person.test_user", "not_home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+
+        config_entry_with_away_mode.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry_with_away_mode.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry_with_away_mode.runtime_data
+        area_thermostat = coordinator.area_thermostats["living_room"]
+        
+        # Set known values
+        await area_thermostat.async_set_temperature(target_temp_low=70.0, target_temp_high=78.0)
+        await hass.async_block_till_done()
+        
+        attrs = area_thermostat.extra_state_attributes
+        
+        assert attrs["away_mode_active"] is True
+        assert attrs["effective_heat_target"] == 67.0
+        assert attrs["effective_cool_target"] == 81.0
+        assert attrs["away_heat_adjustment"] == -3.0
+        assert attrs["away_cool_adjustment"] == 3.0
+
+        await hass.config_entries.async_unload(config_entry_with_away_mode.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_away_mode_not_configured(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test behavior when away mode is not configured."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry.runtime_data
+        
+        # Should not be configured
+        assert coordinator.away_mode_configured is False
+        assert coordinator.is_away is False
+        
+        # Effective temps should equal display temps
+        area_thermostat = coordinator.area_thermostats["living_room"]
+        assert area_thermostat.effective_target_temp_low == area_thermostat.target_temperature_low
+        assert area_thermostat.effective_target_temp_high == area_thermostat.target_temperature_high
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_thermostat_away_mode(
+        self,
+        hass: HomeAssistant,
+        config_entry_with_away_mode: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test that global thermostat also respects away mode."""
+        # Set up person entity as away
+        hass.states.async_set("person.test_user", "not_home", {"friendly_name": "Test User"})
+        await hass.async_block_till_done()
+
+        config_entry_with_away_mode.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry_with_away_mode.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry_with_away_mode.runtime_data
+        global_thermostat = coordinator.global_thermostat
+        
+        base_heat = global_thermostat._target_temp_low
+        base_cool = global_thermostat._target_temp_high
+        
+        # Display temps should be base (home) values
+        assert global_thermostat.target_temperature_low == base_heat
+        assert global_thermostat.target_temperature_high == base_cool
+        
+        # Effective temps should be adjusted
+        assert global_thermostat.effective_target_temp_low == base_heat - 3.0
+        assert global_thermostat.effective_target_temp_high == base_cool + 3.0
+        
+        # Extra attributes should show away mode info
+        attrs = global_thermostat.extra_state_attributes
+        assert attrs["away_mode_active"] is True
+
+        await hass.config_entries.async_unload(config_entry_with_away_mode.entry_id)
+

@@ -46,6 +46,11 @@ CONF_AREA_VENT_OPEN_DELAY_SECONDS = "area_vent_open_delay_seconds"
 # User override behavior
 CONF_RESPECT_USER_OFF = "respect_user_off"
 
+# Away mode configuration keys
+CONF_AWAY_PRESENCE_ENTITY = "away_presence_entity"
+CONF_AWAY_HEAT_TEMP_DIFF = "away_heat_temp_diff"
+CONF_AWAY_COOL_TEMP_DIFF = "away_cool_temp_diff"
+
 # Defaults
 DEFAULT_OPEN_TIMEOUT = 5  # minutes
 DEFAULT_CLOSE_TIMEOUT = 5  # minutes
@@ -59,6 +64,8 @@ DEFAULT_UNOCCUPIED_COOLING_THRESHOLD = 3.0  # degrees above cool target
 DEFAULT_MIN_VENTS_OPEN = 5  # minimum number of vents that must remain open
 DEFAULT_VENT_OPEN_DELAY_SECONDS = 30  # seconds after occupancy before vents open
 DEFAULT_VENT_DEBOUNCE_SECONDS = 30  # seconds between vent state changes
+DEFAULT_AWAY_HEAT_TEMP_DIFF = -3.0  # degrees to lower heat target when away
+DEFAULT_AWAY_COOL_TEMP_DIFF = 3.0  # degrees to raise cool target when away
 DEFAULT_NOTIFY_TITLE_PAUSED = "Thermostat · Paused"
 DEFAULT_NOTIFY_MESSAGE_PAUSED = (
     "{{ trigger_sensor_name }} has been open for {{ open_timeout }} minutes. "

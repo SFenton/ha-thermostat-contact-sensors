@@ -574,6 +574,8 @@ class ThermostatController:
         - Heating target = MAX of all area heating targets
         - Cooling target = MIN of all area cooling targets
 
+        When away mode is active, returns the effective (adjusted) temperatures.
+
         Falls back to physical thermostat if global virtual thermostat is not available.
 
         Args:
@@ -592,8 +594,9 @@ class ThermostatController:
         if self._global_thermostat_getter:
             global_thermostat = self._global_thermostat_getter()
             if global_thermostat is not None:
-                target_temp_low = global_thermostat.target_temperature_low
-                target_temp_high = global_thermostat.target_temperature_high
+                # Use effective temps which include away mode adjustment
+                target_temp_low = global_thermostat.effective_target_temp_low
+                target_temp_high = global_thermostat.effective_target_temp_high
 
                 # For HEAT/COOL modes, use low/high respectively
                 # Use override if provided, otherwise check current HVAC mode
@@ -717,8 +720,9 @@ class ThermostatController:
             area_thermostats = self._area_thermostats_getter()
             if area_thermostats and area_id in area_thermostats:
                 area_thermostat = area_thermostats[area_id]
-                target_temp_low = area_thermostat.target_temperature_low
-                target_temp_high = area_thermostat.target_temperature_high
+                # Use effective temps which include away mode adjustment
+                target_temp_low = area_thermostat.effective_target_temp_low
+                target_temp_high = area_thermostat.effective_target_temp_high
                 
                 # For HEAT mode, target_temp should be target_temp_low
                 # For COOL mode, target_temp should be target_temp_high

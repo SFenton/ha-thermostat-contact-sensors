@@ -225,12 +225,36 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
 
     @property
     def target_temperature_low(self) -> float:
-        """Return the low target temperature (heating target)."""
+        """Return the low target temperature (heating target).
+        
+        This returns the base/home value - what the user will feel when home.
+        For the actual control target (with away adjustment), use effective_target_temp_low.
+        """
         return self._target_temp_low
 
     @property
     def target_temperature_high(self) -> float:
-        """Return the high target temperature (cooling target)."""
+        """Return the high target temperature (cooling target).
+        
+        This returns the base/home value - what the user will feel when home.
+        For the actual control target (with away adjustment), use effective_target_temp_high.
+        """
+        return self._target_temp_high
+
+    @property
+    def effective_target_temp_low(self) -> float:
+        """Return the effective heating target with away adjustment applied."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        if coordinator.is_away and coordinator.away_mode_configured:
+            return self._target_temp_low + coordinator.away_heat_temp_diff
+        return self._target_temp_low
+
+    @property
+    def effective_target_temp_high(self) -> float:
+        """Return the effective cooling target with away adjustment applied."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        if coordinator.is_away and coordinator.away_mode_configured:
+            return self._target_temp_high + coordinator.away_cool_temp_diff
         return self._target_temp_high
 
     @property
@@ -274,12 +298,16 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     ) -> None:
         """Set new target temperatures.
         
+        The values set here are the base/home temperatures - what the user will
+        feel when home. Away mode adjustments are applied internally for control.
+        
         Args:
             _from_global: If True, skip notifying global thermostat (to prevent loops)
             **kwargs: Standard Home Assistant climate arguments
         """
         low = kwargs.get("target_temp_low")
         high = kwargs.get("target_temp_high")
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
 
         if low is not None:
             self._target_temp_low = float(low)
@@ -307,7 +335,6 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
 
         # Notify global thermostat to recalculate (unless this came from global)
         if not _from_global:
-            coordinator: ThermostatContactSensorsCoordinator = self.coordinator
             if hasattr(coordinator, "global_thermostat") and coordinator.global_thermostat:
                 coordinator.global_thermostat.async_recalculate_from_areas()
 
@@ -338,6 +365,16 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         from .const import CONF_TEMPERATURE_SENSORS
         temp_sensors = area_config.get(CONF_TEMPERATURE_SENSORS, [])
         attrs["temperature_sensors"] = temp_sensors
+
+        # Away mode attributes
+        if coordinator.away_mode_configured:
+            attrs["away_mode_active"] = coordinator.is_away
+            if coordinator.is_away:
+                # Show what we're actually targeting right now
+                attrs["effective_heat_target"] = self.effective_target_temp_low
+                attrs["effective_cool_target"] = self.effective_target_temp_high
+                attrs["away_heat_adjustment"] = coordinator.away_heat_temp_diff
+                attrs["away_cool_adjustment"] = coordinator.away_cool_temp_diff
 
         return attrs
 
@@ -502,21 +539,48 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
 
     @property
     def target_temperature(self) -> float | None:
-        """Return the target temperature for HEAT or COOL mode."""
+        """Return the target temperature for HEAT or COOL mode.
+        
+        This returns the base/home value - what the user will feel when home.
+        """
         if self._hvac_mode == HVACMode.HEAT:
-            return self._target_temp_low
+            return self.target_temperature_low
         elif self._hvac_mode == HVACMode.COOL:
-            return self._target_temp_high
+            return self.target_temperature_high
         return None
 
     @property
     def target_temperature_low(self) -> float:
-        """Return the low target temperature (heating target)."""
+        """Return the low target temperature (heating target).
+        
+        This returns the base/home value - what the user will feel when home.
+        For the actual control target (with away adjustment), use effective_target_temp_low.
+        """
         return self._target_temp_low
 
     @property
     def target_temperature_high(self) -> float:
-        """Return the high target temperature (cooling target)."""
+        """Return the high target temperature (cooling target).
+        
+        This returns the base/home value - what the user will feel when home.
+        For the actual control target (with away adjustment), use effective_target_temp_high.
+        """
+        return self._target_temp_high
+
+    @property
+    def effective_target_temp_low(self) -> float:
+        """Return the effective heating target with away adjustment applied."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        if coordinator.is_away and coordinator.away_mode_configured:
+            return self._target_temp_low + coordinator.away_heat_temp_diff
+        return self._target_temp_low
+
+    @property
+    def effective_target_temp_high(self) -> float:
+        """Return the effective cooling target with away adjustment applied."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        if coordinator.is_away and coordinator.away_mode_configured:
+            return self._target_temp_high + coordinator.away_cool_temp_diff
         return self._target_temp_high
 
     @property
@@ -671,7 +735,7 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
             attrs["monitored_areas"] = list(coordinator.area_thermostats.keys())
             attrs["area_count"] = len(coordinator.area_thermostats)
 
-            # Show individual area targets
+            # Show individual area targets (base/home values)
             area_targets = {}
             for area_id, area_thermostat in coordinator.area_thermostats.items():
                 area_targets[area_id] = {
@@ -679,5 +743,16 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
                     "cool": area_thermostat.target_temperature_high,
                 }
             attrs["area_targets"] = area_targets
+
+        # Away mode attributes
+        if coordinator.away_mode_configured:
+            attrs["away_mode_active"] = coordinator.is_away
+            if coordinator.is_away:
+                # Show what we're actually targeting right now
+                attrs["effective_heat_target"] = self.effective_target_temp_low
+                attrs["effective_cool_target"] = self.effective_target_temp_high
+                attrs["away_heat_adjustment"] = coordinator.away_heat_temp_diff
+                attrs["away_cool_adjustment"] = coordinator.away_cool_temp_diff
+                attrs["presence_entity"] = coordinator.away_presence_entity
 
         return attrs

@@ -2269,14 +2269,20 @@ class TestAreaSpecificTargets:
         living_room = MagicMock()
         living_room.target_temperature_low = 71.0
         living_room.target_temperature_high = 78.0
+        living_room.effective_target_temp_low = 71.0
+        living_room.effective_target_temp_high = 78.0
 
         office = MagicMock()
         office.target_temperature_low = 72.0
         office.target_temperature_high = 79.0
+        office.effective_target_temp_low = 72.0
+        office.effective_target_temp_high = 79.0
 
         music_room = MagicMock()
         music_room.target_temperature_low = 71.0
         music_room.target_temperature_high = 78.0
+        music_room.effective_target_temp_low = 71.0
+        music_room.effective_target_temp_high = 78.0
 
         return {
             "living_room": living_room,
@@ -2442,11 +2448,15 @@ class TestAreaSpecificTargets:
         living_room_therm = MagicMock()
         living_room_therm.target_temperature_low = 70.0
         living_room_therm.target_temperature_high = 78.0
+        living_room_therm.effective_target_temp_low = 70.0
+        living_room_therm.effective_target_temp_high = 78.0
 
         # Office: 72/79 targets (71° is NOT satiated for heat)
         office_therm = MagicMock()
         office_therm.target_temperature_low = 72.0
         office_therm.target_temperature_high = 79.0
+        office_therm.effective_target_temp_low = 72.0
+        office_therm.effective_target_temp_high = 79.0
 
         area_thermostats = {
             "living_room": living_room_therm,
@@ -2510,6 +2520,8 @@ class TestAreaSpecificTargets:
         music_room_therm = MagicMock()
         music_room_therm.target_temperature_low = 71.0
         music_room_therm.target_temperature_high = 78.0
+        music_room_therm.effective_target_temp_low = 71.0
+        music_room_therm.effective_target_temp_high = 78.0
 
         controller = ThermostatController(
             hass=hass,
@@ -2557,6 +2569,8 @@ class TestAreaSpecificTargets:
         guest_room_therm = MagicMock()
         guest_room_therm.target_temperature_low = 65.0
         guest_room_therm.target_temperature_high = 78.0
+        guest_room_therm.effective_target_temp_low = 65.0
+        guest_room_therm.effective_target_temp_high = 78.0
 
         controller = ThermostatController(
             hass=hass,
@@ -2607,14 +2621,20 @@ class TestAreaSpecificTargets:
         living_room_therm = MagicMock()
         living_room_therm.target_temperature_low = 71.0
         living_room_therm.target_temperature_high = 78.0
+        living_room_therm.effective_target_temp_low = 71.0
+        living_room_therm.effective_target_temp_high = 78.0
 
         music_room_therm = MagicMock()
         music_room_therm.target_temperature_low = 71.0
         music_room_therm.target_temperature_high = 78.0
+        music_room_therm.effective_target_temp_low = 71.0
+        music_room_therm.effective_target_temp_high = 78.0
 
         office_therm = MagicMock()
         office_therm.target_temperature_low = 71.0  # Office satiated at 72
         office_therm.target_temperature_high = 79.0
+        office_therm.effective_target_temp_low = 71.0
+        office_therm.effective_target_temp_high = 79.0
 
         area_thermostats = {
             "living_room": living_room_therm,
@@ -2670,3 +2690,94 @@ class TestAreaSpecificTargets:
         # Thermostat already on (HEAT_COOL mode), so action is NONE
         assert state.recommended_action == ThermostatAction.NONE
         assert "active rooms need conditioning" in state.action_reason or "critical rooms" in state.action_reason
+
+
+# =============================================================================
+# Tests for Away Mode Integration with Thermostat Control
+# =============================================================================
+
+
+class TestThermostatControlAwayMode:
+    """Tests for away mode integration with thermostat control.
+    
+    Note: The away mode logic is primarily handled in the climate.py module
+    through the effective_target_temp_low/high properties. The thermostat
+    controller uses these effective temps via get_area_target_temperatures.
+    These tests verify the satiation logic works correctly with away-adjusted temps.
+    """
+
+    def test_away_mode_heating_more_permissive(self):
+        """Test that away mode allows lower temps before heating kicks in."""
+        # Room is at 66°F - above the away target but below home target
+        # With away target of 65 (68-3) and deadband of 0.5:
+        # Room should be "satiated" at 65.5 or above
+        readings = {"sensor.temp": 66.0}
+        is_satiated, sensor, temp = is_room_satiated_for_heat(
+            readings, 65.0, 0.5  # Away mode target
+        )
+        assert is_satiated is True
+
+        # Same room temp with HOME target (68) should NOT be satiated
+        is_satiated_home, _, _ = is_room_satiated_for_heat(
+            readings, 68.0, 0.5  # Home target
+        )
+        assert is_satiated_home is False
+
+    def test_away_mode_cooling_more_permissive(self):
+        """Test that away mode allows higher temps before cooling kicks in."""
+        # Room is at 76°F - below the away target but above home target
+        # With away target of 78 (75+3) and deadband of 0.5:
+        # Room should be "satiated" at 77.5 or below
+        readings = {"sensor.temp": 76.0}
+        is_satiated, sensor, temp = is_room_satiated_for_cool(
+            readings, 78.0, 0.5  # Away mode target
+        )
+        assert is_satiated is True
+
+        # Same room temp with HOME target (75) should NOT be satiated
+        is_satiated_home, _, _ = is_room_satiated_for_cool(
+            readings, 75.0, 0.5  # Home target
+        )
+        assert is_satiated_home is False
+
+    def test_away_mode_heat_cool_more_permissive(self):
+        """Test away mode in heat_cool mode allows wider temp range."""
+        # At 66°F with away targets of 65/78 (home was 68/75)
+        # Heating should be satiated (66 > 65.5)
+        # Cooling should be satiated (66 < 77.5)
+        readings = {"sensor.temp": 66.0}
+        is_satiated, sensor, temp = is_room_satiated_for_heat_cool(
+            readings, 65.0, 78.0, 0.5  # Away targets
+        )
+        assert is_satiated is True
+
+        # Same temp with HOME targets (68/75) should NOT be satiated for heat
+        is_satiated_home, _, _ = is_room_satiated_for_heat_cool(
+            readings, 68.0, 75.0, 0.5  # Home targets
+        )
+        assert is_satiated_home is False  # 66 < 67.5 (68 - 0.5)
+
+    def test_get_area_temps_uses_effective_temps(self, hass: HomeAssistant):
+        """Test that get_area_target_temperatures uses effective temps."""
+        # Create mock virtual thermostat with away mode applied
+        mock_vt = MagicMock()
+        mock_vt.target_temperature_low = 68.0  # Display value
+        mock_vt.target_temperature_high = 75.0  # Display value
+        mock_vt.effective_target_temp_low = 65.0  # Away mode value (68 - 3)
+        mock_vt.effective_target_temp_high = 78.0  # Away mode value (75 + 3)
+
+        mock_occupancy_tracker = MagicMock()
+
+        controller = ThermostatController(
+            hass=hass,
+            thermostat_entity_id="climate.test",
+            occupancy_tracker=mock_occupancy_tracker,
+            area_thermostats_getter=lambda: {"living_room": mock_vt},
+        )
+
+        # Get area target temps - should return effective temps
+        target, low, high = controller.get_area_target_temperatures("living_room")
+
+        # The controller uses effective_target_temp_low/high for control
+        assert low == 65.0
+        assert high == 78.0

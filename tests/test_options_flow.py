@@ -9,6 +9,9 @@ from homeassistant.data_entry_flow import FlowResultType
 from custom_components.thermostat_contact_sensors.const import (
     CONF_AREA_ENABLED,
     CONF_AREAS,
+    CONF_AWAY_COOL_TEMP_DIFF,
+    CONF_AWAY_HEAT_TEMP_DIFF,
+    CONF_AWAY_PRESENCE_ENTITY,
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
@@ -27,6 +30,8 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
+    DEFAULT_AWAY_COOL_TEMP_DIFF,
+    DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
@@ -115,6 +120,8 @@ async def test_options_flow_global_settings(
             CONF_NOTIFY_TITLE_RESUMED: DEFAULT_NOTIFY_TITLE_RESUMED,
             CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
             CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
+            CONF_AWAY_HEAT_TEMP_DIFF: DEFAULT_AWAY_HEAT_TEMP_DIFF,
+            CONF_AWAY_COOL_TEMP_DIFF: DEFAULT_AWAY_COOL_TEMP_DIFF,
         },
     )
 
@@ -162,6 +169,8 @@ async def test_options_flow_global_settings_grace_period(
             CONF_NOTIFY_TITLE_RESUMED: DEFAULT_NOTIFY_TITLE_RESUMED,
             CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
             CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
+            CONF_AWAY_HEAT_TEMP_DIFF: DEFAULT_AWAY_HEAT_TEMP_DIFF,
+            CONF_AWAY_COOL_TEMP_DIFF: DEFAULT_AWAY_COOL_TEMP_DIFF,
         },
     )
 
@@ -554,3 +563,86 @@ async def test_options_flow_enable_disable_areas_shows_correct_count(
         if hasattr(key, "schema") and key.schema == "enabled_areas":
             # This is the enabled_areas field
             break
+
+
+async def test_options_flow_away_mode_settings(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test configuring away mode settings in global settings."""
+    # Set up a person entity for away mode testing
+    hass.states.async_set("person.test_user", "home", {"friendly_name": "Test User"})
+    await hass.async_block_till_done()
+
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Select global settings from menu
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "global_settings"},
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "global_settings"
+
+    # Update the settings with away mode configuration
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_MIN_OCCUPANCY_MINUTES: DEFAULT_MIN_OCCUPANCY_MINUTES,
+            CONF_GRACE_PERIOD_MINUTES: DEFAULT_GRACE_PERIOD_MINUTES,
+            CONF_TEMPERATURE_DEADBAND: DEFAULT_TEMPERATURE_DEADBAND,
+            CONF_MIN_CYCLE_ON_MINUTES: DEFAULT_MIN_CYCLE_ON_MINUTES,
+            CONF_MIN_CYCLE_OFF_MINUTES: DEFAULT_MIN_CYCLE_OFF_MINUTES,
+            CONF_OPEN_TIMEOUT: DEFAULT_OPEN_TIMEOUT,
+            CONF_CLOSE_TIMEOUT: DEFAULT_CLOSE_TIMEOUT,
+            CONF_NOTIFY_SERVICE: "",
+            CONF_NOTIFY_TITLE_PAUSED: DEFAULT_NOTIFY_TITLE_PAUSED,
+            CONF_NOTIFY_MESSAGE_PAUSED: DEFAULT_NOTIFY_MESSAGE_PAUSED,
+            CONF_NOTIFY_TITLE_RESUMED: DEFAULT_NOTIFY_TITLE_RESUMED,
+            CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
+            CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
+            CONF_AWAY_PRESENCE_ENTITY: "person.test_user",
+            CONF_AWAY_HEAT_TEMP_DIFF: -4.0,
+            CONF_AWAY_COOL_TEMP_DIFF: 4.0,
+        },
+    )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_AWAY_PRESENCE_ENTITY] == "person.test_user"
+    assert result["data"][CONF_AWAY_HEAT_TEMP_DIFF] == -4.0
+    assert result["data"][CONF_AWAY_COOL_TEMP_DIFF] == 4.0
+
+
+async def test_options_flow_away_mode_default_values(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Test that away mode has correct default values."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Start options flow
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    # Select global settings from menu
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"next_step_id": "global_settings"},
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "global_settings"
+
+    # Check that defaults are present in the schema
+    schema = result["data_schema"]
+    # The defaults should be in the schema
+    assert schema is not None

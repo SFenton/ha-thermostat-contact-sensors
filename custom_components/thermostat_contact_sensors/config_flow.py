@@ -23,6 +23,9 @@ from .const import (
     CONF_AREA_MIN_VENTS_OPEN,
     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_AREAS,
+    CONF_AWAY_COOL_TEMP_DIFF,
+    CONF_AWAY_HEAT_TEMP_DIFF,
+    CONF_AWAY_PRESENCE_ENTITY,
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
@@ -47,6 +50,8 @@ from .const import (
     CONF_VENT_DEBOUNCE_SECONDS,
     CONF_VENT_OPEN_DELAY_SECONDS,
     CONF_VENTS,
+    DEFAULT_AWAY_COOL_TEMP_DIFF,
+    DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
@@ -348,8 +353,15 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.ConfigFlowResult:
         """Handle global settings (timeouts, notifications)."""
         if user_input is not None:
+            # Remove empty entity values that entity selectors can't handle
+            if CONF_AWAY_PRESENCE_ENTITY in user_input and not user_input[CONF_AWAY_PRESENCE_ENTITY]:
+                del user_input[CONF_AWAY_PRESENCE_ENTITY]
             # Merge with existing options
             new_options = {**self.config_entry.options, **user_input}
+            # If away presence entity was cleared, make sure to remove it from options
+            if CONF_AWAY_PRESENCE_ENTITY not in user_input and CONF_AWAY_PRESENCE_ENTITY in new_options:
+                # User didn't provide a value - keep the existing one if any
+                pass
             return self.async_create_entry(title="", data=new_options)
 
         options = self.config_entry.options
@@ -568,6 +580,47 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                         step=5,
                         unit_of_measurement="seconds",
                         mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                # Away mode settings
+                vol.Optional(
+                    CONF_AWAY_PRESENCE_ENTITY,
+                    default="",
+                ): vol.Any(
+                    "",
+                    selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain=["person", "group", "binary_sensor", "input_boolean"],
+                            multiple=False,
+                        )
+                    ),
+                ),
+                vol.Optional(
+                    CONF_AWAY_HEAT_TEMP_DIFF,
+                    default=options.get(
+                        CONF_AWAY_HEAT_TEMP_DIFF, DEFAULT_AWAY_HEAT_TEMP_DIFF
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=-10.0,
+                        max=0.0,
+                        step=0.1,
+                        unit_of_measurement="°",
+                        mode=selector.NumberSelectorMode.SLIDER,
+                    )
+                ),
+                vol.Optional(
+                    CONF_AWAY_COOL_TEMP_DIFF,
+                    default=options.get(
+                        CONF_AWAY_COOL_TEMP_DIFF, DEFAULT_AWAY_COOL_TEMP_DIFF
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=10.0,
+                        step=0.1,
+                        unit_of_measurement="°",
+                        mode=selector.NumberSelectorMode.SLIDER,
                     )
                 ),
             }
