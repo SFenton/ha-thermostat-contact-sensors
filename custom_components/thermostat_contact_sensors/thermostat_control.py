@@ -37,6 +37,8 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    DEFAULT_COOLING_BOOST_OFFSET,
+    DEFAULT_HEATING_BOOST_OFFSET,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_TEMPERATURE_DEADBAND,
@@ -338,6 +340,8 @@ class ThermostatController:
         min_cycle_off_minutes: int = DEFAULT_MIN_CYCLE_OFF_MINUTES,
         unoccupied_heating_threshold: float = DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
         unoccupied_cooling_threshold: float = DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
+        heating_boost_offset: float = DEFAULT_HEATING_BOOST_OFFSET,
+        cooling_boost_offset: float = DEFAULT_COOLING_BOOST_OFFSET,
         area_thermostats_getter: callable | None = None,
         global_thermostat_getter: callable | None = None,
     ) -> None:
@@ -355,6 +359,10 @@ class ThermostatController:
                 heating in unoccupied rooms.
             unoccupied_cooling_threshold: Degrees above cool target that triggers
                 cooling in unoccupied rooms.
+            heating_boost_offset: Degrees to add to the heat setpoint when turning on.
+                This ensures the physical thermostat calls for heat.
+            cooling_boost_offset: Degrees to subtract from cool setpoint when turning on.
+                This ensures the physical thermostat calls for cooling.
             area_thermostats_getter: Callback to get dict of area_id -> AreaVirtualThermostat.
             global_thermostat_getter: Callback to get the GlobalVirtualThermostat.
         """
@@ -369,6 +377,8 @@ class ThermostatController:
         self._min_cycle_off_minutes = min_cycle_off_minutes
         self._unoccupied_heating_threshold = unoccupied_heating_threshold
         self._unoccupied_cooling_threshold = unoccupied_cooling_threshold
+        self._heating_boost_offset = heating_boost_offset
+        self._cooling_boost_offset = cooling_boost_offset
 
         # State tracking
         self._is_paused_by_contact_sensors = False
@@ -451,6 +461,26 @@ class ThermostatController:
     def unoccupied_cooling_threshold(self, value: float) -> None:
         """Set the unoccupied cooling threshold."""
         self._unoccupied_cooling_threshold = value
+
+    @property
+    def heating_boost_offset(self) -> float:
+        """Return the heating boost offset."""
+        return self._heating_boost_offset
+
+    @heating_boost_offset.setter
+    def heating_boost_offset(self, value: float) -> None:
+        """Set the heating boost offset."""
+        self._heating_boost_offset = value
+
+    @property
+    def cooling_boost_offset(self) -> float:
+        """Return the cooling boost offset."""
+        return self._cooling_boost_offset
+
+    @cooling_boost_offset.setter
+    def cooling_boost_offset(self, value: float) -> None:
+        """Set the cooling boost offset."""
+        self._cooling_boost_offset = value
 
     @property
     def is_paused_by_contact_sensors(self) -> bool:
@@ -1409,6 +1439,127 @@ class ThermostatController:
             },
         }
 
+    async def _apply_boost_temperature(
+        self,
+        target_mode: HVACMode | str,
+        thermostat_state: ThermostatState,
+    ) -> None:
+        """Apply the target temperature (with optional boost offset) to the physical thermostat.
+
+        This ensures the physical thermostat has the correct target temperature set,
+        including any away mode adjustments. The optional boost offset raises the heat
+        setpoint (or lowers the cool setpoint) to overcome the thermostat's internal
+        deadband and ensure it actually calls for heating/cooling.
+
+        Args:
+            target_mode: The HVAC mode being set (heat, cool, heat_cool).
+            thermostat_state: The current thermostat state with target temperatures.
+        """
+        # Convert string mode to HVACMode if needed
+        if isinstance(target_mode, str):
+            try:
+                target_mode = HVACMode(target_mode)
+            except ValueError:
+                _LOGGER.debug("Unknown HVAC mode %s, skipping temperature set", target_mode)
+                return
+
+        # Get current target temperatures (these already include away mode adjustments)
+        target_temp = thermostat_state.target_temperature
+        target_temp_low = thermostat_state.target_temp_low
+        target_temp_high = thermostat_state.target_temp_high
+
+        if target_mode == HVACMode.HEAT:
+            if target_temp is not None:
+                final_temp = target_temp + self._heating_boost_offset
+                if self._heating_boost_offset != 0.0:
+                    _LOGGER.info(
+                        "Setting %s temperature to %.1f (target %.1f + boost %.1f)",
+                        self.thermostat_entity_id,
+                        final_temp,
+                        target_temp,
+                        self._heating_boost_offset,
+                    )
+                else:
+                    _LOGGER.info(
+                        "Setting %s temperature to %.1f",
+                        self.thermostat_entity_id,
+                        final_temp,
+                    )
+                await self.hass.services.async_call(
+                    "climate",
+                    "set_temperature",
+                    {
+                        "entity_id": self.thermostat_entity_id,
+                        "temperature": final_temp,
+                    },
+                    blocking=True,
+                )
+
+        elif target_mode == HVACMode.COOL:
+            if target_temp is not None:
+                final_temp = target_temp - self._cooling_boost_offset
+                if self._cooling_boost_offset != 0.0:
+                    _LOGGER.info(
+                        "Setting %s temperature to %.1f (target %.1f - boost %.1f)",
+                        self.thermostat_entity_id,
+                        final_temp,
+                        target_temp,
+                        self._cooling_boost_offset,
+                    )
+                else:
+                    _LOGGER.info(
+                        "Setting %s temperature to %.1f",
+                        self.thermostat_entity_id,
+                        final_temp,
+                    )
+                await self.hass.services.async_call(
+                    "climate",
+                    "set_temperature",
+                    {
+                        "entity_id": self.thermostat_entity_id,
+                        "temperature": final_temp,
+                    },
+                    blocking=True,
+                )
+
+        elif target_mode == HVACMode.HEAT_COOL:
+            # For heat_cool mode, set both setpoints
+            if target_temp_low is not None or target_temp_high is not None:
+                service_data: dict[str, Any] = {"entity_id": self.thermostat_entity_id}
+
+                if target_temp_low is not None:
+                    service_data["target_temp_low"] = target_temp_low + self._heating_boost_offset
+
+                if target_temp_high is not None:
+                    service_data["target_temp_high"] = target_temp_high - self._cooling_boost_offset
+
+                has_boost = self._heating_boost_offset != 0.0 or self._cooling_boost_offset != 0.0
+                if has_boost:
+                    _LOGGER.info(
+                        "Setting %s temps to low=%.1f, high=%.1f "
+                        "(targets: low=%.1f, high=%.1f, boosts: heat=+%.1f, cool=-%.1f)",
+                        self.thermostat_entity_id,
+                        service_data.get("target_temp_low", 0),
+                        service_data.get("target_temp_high", 0),
+                        target_temp_low or 0,
+                        target_temp_high or 0,
+                        self._heating_boost_offset,
+                        self._cooling_boost_offset,
+                    )
+                else:
+                    _LOGGER.info(
+                        "Setting %s temps to low=%.1f, high=%.1f",
+                        self.thermostat_entity_id,
+                        service_data.get("target_temp_low", 0),
+                        service_data.get("target_temp_high", 0),
+                    )
+                await self.hass.services.async_call(
+                    "climate",
+                    "set_temperature",
+                    service_data,
+                    blocking=True,
+                )
+
     async def async_execute_action(
         self,
         thermostat_state: ThermostatState,
@@ -1460,6 +1611,10 @@ class ThermostatController:
                 },
                 blocking=True,
             )
+
+            # Apply boost offset to temperature setpoint to ensure thermostat calls for heat/cool
+            # This overcomes the physical thermostat's internal deadband
+            await self._apply_boost_temperature(target_mode, thermostat_state)
 
             # Set fan to ON when heating/cooling to ensure airflow
             if self.supports_fan_mode():

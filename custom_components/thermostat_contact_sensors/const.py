@@ -33,6 +33,8 @@ CONF_MIN_CYCLE_ON_MINUTES = "min_cycle_on_minutes"
 CONF_MIN_CYCLE_OFF_MINUTES = "min_cycle_off_minutes"
 CONF_UNOCCUPIED_HEATING_THRESHOLD = "unoccupied_heating_threshold"
 CONF_UNOCCUPIED_COOLING_THRESHOLD = "unoccupied_cooling_threshold"
+CONF_HEATING_BOOST_OFFSET = "heating_boost_offset"
+CONF_COOLING_BOOST_OFFSET = "cooling_boost_offset"
 
 # Vent control configuration keys (global)
 CONF_MIN_VENTS_OPEN = "min_vents_open"
@@ -61,6 +63,8 @@ DEFAULT_MIN_CYCLE_ON_MINUTES = 5  # minutes
 DEFAULT_MIN_CYCLE_OFF_MINUTES = 5  # minutes
 DEFAULT_UNOCCUPIED_HEATING_THRESHOLD = 3.0  # degrees below heat target
 DEFAULT_UNOCCUPIED_COOLING_THRESHOLD = 3.0  # degrees above cool target
+DEFAULT_HEATING_BOOST_OFFSET = 0.0  # degrees to boost heat setpoint
+DEFAULT_COOLING_BOOST_OFFSET = 0.0  # degrees to boost cool setpoint
 DEFAULT_MIN_VENTS_OPEN = 5  # minimum number of vents that must remain open
 DEFAULT_VENT_OPEN_DELAY_SECONDS = 30  # seconds after occupancy before vents open
 DEFAULT_VENT_DEBOUNCE_SECONDS = 30  # seconds between vent state changes

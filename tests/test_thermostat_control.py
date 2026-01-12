@@ -2781,3 +2781,339 @@ class TestThermostatControlAwayMode:
         # The controller uses effective_target_temp_low/high for control
         assert low == 65.0
         assert high == 78.0
+
+
+# =============================================================================
+# Tests for Boost Temperature Feature
+# =============================================================================
+
+
+class TestBoostTemperature:
+    """Tests for the heating/cooling boost offset feature.
+
+    The boost feature ensures that when turning on the thermostat, we set
+    the physical thermostat's temperature target to overcome its internal
+    deadband. This is especially important for thermostats like ecobee that
+    may not actually call for heat/cool if they think they're at target.
+    """
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock HomeAssistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        hass.services = MagicMock()
+        hass.services.async_call = AsyncMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        return MagicMock()
+
+    @pytest.fixture
+    def controller_with_heating_boost(self, mock_hass, mock_occupancy_tracker):
+        """Create a ThermostatController with heating boost configured."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            temperature_deadband=0.5,
+            heating_boost_offset=2.0,
+            cooling_boost_offset=0.0,
+        )
+
+    @pytest.fixture
+    def controller_with_cooling_boost(self, mock_hass, mock_occupancy_tracker):
+        """Create a ThermostatController with cooling boost configured."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            temperature_deadband=0.5,
+            heating_boost_offset=0.0,
+            cooling_boost_offset=2.0,
+        )
+
+    @pytest.fixture
+    def controller_with_both_boosts(self, mock_hass, mock_occupancy_tracker):
+        """Create a ThermostatController with both boosts configured."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            temperature_deadband=0.5,
+            heating_boost_offset=2.0,
+            cooling_boost_offset=1.5,
+        )
+
+    @pytest.fixture
+    def controller_no_boost(self, mock_hass, mock_occupancy_tracker):
+        """Create a ThermostatController with no boost configured."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            temperature_deadband=0.5,
+            heating_boost_offset=0.0,
+            cooling_boost_offset=0.0,
+        )
+
+    def test_boost_properties(self, controller_with_both_boosts):
+        """Test that boost offset properties are correctly set."""
+        assert controller_with_both_boosts.heating_boost_offset == 2.0
+        assert controller_with_both_boosts.cooling_boost_offset == 1.5
+
+    def test_boost_properties_can_be_updated(self, controller_no_boost):
+        """Test that boost offset properties can be updated at runtime."""
+        controller_no_boost.heating_boost_offset = 3.0
+        controller_no_boost.cooling_boost_offset = 2.5
+
+        assert controller_no_boost.heating_boost_offset == 3.0
+        assert controller_no_boost.cooling_boost_offset == 2.5
+
+    @pytest.mark.asyncio
+    async def test_heat_mode_applies_boost(self, controller_with_heating_boost, mock_hass):
+        """Test that heating boost is applied when turning on in heat mode."""
+        mock_hass.states.get.return_value = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temperature = 70.0
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.action_reason = "Room needs heating"
+
+        controller_with_heating_boost._previous_hvac_mode = HVACMode.HEAT.value
+
+        await controller_with_heating_boost.async_execute_action(thermostat_state)
+
+        # Find the set_temperature call
+        calls = mock_hass.services.async_call.call_args_list
+        temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+
+        assert len(temp_calls) == 1
+        call_data = temp_calls[0][0][2]
+        assert call_data["entity_id"] == TEST_THERMOSTAT
+        # Should be target (70) + boost (2) = 72
+        assert call_data["temperature"] == 72.0
+
+    @pytest.mark.asyncio
+    async def test_cool_mode_applies_boost(self, controller_with_cooling_boost, mock_hass):
+        """Test that cooling boost is applied when turning on in cool mode."""
+        mock_hass.states.get.return_value = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temperature = 75.0
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.action_reason = "Room needs cooling"
+
+        controller_with_cooling_boost._previous_hvac_mode = HVACMode.COOL.value
+
+        await controller_with_cooling_boost.async_execute_action(thermostat_state)
+
+        # Find the set_temperature call
+        calls = mock_hass.services.async_call.call_args_list
+        temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+
+        assert len(temp_calls) == 1
+        call_data = temp_calls[0][0][2]
+        assert call_data["entity_id"] == TEST_THERMOSTAT
+        # Should be target (75) - boost (2) = 73
+        assert call_data["temperature"] == 73.0
+
+    @pytest.mark.asyncio
+    async def test_heat_cool_mode_applies_both_boosts(
+        self, controller_with_both_boosts, mock_hass
+    ):
+        """Test that both boosts are applied in heat_cool mode."""
+        mock_hass.states.get.return_value = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temp_low = 68.0
+        thermostat_state.target_temp_high = 76.0
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.action_reason = "Room needs conditioning"
+
+        controller_with_both_boosts._previous_hvac_mode = HVACMode.HEAT_COOL.value
+
+        await controller_with_both_boosts.async_execute_action(thermostat_state)
+
+        # Find the set_temperature call
+        calls = mock_hass.services.async_call.call_args_list
+        temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+
+        assert len(temp_calls) == 1
+        call_data = temp_calls[0][0][2]
+        assert call_data["entity_id"] == TEST_THERMOSTAT
+        # Low should be target_low (68) + heat_boost (2) = 70
+        assert call_data["target_temp_low"] == 70.0
+        # High should be target_high (76) - cool_boost (1.5) = 74.5
+        assert call_data["target_temp_high"] == 74.5
+
+    @pytest.mark.asyncio
+    async def test_no_boost_still_sets_temperature(self, controller_no_boost, mock_hass):
+        """Test that temperature is still set even when boost is 0.
+
+        This is critical for away mode - even without boost, we need to
+        sync the effective temperature to the physical thermostat.
+        """
+        mock_hass.states.get.return_value = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temperature = 67.0  # Away-adjusted temp
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.action_reason = "Room needs heating"
+
+        controller_no_boost._previous_hvac_mode = HVACMode.HEAT.value
+
+        await controller_no_boost.async_execute_action(thermostat_state)
+
+        # Find the set_temperature call
+        calls = mock_hass.services.async_call.call_args_list
+        temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+
+        assert len(temp_calls) == 1
+        call_data = temp_calls[0][0][2]
+        assert call_data["entity_id"] == TEST_THERMOSTAT
+        # Should be exactly the target temp (no boost)
+        assert call_data["temperature"] == 67.0
+
+    @pytest.mark.asyncio
+    async def test_boost_with_away_mode_temps(self, controller_with_heating_boost, mock_hass):
+        """Test that boost is correctly applied on top of away-adjusted temps.
+
+        Scenario: Home target is 70°F, away adjustment is -3°F, boost is +2°F
+        Expected: 70 - 3 + 2 = 69°F sent to thermostat
+        """
+        mock_hass.states.get.return_value = None
+
+        # The thermostat_state already contains away-adjusted temps
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temperature = 67.0  # Already away-adjusted (70 - 3)
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.action_reason = "Room needs heating"
+
+        controller_with_heating_boost._previous_hvac_mode = HVACMode.HEAT.value
+
+        await controller_with_heating_boost.async_execute_action(thermostat_state)
+
+        calls = mock_hass.services.async_call.call_args_list
+        temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+
+        assert len(temp_calls) == 1
+        call_data = temp_calls[0][0][2]
+        # Should be away-adjusted (67) + boost (2) = 69
+        assert call_data["temperature"] == 69.0
+
+    @pytest.mark.asyncio
+    async def test_turn_off_does_not_set_temperature(
+        self, controller_with_heating_boost, mock_hass
+    ):
+        """Test that TURN_OFF action does not set temperature."""
+        mock_state = MagicMock()
+        mock_state.state = HVACMode.HEAT
+        mock_hass.states.get.return_value = mock_state
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temperature = 70.0
+        thermostat_state.recommended_action = ThermostatAction.TURN_OFF
+        thermostat_state.action_reason = "All rooms satiated"
+
+        await controller_with_heating_boost.async_execute_action(thermostat_state)
+
+        # Should call set_hvac_mode but NOT set_temperature
+        calls = mock_hass.services.async_call.call_args_list
+        hvac_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+        temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+
+        assert len(hvac_calls) >= 1  # Should set HVAC mode to off
+        assert len(temp_calls) == 0  # Should NOT set temperature
+
+    @pytest.mark.asyncio
+    async def test_wait_actions_do_not_set_temperature(
+        self, controller_with_heating_boost, mock_hass
+    ):
+        """Test that WAIT actions do not set temperature."""
+        for action in [ThermostatAction.WAIT_CYCLE_ON, ThermostatAction.WAIT_CYCLE_OFF]:
+            mock_hass.services.async_call.reset_mock()
+
+            thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+            thermostat_state.target_temperature = 70.0
+            thermostat_state.recommended_action = action
+            thermostat_state.action_reason = "Waiting for cycle protection"
+
+            await controller_with_heating_boost.async_execute_action(thermostat_state)
+
+            # Should not call any services during wait
+            calls = mock_hass.services.async_call.call_args_list
+            assert len(calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_none_action_does_not_set_temperature(
+        self, controller_with_heating_boost, mock_hass
+    ):
+        """Test that NONE action does not set temperature."""
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temperature = 70.0
+        thermostat_state.recommended_action = ThermostatAction.NONE
+        thermostat_state.action_reason = "No action needed"
+
+        await controller_with_heating_boost.async_execute_action(thermostat_state)
+
+        calls = mock_hass.services.async_call.call_args_list
+        assert len(calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_target_temp_skips_temperature_set(
+        self, controller_with_heating_boost, mock_hass
+    ):
+        """Test that missing target temperature skips the set_temperature call."""
+        mock_hass.states.get.return_value = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temperature = None  # No target temp
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.action_reason = "Room needs heating"
+
+        controller_with_heating_boost._previous_hvac_mode = HVACMode.HEAT.value
+
+        await controller_with_heating_boost.async_execute_action(thermostat_state)
+
+        # Should still call set_hvac_mode but skip set_temperature
+        calls = mock_hass.services.async_call.call_args_list
+        hvac_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+        temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+
+        assert len(hvac_calls) == 1
+        assert len(temp_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_heat_cool_missing_both_temps_skips_set(
+        self, controller_with_both_boosts, mock_hass
+    ):
+        """Test heat_cool mode with missing temps skips set_temperature."""
+        mock_hass.states.get.return_value = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.target_temp_low = None
+        thermostat_state.target_temp_high = None
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+
+        controller_with_both_boosts._previous_hvac_mode = HVACMode.HEAT_COOL.value
+
+        await controller_with_both_boosts.async_execute_action(thermostat_state)
+
+        calls = mock_hass.services.async_call.call_args_list
+        temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+
+        assert len(temp_calls) == 0
+
+    def test_default_boost_values_are_zero(self, mock_hass, mock_occupancy_tracker):
+        """Test that default boost values are zero when not specified."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+        )
+
+        assert controller.heating_boost_offset == 0.0
+        assert controller.cooling_boost_offset == 0.0

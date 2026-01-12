@@ -29,7 +29,9 @@ from .const import (
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_COOLING_BOOST_OFFSET,
     CONF_GRACE_PERIOD_MINUTES,
+    CONF_HEATING_BOOST_OFFSET,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
@@ -53,7 +55,9 @@ from .const import (
     DEFAULT_AWAY_COOL_TEMP_DIFF,
     DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_COOLING_BOOST_OFFSET,
     DEFAULT_GRACE_PERIOD_MINUTES,
+    DEFAULT_HEATING_BOOST_OFFSET,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
@@ -464,6 +468,36 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                         min=0.5,
                         max=10.0,
                         step=0.1,
+                        unit_of_measurement="°",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_HEATING_BOOST_OFFSET,
+                    default=options.get(
+                        CONF_HEATING_BOOST_OFFSET,
+                        DEFAULT_HEATING_BOOST_OFFSET,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=10.0,
+                        step=0.5,
+                        unit_of_measurement="°",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_COOLING_BOOST_OFFSET,
+                    default=options.get(
+                        CONF_COOLING_BOOST_OFFSET,
+                        DEFAULT_COOLING_BOOST_OFFSET,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=10.0,
+                        step=0.5,
                         unit_of_measurement="°",
                         mode=selector.NumberSelectorMode.BOX,
                     )

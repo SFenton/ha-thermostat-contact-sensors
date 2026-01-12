@@ -20,7 +20,9 @@ from .const import (
     CONF_AWAY_HEAT_TEMP_DIFF,
     CONF_AWAY_PRESENCE_ENTITY,
     CONF_CLOSE_TIMEOUT,
+    CONF_COOLING_BOOST_OFFSET,
     CONF_GRACE_PERIOD_MINUTES,
+    CONF_HEATING_BOOST_OFFSET,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
@@ -42,7 +44,9 @@ from .const import (
     DEFAULT_AWAY_COOL_TEMP_DIFF,
     DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_COOLING_BOOST_OFFSET,
     DEFAULT_GRACE_PERIOD_MINUTES,
+    DEFAULT_HEATING_BOOST_OFFSET,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
@@ -157,6 +161,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             ),
             unoccupied_cooling_threshold=self._options.get(
                 CONF_UNOCCUPIED_COOLING_THRESHOLD, DEFAULT_UNOCCUPIED_COOLING_THRESHOLD
+            ),
+            heating_boost_offset=self._options.get(
+                CONF_HEATING_BOOST_OFFSET, DEFAULT_HEATING_BOOST_OFFSET
+            ),
+            cooling_boost_offset=self._options.get(
+                CONF_COOLING_BOOST_OFFSET, DEFAULT_COOLING_BOOST_OFFSET
             ),
             area_thermostats_getter=lambda: getattr(self, "area_thermostats", {}),
             global_thermostat_getter=lambda: getattr(self, "global_thermostat", None),
@@ -430,6 +440,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         )
         self.thermostat_controller.unoccupied_cooling_threshold = options.get(
             CONF_UNOCCUPIED_COOLING_THRESHOLD, DEFAULT_UNOCCUPIED_COOLING_THRESHOLD
+        )
+        self.thermostat_controller.heating_boost_offset = options.get(
+            CONF_HEATING_BOOST_OFFSET, DEFAULT_HEATING_BOOST_OFFSET
+        )
+        self.thermostat_controller.cooling_boost_offset = options.get(
+            CONF_COOLING_BOOST_OFFSET, DEFAULT_COOLING_BOOST_OFFSET
         )
 
         # Update vent controller
