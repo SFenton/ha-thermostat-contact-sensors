@@ -168,6 +168,13 @@ class ThermostatState:
     target_temp_high: float | None = None  # For heat_cool mode (cooling target)
     target_temp_low: float | None = None  # For heat_cool mode (heating target)
 
+    # Inferred HVAC mode (when thermostat is off, based on global temp trend)
+    inferred_hvac_mode: HVACMode | None = None
+
+    # What unsatiated/critical rooms need (for consensus logic)
+    rooms_need_heat: bool = False
+    rooms_need_cool: bool = False
+
     # Room states (includes both active and critical rooms)
     room_states: dict[str, RoomTemperatureState] = field(default_factory=dict)
 
@@ -314,6 +321,110 @@ def is_room_satiated_for_heat_cool(
 
     closest = min(readings.items(), key=lambda x: distance_to_range(x[1]))
     return False, closest[0], closest[1]
+
+
+def infer_effective_hvac_mode(
+    all_sensor_readings: dict[str, float],
+    target_temp_low: float | None,
+    target_temp_high: float | None,
+) -> HVACMode | None:
+    """Infer whether we're closer to needing heat or cooling.
+
+    When HVAC is off (idle), we look at all temperature sensors and determine
+    whether on average we're closer to needing heating or cooling. This is used
+    for intelligent satiation evaluation and mode selection during shoulder
+    seasons (spring/fall) when HVAC may bounce between modes.
+
+    Args:
+        all_sensor_readings: Dict of sensor_id -> temperature for ALL sensors.
+        target_temp_low: The heating target temperature.
+        target_temp_high: The cooling target temperature.
+
+    Returns:
+        HVACMode.HEAT if we're closer to needing heat,
+        HVACMode.COOL if we're closer to needing cooling,
+        None if we can't determine (no readings or no targets).
+    """
+    if target_temp_low is None or target_temp_high is None:
+        return None
+
+    if not all_sensor_readings:
+        return None
+
+    # Calculate average temperature across all sensors
+    all_temps = list(all_sensor_readings.values())
+    avg_temp = sum(all_temps) / len(all_temps)
+
+    # Calculate distance to each target
+    # Positive distance_to_heat means we're below heating target (need heat)
+    # Positive distance_to_cool means we're above cooling target (need cool)
+    distance_to_heat = target_temp_low - avg_temp  # Positive if cold
+    distance_to_cool = avg_temp - target_temp_high  # Positive if hot
+
+    _LOGGER.debug(
+        "Infer HVAC mode: avg_temp=%.2f, target_low=%.2f, target_high=%.2f, "
+        "distance_to_heat=%.2f, distance_to_cool=%.2f",
+        avg_temp,
+        target_temp_low,
+        target_temp_high,
+        distance_to_heat,
+        distance_to_cool,
+    )
+
+    # If we're in the comfort zone (between targets), use whichever
+    # boundary we're closer to
+    if distance_to_heat <= 0 and distance_to_cool <= 0:
+        # We're within the comfort band - compare absolute distances to boundaries
+        if abs(distance_to_heat) < abs(distance_to_cool):
+            # Closer to heating threshold
+            return HVACMode.HEAT
+        else:
+            # Closer to cooling threshold
+            return HVACMode.COOL
+    elif distance_to_heat > 0:
+        # We're below heating target - need heat
+        return HVACMode.HEAT
+    else:
+        # We're above cooling target - need cool
+        return HVACMode.COOL
+
+
+def determine_rooms_need_mode(
+    room_states: dict[str, "RoomTemperatureState"],
+    target_temp_low: float,
+    target_temp_high: float,
+    deadband: float,
+) -> tuple[bool, bool]:
+    """Determine what conditioning mode unsatiated/critical rooms need.
+
+    Args:
+        room_states: Dict of area_id -> RoomTemperatureState.
+        target_temp_low: Heating target temperature.
+        target_temp_high: Cooling target temperature.
+        deadband: Temperature deadband.
+
+    Returns:
+        Tuple of (any_need_heat, any_need_cool).
+    """
+    need_heat = False
+    need_cool = False
+
+    heat_threshold = target_temp_low - deadband
+    cool_threshold = target_temp_high + deadband
+
+    for room_state in room_states.values():
+        # Only consider rooms that need conditioning (unsatiated active or critical)
+        if room_state.is_satiated and not room_state.is_critical:
+            continue
+
+        # Check what this room needs based on its determining temperature
+        if room_state.determining_temperature is not None:
+            if room_state.determining_temperature < heat_threshold:
+                need_heat = True
+            elif room_state.determining_temperature > cool_threshold:
+                need_cool = True
+
+    return need_heat, need_cool
 
 
 class ThermostatController:
@@ -1196,37 +1307,52 @@ class ThermostatController:
         # Track if paused - we still evaluate rooms for display, but won't take actions
         is_paused = self._is_paused_by_contact_sensors
 
-        # If thermostat is off, check if it was us or the user
-        # Track which mode to use for satiation evaluation
+        # Collect ALL sensor readings first to calculate global temperature trend
+        # This is used to infer whether we're closer to needing heat or cooling
+        all_sensor_readings: dict[str, float] = {}
+        all_areas = list(active_areas) + list(inactive_areas)
+        for area in all_areas:
+            temp_sensors = area_temp_sensors.get(area.area_id, [])
+            for sensor_id in temp_sensors:
+                state = self.hass.states.get(sensor_id)
+                temp = get_temperature_from_state(state)
+                if temp is not None:
+                    all_sensor_readings[sensor_id] = temp
+
+        # Determine evaluation HVAC mode
+        # If thermostat is off, infer the mode from global temperature trend
         evaluation_hvac_mode = hvac_mode
+        inferred_mode: HVACMode | None = None
+
         if hvac_mode == HVACMode.OFF:
-            if self._we_turned_off:
-                # We turned it off - don't treat as user choice, continue evaluation
-                # to see if we should turn it back on. Use previous mode for satiation.
-                _LOGGER.debug("Thermostat is off (we turned it off) - continuing evaluation")
-                if self._previous_hvac_mode and self._previous_hvac_mode != HVACMode.OFF.value:
-                    try:
-                        evaluation_hvac_mode = HVACMode(self._previous_hvac_mode)
-                        _LOGGER.debug("Using previous HVAC mode %s for satiation evaluation", evaluation_hvac_mode)
-                    except ValueError:
-                        # If previous mode is not a valid HVACMode, default to HEAT
-                        evaluation_hvac_mode = HVACMode.HEAT
-                        _LOGGER.debug("Previous mode invalid, defaulting to HEAT for satiation evaluation")
-                else:
-                    # No previous mode, default to HEAT
-                    evaluation_hvac_mode = HVACMode.HEAT
-                    _LOGGER.debug("No previous mode, defaulting to HEAT for satiation evaluation")
+            # Infer mode from global temperature trend
+            inferred_mode = infer_effective_hvac_mode(
+                all_sensor_readings, target_temp_low, target_temp_high
+            )
+            thermostat_state.inferred_hvac_mode = inferred_mode
+
+            if inferred_mode:
+                evaluation_hvac_mode = inferred_mode
+                _LOGGER.debug(
+                    "Thermostat is off - inferred mode %s from %d sensors (avg: %.2f°F)",
+                    inferred_mode.value,
+                    len(all_sensor_readings),
+                    sum(all_sensor_readings.values()) / len(all_sensor_readings) if all_sensor_readings else 0,
+                )
             else:
-                # User turned it off - still evaluate room temps for display purposes
-                # If respect_user_off is False, we can still take action
-                evaluation_hvac_mode = HVACMode.HEAT  # Use HEAT as default for evaluation
-                if respect_user_off:
-                    _LOGGER.debug("Thermostat is off (user choice) - evaluating temps but taking no action")
-                else:
-                    _LOGGER.debug(
-                        "Thermostat is off (user turned it off) but respect_user_off is False - "
-                        "will evaluate and potentially turn on if rooms need conditioning"
-                    )
+                # Fallback to HEAT if we can't infer (no sensors or no targets)
+                evaluation_hvac_mode = HVACMode.HEAT
+                _LOGGER.debug("Could not infer HVAC mode, defaulting to HEAT for satiation evaluation")
+
+            if self._we_turned_off:
+                _LOGGER.debug("Thermostat is off (we turned it off) - continuing evaluation")
+            elif respect_user_off:
+                _LOGGER.debug("Thermostat is off (user choice) - evaluating temps but taking no action")
+            else:
+                _LOGGER.debug(
+                    "Thermostat is off (user turned it off) but respect_user_off is False - "
+                    "will evaluate and potentially turn on if rooms need conditioning"
+                )
 
         # Flag if user turned thermostat off AND we should respect that choice
         # When respect_user_off is False, we treat user's off as if we turned it off
@@ -1302,6 +1428,23 @@ class ThermostatController:
         unsatiated_active = len(active_areas) - satiated_count
         needs_conditioning = unsatiated_active > 0 or critical_count > 0
 
+        # Determine what the rooms that need conditioning actually need (heat or cool)
+        # This is used for the consensus logic when HVAC is off
+        rooms_need_heat, rooms_need_cool = determine_rooms_need_mode(
+            thermostat_state.room_states,
+            target_temp_low or 70.0,  # Fallback defaults
+            target_temp_high or 78.0,
+            self._temperature_deadband,
+        )
+        thermostat_state.rooms_need_heat = rooms_need_heat
+        thermostat_state.rooms_need_cool = rooms_need_cool
+
+        _LOGGER.debug(
+            "Rooms need conditioning: heat=%s, cool=%s, inferred_mode=%s",
+            rooms_need_heat,
+            rooms_need_cool,
+            inferred_mode.value if inferred_mode else "N/A",
+        )
         # Check if any rooms are configured at all
         # (if no active AND no inactive areas, no rooms are configured)
         rooms_configured = len(active_areas) > 0 or len(inactive_areas) > 0
@@ -1367,13 +1510,59 @@ class ThermostatController:
                 reason_parts.append(f"{critical_count} critical rooms")
 
             if not is_on:
-                can_on, cycle_reason = self.can_turn_on(now)
-                if can_on:
-                    thermostat_state.recommended_action = ThermostatAction.TURN_ON
-                    thermostat_state.action_reason = " and ".join(reason_parts)
+                # Apply consensus logic: only turn on if the inferred mode aligns
+                # with what the rooms need
+                mode_to_engage: HVACMode | None = None
+                consensus_reason: str | None = None
+
+                if inferred_mode == HVACMode.HEAT and rooms_need_heat:
+                    mode_to_engage = HVACMode.HEAT
+                    consensus_reason = "Trend=HEAT, rooms need heat"
+                elif inferred_mode == HVACMode.COOL and rooms_need_cool:
+                    mode_to_engage = HVACMode.COOL
+                    consensus_reason = "Trend=COOL, rooms need cool"
+                elif inferred_mode is None:
+                    # Can't infer mode (no sensors/targets) - fall back to what rooms need
+                    if rooms_need_heat:
+                        mode_to_engage = HVACMode.HEAT
+                        consensus_reason = "No trend data, rooms need heat"
+                    elif rooms_need_cool:
+                        mode_to_engage = HVACMode.COOL
+                        consensus_reason = "No trend data, rooms need cool"
                 else:
-                    thermostat_state.recommended_action = ThermostatAction.WAIT_CYCLE_OFF
-                    thermostat_state.action_reason = f"Want to turn on but {cycle_reason}"
+                    # Mismatch: trend doesn't align with what rooms need
+                    _LOGGER.debug(
+                        "Consensus mismatch: inferred_mode=%s, rooms_need_heat=%s, rooms_need_cool=%s - not turning on",
+                        inferred_mode.value if inferred_mode else None,
+                        rooms_need_heat,
+                        rooms_need_cool,
+                    )
+
+                if mode_to_engage:
+                    can_on, cycle_reason = self.can_turn_on(now)
+                    if can_on:
+                        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+                        thermostat_state.action_reason = f"{' and '.join(reason_parts)} ({consensus_reason})"
+                        # Store the mode to engage so execute_action knows which mode to use
+                        thermostat_state.inferred_hvac_mode = mode_to_engage
+                    else:
+                        thermostat_state.recommended_action = ThermostatAction.WAIT_CYCLE_OFF
+                        thermostat_state.action_reason = f"Want to turn on but {cycle_reason}"
+                else:
+                    # No consensus - don't turn on
+                    thermostat_state.recommended_action = ThermostatAction.NONE
+                    if inferred_mode == HVACMode.HEAT and rooms_need_cool:
+                        thermostat_state.action_reason = (
+                            f"Anomaly: house trend is HEAT but rooms need COOL "
+                            f"({' and '.join(reason_parts)})"
+                        )
+                    elif inferred_mode == HVACMode.COOL and rooms_need_heat:
+                        thermostat_state.action_reason = (
+                            f"Anomaly: house trend is COOL but rooms need HEAT "
+                            f"({' and '.join(reason_parts)})"
+                        )
+                    else:
+                        thermostat_state.action_reason = f"No clear mode consensus ({' and '.join(reason_parts)})"
             else:
                 thermostat_state.recommended_action = ThermostatAction.NONE
                 thermostat_state.action_reason = f"Already on, {' and '.join(reason_parts)}"
@@ -1417,6 +1606,9 @@ class ThermostatController:
             "satiated_room_count": state.satiated_room_count,
             "critical_room_count": state.critical_room_count,
             "all_active_rooms_satiated": state.all_active_rooms_satiated,
+            "inferred_hvac_mode": state.inferred_hvac_mode.value if state.inferred_hvac_mode else None,
+            "rooms_need_heat": state.rooms_need_heat,
+            "rooms_need_cool": state.rooms_need_cool,
             "recommended_action": state.recommended_action.value,
             "action_reason": state.action_reason,
             "min_cycle_on_minutes": self._min_cycle_on_minutes,
@@ -1587,12 +1779,18 @@ class ThermostatController:
             return False
 
         if thermostat_state.recommended_action == ThermostatAction.TURN_ON:
-            # Get the previous HVAC mode to restore
-            previous_mode = self._previous_hvac_mode
-            if previous_mode and previous_mode != HVACMode.OFF:
-                target_mode = previous_mode
+            # Use the inferred HVAC mode from consensus logic
+            # This is set during evaluate_thermostat_action based on global trend
+            if thermostat_state.inferred_hvac_mode and thermostat_state.inferred_hvac_mode != HVACMode.OFF:
+                target_mode = thermostat_state.inferred_hvac_mode
+            elif self._previous_hvac_mode and self._previous_hvac_mode != HVACMode.OFF:
+                # Fall back to previous mode if no inferred mode
+                try:
+                    target_mode = HVACMode(self._previous_hvac_mode)
+                except ValueError:
+                    target_mode = HVACMode.HEAT
             else:
-                # Default to heat if no previous mode
+                # Default to heat if nothing else available
                 target_mode = HVACMode.HEAT
 
             _LOGGER.info(

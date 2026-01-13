@@ -79,6 +79,76 @@ class VentControlState:
 class VentController:
     """Controller for managing HVAC vents based on room state."""
 
+    @staticmethod
+    def infer_effective_hvac_mode(
+        room_temp_states: dict[str, "RoomTemperatureState"],
+        target_temp_low: float | None,
+        target_temp_high: float | None,
+    ) -> HVACMode | None:
+        """Infer whether we're closer to needing heat or cooling.
+
+        When HVAC is off (idle), we look at all temperature sensors across
+        all areas and determine whether on average we're closer to needing
+        heating or cooling. This is used for intelligent vent prioritization
+        during shoulder seasons (spring/fall) when HVAC bounces between modes.
+
+        Args:
+            room_temp_states: Dict of area_id -> RoomTemperatureState with sensor readings.
+            target_temp_low: The heating target temperature (target_temp_low for auto mode).
+            target_temp_high: The cooling target temperature (target_temp_high for auto mode).
+
+        Returns:
+            HVACMode.HEAT if we're closer to needing heat,
+            HVACMode.COOL if we're closer to needing cooling,
+            None if we can't determine (no readings or no targets).
+        """
+        if target_temp_low is None or target_temp_high is None:
+            return None
+
+        # Collect all temperature readings from all areas
+        all_temps: list[float] = []
+        for room_state in room_temp_states.values():
+            all_temps.extend(room_state.sensor_readings.values())
+
+        if not all_temps:
+            return None
+
+        # Calculate average temperature across all sensors
+        avg_temp = sum(all_temps) / len(all_temps)
+
+        # Calculate distance to each target
+        # Positive distance_to_heat means we're below heating target (need heat)
+        # Positive distance_to_cool means we're above cooling target (need cool)
+        distance_to_heat = target_temp_low - avg_temp  # Positive if cold
+        distance_to_cool = avg_temp - target_temp_high  # Positive if hot
+
+        _LOGGER.debug(
+            "Infer HVAC mode: avg_temp=%.2f, target_low=%.2f, target_high=%.2f, "
+            "distance_to_heat=%.2f, distance_to_cool=%.2f",
+            avg_temp,
+            target_temp_low,
+            target_temp_high,
+            distance_to_heat,
+            distance_to_cool,
+        )
+
+        # If we're in the comfort zone (between targets), use whichever
+        # boundary we're closer to
+        if distance_to_heat <= 0 and distance_to_cool <= 0:
+            # We're within the comfort band - compare absolute distances to boundaries
+            if abs(distance_to_heat) < abs(distance_to_cool):
+                # Closer to heating threshold, prioritize as if heating
+                return HVACMode.HEAT
+            else:
+                # Closer to cooling threshold, prioritize as if cooling
+                return HVACMode.COOL
+        elif distance_to_heat > 0:
+            # We're below heating target - need heat
+            return HVACMode.HEAT
+        else:
+            # We're above cooling target - need cool
+            return HVACMode.COOL
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -341,6 +411,9 @@ class VentController:
         self,
         area_states: dict[str, AreaVentState],
         hvac_mode: HVACMode | None = None,
+        room_temp_states: dict[str, "RoomTemperatureState"] | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
     ) -> list[tuple[str, str, int, float]]:
         """Calculate priority order for keeping minimum vents open.
 
@@ -349,17 +422,38 @@ class VentController:
         2. Active rooms (people actively there)
         3. Temperature-based: coldest rooms for HEAT, hottest for COOL
         4. Occupied rooms (presence but no activity)
-        - Fallback: absolute distance from target
+
+        When HVAC mode is OFF or unknown, we infer whether we're closer to
+        needing heat or cooling based on all temperature sensor readings,
+        rather than using absolute distance from target.
 
         Args:
             area_states: Dict of area_id -> AreaVentState.
             hvac_mode: Current HVAC mode for temperature-aware sorting.
+            room_temp_states: Dict of area_id -> RoomTemperatureState (for inferring mode).
+            target_temp_low: Heating target temperature (for inferring mode).
+            target_temp_high: Cooling target temperature (for inferring mode).
 
         Returns:
             List of (area_id, vent_entity_id, member_count, priority_score).
             Higher score = higher priority for staying open.
         """
         priority_list: list[tuple[str, str, int, float]] = []
+
+        # Determine effective HVAC mode for prioritization
+        effective_mode = hvac_mode
+        if hvac_mode in (None, HVACMode.OFF) and room_temp_states:
+            # HVAC is off/idle - infer whether we're closer to needing heat or cool
+            inferred_mode = self.infer_effective_hvac_mode(
+                room_temp_states, target_temp_low, target_temp_high
+            )
+            if inferred_mode:
+                effective_mode = inferred_mode
+                _LOGGER.debug(
+                    "HVAC is %s, inferred effective mode: %s",
+                    hvac_mode,
+                    effective_mode,
+                )
 
         for area_id, area_state in area_states.items():
             for vent in area_state.vents:
@@ -380,17 +474,17 @@ class VentController:
                 # Temperature-based priority for non-active/occupied/critical rooms
                 # For minimum vent selection, we want rooms that actually need conditioning
                 if area_state.determining_temperature is not None:
-                    if hvac_mode == HVACMode.HEAT:
+                    if effective_mode == HVACMode.HEAT:
                         # For heating: coldest rooms get priority (lower temp = higher priority)
                         # Invert so that colder rooms score higher
                         # e.g., 60°F -> +200, 70°F -> +100, 80°F -> +0
                         priority_score += max(0, (80.0 - area_state.determining_temperature) * 10.0)
-                    elif hvac_mode == HVACMode.COOL:
+                    elif effective_mode == HVACMode.COOL:
                         # For cooling: hottest rooms get priority (higher temp = higher priority)
                         # e.g., 80°F -> +200, 70°F -> +100, 60°F -> +0
                         priority_score += max(0, (area_state.determining_temperature - 60.0) * 10.0)
                     else:
-                        # Fallback for heat_cool or unknown: use absolute distance
+                        # Fallback for heat_cool or truly unknown: use absolute distance
                         if area_state.distance_from_target is not None:
                             priority_score += area_state.distance_from_target * 10.0
                 elif area_state.distance_from_target is not None:
@@ -413,6 +507,8 @@ class VentController:
         room_temp_states: dict[str, "RoomTemperatureState"] | None = None,
         area_vent_delays: dict[str, int] | None = None,
         hvac_mode: HVACMode | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
         now: datetime | None = None,
     ) -> VentControlState:
         """Evaluate all vents and determine which should be open.
@@ -424,6 +520,8 @@ class VentController:
             room_temp_states: Dict of area_id -> RoomTemperatureState.
             area_vent_delays: Dict of area_id -> per-area vent open delay override.
             hvac_mode: Current HVAC mode for temperature-aware vent priority.
+            target_temp_low: Heating target temperature (for inferring mode when HVAC off).
+            target_temp_high: Cooling target temperature (for inferring mode when HVAC off).
             now: Current time (optional, for testing).
 
         Returns:
@@ -528,6 +626,9 @@ class VentController:
             priority_list = self.calculate_minimum_vents_priority(
                 control_state.area_states,
                 hvac_mode=hvac_mode,
+                room_temp_states=room_temp_states,
+                target_temp_low=target_temp_low,
+                target_temp_high=target_temp_high,
             )
 
             # Keep vents open in priority order until we hit minimum
