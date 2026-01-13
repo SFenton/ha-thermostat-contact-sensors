@@ -394,14 +394,34 @@ def determine_rooms_need_mode(
     target_temp_low: float,
     target_temp_high: float,
     deadband: float,
+    heating_critical_offset: float = 3.0,
+    cooling_critical_offset: float = 3.0,
 ) -> tuple[bool, bool]:
-    """Determine what conditioning mode unsatiated/critical rooms need.
+    """Determine what conditioning mode rooms need based on absolute temperature.
+
+    This function checks rooms to determine what mode they need based on 
+    absolute temperature vs thresholds. This is used for consensus logic to 
+    detect anomalies like "house is warm but the active room is cold".
+
+    The key insight is that satiation status is mode-dependent (a cold room is
+    "satiated" in COOL mode), but for consensus we need mode-independent
+    analysis of what rooms truly need.
+
+    Considers:
+    - Active rooms: Check if they need conditioning (temp vs comfort thresholds)
+    - Inactive rooms: Check if they're in critical temp range (extreme temps)
+
+    The is_critical flag on room_state is mode-dependent (set during room 
+    evaluation for a specific mode), so we re-evaluate critical thresholds
+    here in a mode-independent way.
 
     Args:
         room_states: Dict of area_id -> RoomTemperatureState.
         target_temp_low: Heating target temperature.
         target_temp_high: Cooling target temperature.
         deadband: Temperature deadband.
+        heating_critical_offset: Degrees below target for critical heating.
+        cooling_critical_offset: Degrees above target for critical cooling.
 
     Returns:
         Tuple of (any_need_heat, any_need_cool).
@@ -409,19 +429,32 @@ def determine_rooms_need_mode(
     need_heat = False
     need_cool = False
 
+    # Comfort thresholds for active rooms
     heat_threshold = target_temp_low - deadband
     cool_threshold = target_temp_high + deadband
 
+    # Critical thresholds for inactive rooms (mode-independent)
+    heat_critical_threshold = target_temp_low - heating_critical_offset
+    cool_critical_threshold = target_temp_high + cooling_critical_offset
+
     for room_state in room_states.values():
-        # Only consider rooms that need conditioning (unsatiated active or critical)
-        if room_state.is_satiated and not room_state.is_critical:
+        if room_state.determining_temperature is None:
             continue
 
-        # Check what this room needs based on its determining temperature
-        if room_state.determining_temperature is not None:
-            if room_state.determining_temperature < heat_threshold:
+        temp = room_state.determining_temperature
+
+        # For active rooms, check against comfort thresholds
+        if room_state.is_active:
+            if temp < heat_threshold:
                 need_heat = True
-            elif room_state.determining_temperature > cool_threshold:
+            elif temp > cool_threshold:
+                need_cool = True
+        # For inactive rooms, check against CRITICAL thresholds (mode-independent)
+        # This catches rooms like a cold basement even when we inferred COOL mode
+        else:
+            if temp < heat_critical_threshold:
+                need_heat = True
+            elif temp > cool_critical_threshold:
                 need_cool = True
 
     return need_heat, need_cool
@@ -819,13 +852,24 @@ class ThermostatController:
         final_target_temp_low = target_temp_low if target_temp_low is not None else self._stored_target_temp_low
         final_target_temp_high = target_temp_high if target_temp_high is not None else self._stored_target_temp_high
 
+        # When hvac_mode_override is provided, use it to select the correct target_temp
+        # This is critical when thermostat is OFF but we've inferred HEAT or COOL mode
+        if hvac_mode_override is not None:
+            if hvac_mode_override == HVACMode.HEAT and final_target_temp_low is not None:
+                final_target_temp = final_target_temp_low
+            elif hvac_mode_override == HVACMode.COOL and final_target_temp_high is not None:
+                final_target_temp = final_target_temp_high
+            elif hvac_mode_override == HVACMode.HEAT_COOL and final_target_temp_low and final_target_temp_high:
+                final_target_temp = (final_target_temp_low + final_target_temp_high) / 2
+
         hvac_mode, _ = self.get_thermostat_state()
         if hvac_mode == HVACMode.OFF or target_temp is None or target_temp_low is None or target_temp_high is None:
             _LOGGER.debug(
-                "Using stored/merged target temps: temp=%s, low=%s, high=%s",
+                "Using stored/merged target temps: temp=%s, low=%s, high=%s (override=%s)",
                 final_target_temp,
                 final_target_temp_low,
                 final_target_temp_high,
+                hvac_mode_override,
             )
 
         return final_target_temp, final_target_temp_low, final_target_temp_high
@@ -1424,20 +1468,32 @@ class ThermostatController:
 
         thermostat_state.critical_room_count = critical_count
 
-        # Determine if we need conditioning (active unsatiated OR critical rooms)
-        unsatiated_active = len(active_areas) - satiated_count
-        needs_conditioning = unsatiated_active > 0 or critical_count > 0
-
         # Determine what the rooms that need conditioning actually need (heat or cool)
-        # This is used for the consensus logic when HVAC is off
+        # This uses absolute temperature thresholds, not mode-specific satiation
+        # Use target_temp as fallback for low/high if not available (ensures same units)
+        effective_target_low = target_temp_low or target_temp or 70.0
+        effective_target_high = target_temp_high or target_temp or 78.0
         rooms_need_heat, rooms_need_cool = determine_rooms_need_mode(
             thermostat_state.room_states,
-            target_temp_low or 70.0,  # Fallback defaults
-            target_temp_high or 78.0,
+            effective_target_low,
+            effective_target_high,
             self._temperature_deadband,
+            self._unoccupied_heating_threshold,
+            self._unoccupied_cooling_threshold,
         )
         thermostat_state.rooms_need_heat = rooms_need_heat
         thermostat_state.rooms_need_cool = rooms_need_cool
+
+        # Determine if we need conditioning
+        # When HVAC is OFF and we've inferred a mode, use absolute temperature needs
+        # (not mode-specific satiation which can be misleading)
+        unsatiated_active = len(active_areas) - satiated_count
+        if hvac_mode == HVACMode.OFF:
+            # Use absolute temperature needs for consensus logic
+            needs_conditioning = rooms_need_heat or rooms_need_cool or critical_count > 0
+        else:
+            # HVAC is on - use normal satiation logic
+            needs_conditioning = unsatiated_active > 0 or critical_count > 0
 
         _LOGGER.debug(
             "Rooms need conditioning: heat=%s, cool=%s, inferred_mode=%s",
@@ -1464,8 +1520,13 @@ class ThermostatController:
             return thermostat_state
 
         # Determine recommended action
-        if len(active_areas) == 0 and critical_count == 0:
-            # No active rooms and no critical rooms
+        # Note: critical_count is mode-dependent (based on inferred mode evaluation)
+        # but rooms_need_heat/rooms_need_cool are mode-independent
+        # A room can need heat even if critical_count=0 (e.g., cold basement when trend=COOL)
+        has_mode_independent_critical = rooms_need_heat or rooms_need_cool
+        
+        if len(active_areas) == 0 and critical_count == 0 and not has_mode_independent_critical:
+            # No active rooms and no critical rooms (either mode-dependent or mode-independent)
             if not rooms_configured:
                 # No rooms configured at all - don't control thermostat
                 thermostat_state.recommended_action = ThermostatAction.NONE
@@ -1508,6 +1569,11 @@ class ThermostatController:
                 reason_parts.append(f"{unsatiated_active} active rooms need conditioning")
             if critical_count > 0:
                 reason_parts.append(f"{critical_count} critical rooms")
+            # Add mode-independent critical needs (e.g., cold basement when trend=COOL)
+            if rooms_need_heat and critical_count == 0 and unsatiated_active == 0:
+                reason_parts.append("inactive room(s) in critical heat range")
+            if rooms_need_cool and critical_count == 0 and unsatiated_active == 0:
+                reason_parts.append("inactive room(s) in critical cool range")
 
             if not is_on:
                 # Apply consensus logic: only turn on if the inferred mode aligns

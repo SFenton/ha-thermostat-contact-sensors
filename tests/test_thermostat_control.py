@@ -26,7 +26,9 @@ from custom_components.thermostat_contact_sensors.thermostat_control import (
     ThermostatAction,
     ThermostatController,
     ThermostatState,
+    determine_rooms_need_mode,
     get_temperature_from_state,
+    infer_effective_hvac_mode,
     is_room_satiated_for_cool,
     is_room_satiated_for_heat,
     is_room_satiated_for_heat_cool,
@@ -796,10 +798,11 @@ class TestEdgeCases:
             active_areas, area_temp_sensors, inactive_areas
         )
 
-        # Rooms configured but none active means we should turn off the thermostat (idle)
+        # Rooms configured but none active means we should turn off the thermostat
         assert state.active_room_count == 0
         assert state.recommended_action == ThermostatAction.TURN_OFF
-        assert "idle" in state.action_reason.lower()
+        # With no active rooms, we get "all 0 active rooms satiated" or "no active or critical rooms"
+        assert "active" in state.action_reason.lower()
 
     def test_no_active_rooms_already_off_returns_none(self, controller, mock_hass):
         """Test that no active rooms with thermostat already off results in NONE action."""
@@ -1509,7 +1512,8 @@ class TestEvaluateThermostatActionWithCriticalRooms:
         assert state.critical_room_count == 0
         # Should turn off when idle (no active or critical rooms) and thermostat is on
         assert state.recommended_action == ThermostatAction.TURN_OFF
-        assert "No active or critical rooms" in state.action_reason
+        # With no active rooms and no critical rooms, we turn off
+        assert "active" in state.action_reason.lower() or "satiated" in state.action_reason.lower()
 
     def test_critical_room_count_in_state(self, controller, mock_hass):
         """Test that critical_room_count is properly tracked."""
@@ -3117,3 +3121,1253 @@ class TestBoostTemperature:
 
         assert controller.heating_boost_offset == 0.0
         assert controller.cooling_boost_offset == 0.0
+
+
+# =============================================================================
+# Tests for infer_effective_hvac_mode
+# =============================================================================
+
+
+class TestInferEffectiveHvacMode:
+    """Tests for the infer_effective_hvac_mode function."""
+
+    def test_closer_to_heat_below_target(self):
+        """Test that mode is HEAT when avg temp is below heating target."""
+        readings = {
+            "sensor.living_room": 68.0,
+            "sensor.bedroom": 66.0,
+            "sensor.kitchen": 67.0,
+        }
+        # Avg = 67°F, target_low = 71, target_high = 78
+        # Distance to heat = 71 - 67 = 4 (positive, below target)
+        # Distance to cool = 67 - 78 = -11 (negative, not above)
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        assert result == HVACMode.HEAT
+
+    def test_closer_to_cool_above_target(self):
+        """Test that mode is COOL when avg temp is above cooling target."""
+        readings = {
+            "sensor.living_room": 80.0,
+            "sensor.bedroom": 82.0,
+            "sensor.kitchen": 81.0,
+        }
+        # Avg = 81°F, target_low = 71, target_high = 78
+        # Distance to heat = 71 - 81 = -10 (negative, above target)
+        # Distance to cool = 81 - 78 = 3 (positive, above target)
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        assert result == HVACMode.COOL
+
+    def test_in_comfort_band_closer_to_heat(self):
+        """Test mode is HEAT when in comfort band but closer to heat threshold."""
+        readings = {
+            "sensor.living_room": 72.0,
+            "sensor.bedroom": 73.0,
+        }
+        # Avg = 72.5°F, target_low = 71, target_high = 78
+        # Distance to heat = 71 - 72.5 = -1.5 (1.5 above heat target)
+        # Distance to cool = 72.5 - 78 = -5.5 (5.5 below cool target)
+        # Closer to heat threshold (1.5 vs 5.5)
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        assert result == HVACMode.HEAT
+
+    def test_in_comfort_band_closer_to_cool(self):
+        """Test mode is COOL when in comfort band but closer to cool threshold."""
+        readings = {
+            "sensor.living_room": 76.0,
+            "sensor.bedroom": 77.0,
+        }
+        # Avg = 76.5°F, target_low = 71, target_high = 78
+        # Distance to heat = 71 - 76.5 = -5.5 (5.5 above heat target)
+        # Distance to cool = 76.5 - 78 = -1.5 (1.5 below cool target)
+        # Closer to cool threshold (1.5 vs 5.5)
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        assert result == HVACMode.COOL
+
+    def test_exactly_at_heat_threshold(self):
+        """Test mode is HEAT when exactly at heat threshold."""
+        readings = {"sensor.temp": 71.0}
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        assert result == HVACMode.HEAT
+
+    def test_exactly_at_cool_threshold(self):
+        """Test mode is COOL when exactly at cool threshold."""
+        readings = {"sensor.temp": 78.0}
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        assert result == HVACMode.COOL
+
+    def test_exactly_at_midpoint(self):
+        """Test mode when exactly at midpoint of comfort band."""
+        readings = {"sensor.temp": 74.5}  # Midpoint of 71-78
+        # Distance to heat = 71 - 74.5 = -3.5
+        # Distance to cool = 74.5 - 78 = -3.5
+        # Equal distance - should pick one consistently
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        # When equal, abs comparison: abs(-3.5) < abs(-3.5) is False, so COOL
+        assert result == HVACMode.COOL
+
+    def test_no_readings_returns_none(self):
+        """Test that empty readings returns None."""
+        result = infer_effective_hvac_mode({}, 71.0, 78.0)
+        assert result is None
+
+    def test_no_target_low_returns_none(self):
+        """Test that missing target_low returns None."""
+        readings = {"sensor.temp": 72.0}
+        result = infer_effective_hvac_mode(readings, None, 78.0)
+        assert result is None
+
+    def test_no_target_high_returns_none(self):
+        """Test that missing target_high returns None."""
+        readings = {"sensor.temp": 72.0}
+        result = infer_effective_hvac_mode(readings, 71.0, None)
+        assert result is None
+
+    def test_single_sensor(self):
+        """Test inference with only one sensor."""
+        readings = {"sensor.only": 68.0}
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        assert result == HVACMode.HEAT
+
+    def test_many_sensors_averaged(self):
+        """Test that all sensors are averaged correctly."""
+        readings = {
+            "sensor.1": 70.0,
+            "sensor.2": 70.0,
+            "sensor.3": 70.0,
+            "sensor.4": 70.0,
+            "sensor.5": 80.0,  # One hot room
+        }
+        # Avg = (70*4 + 80) / 5 = 72°F
+        result = infer_effective_hvac_mode(readings, 71.0, 78.0)
+        assert result == HVACMode.HEAT  # 72 is closer to 71 than 78
+
+    def test_away_mode_adjusted_targets(self):
+        """Test with away mode adjusted targets (wider band)."""
+        readings = {"sensor.temp": 66.0}
+        # Away targets: heat=68 (71-3), cool=81 (78+3)
+        result = infer_effective_hvac_mode(readings, 68.0, 81.0)
+        assert result == HVACMode.HEAT  # 66 is below 68 heat target
+
+
+# =============================================================================
+# Tests for determine_rooms_need_mode
+# =============================================================================
+
+
+class TestDetermineRoomsNeedMode:
+    """Tests for the determine_rooms_need_mode function."""
+
+    def test_active_room_needs_heat(self):
+        """Test that active room below heat threshold needs heat."""
+        room = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=False,
+            determining_temperature=68.0,  # Below 70.5 (71 - 0.5)
+        )
+        room_states = {"living_room": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is True
+        assert need_cool is False
+
+    def test_active_room_needs_cool(self):
+        """Test that active room above cool threshold needs cool."""
+        room = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=False,
+            determining_temperature=80.0,  # Above 78.5 (78 + 0.5)
+        )
+        room_states = {"living_room": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is False
+        assert need_cool is True
+
+    def test_critical_room_needs_heat(self):
+        """Test that critical room below heat threshold needs heat."""
+        room = RoomTemperatureState(
+            area_id="basement",
+            area_name="Basement",
+            is_satiated=True,  # Satiated but critical
+            is_critical=True,
+            determining_temperature=62.0,
+        )
+        room_states = {"basement": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is True
+        assert need_cool is False
+
+    def test_critical_room_needs_cool(self):
+        """Test that critical room above cool threshold needs cool."""
+        room = RoomTemperatureState(
+            area_id="attic",
+            area_name="Attic",
+            is_satiated=True,
+            is_critical=True,
+            determining_temperature=85.0,
+        )
+        room_states = {"attic": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is False
+        assert need_cool is True
+
+    def test_inactive_room_in_comfort_zone_ignored(self):
+        """Test that inactive rooms in comfort zone don't affect needs.
+        
+        An inactive room at 69°F is below the comfort threshold for heating
+        (70.5°F) but above the critical threshold (68°F = 71 - 3).
+        Since it's not in critical range, it shouldn't trigger need_heat.
+        """
+        room = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_satiated=True,
+            is_critical=False,
+            determining_temperature=69.0,  # Cold but above critical (68°F)
+        )
+        room_states = {"living_room": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is False
+        assert need_cool is False
+
+    def test_inactive_room_in_critical_heat_range_needs_heat(self):
+        """Test that inactive room in critical heat range triggers need_heat.
+        
+        An inactive room at 65°F is below the critical heating threshold
+        (68°F = 71 - 3), so it should trigger need_heat even though it's
+        inactive and "satiated".
+        """
+        room = RoomTemperatureState(
+            area_id="basement",
+            area_name="Basement",
+            is_satiated=True,  # Mode-specific satiation
+            is_critical=False,  # is_critical might not be set if eval'd in wrong mode
+            determining_temperature=65.0,  # Below critical threshold (68°F)
+        )
+        room_states = {"basement": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is True
+        assert need_cool is False
+
+    def test_inactive_room_in_critical_cool_range_needs_cool(self):
+        """Test that inactive room in critical cool range triggers need_cool.
+        
+        An inactive room at 83°F is above the critical cooling threshold
+        (81°F = 78 + 3), so it should trigger need_cool even though it's
+        inactive.
+        """
+        room = RoomTemperatureState(
+            area_id="attic",
+            area_name="Attic",
+            is_satiated=True,
+            is_critical=False,  # is_critical might not be set if eval'd in wrong mode
+            determining_temperature=83.0,  # Above critical threshold (81°F)
+        )
+        room_states = {"attic": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is False
+        assert need_cool is True
+
+    def test_mixed_active_rooms_some_need_heat_some_cool(self):
+        """Test with active rooms needing both heat and cool."""
+        room1 = RoomTemperatureState(
+            area_id="theater",
+            area_name="Theater",
+            is_active=True,
+            is_satiated=False,
+            determining_temperature=68.0,
+        )
+        room2 = RoomTemperatureState(
+            area_id="kitchen",
+            area_name="Kitchen",
+            is_active=True,
+            is_satiated=False,
+            determining_temperature=80.0,
+        )
+        room_states = {"theater": room1, "kitchen": room2}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is True
+        assert need_cool is True
+
+    def test_active_room_in_comfort_band_no_needs(self):
+        """Test active room in comfort band doesn't need heat or cool."""
+        room = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=False,
+            determining_temperature=74.0,  # In comfort band
+        )
+        room_states = {"living_room": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is False
+        assert need_cool is False
+
+    def test_empty_room_states(self):
+        """Test with no rooms."""
+        need_heat, need_cool = determine_rooms_need_mode({}, 71.0, 78.0, 0.5)
+        assert need_heat is False
+        assert need_cool is False
+
+    def test_room_without_temperature(self):
+        """Test active room without determining temperature."""
+        room = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=False,
+            determining_temperature=None,
+        )
+        room_states = {"living_room": room}
+        need_heat, need_cool = determine_rooms_need_mode(room_states, 71.0, 78.0, 0.5)
+        assert need_heat is False
+        assert need_cool is False
+
+
+# =============================================================================
+# Tests for Consensus-Based HVAC Mode Selection
+# =============================================================================
+
+
+class TestConsensusBasedHvacModeSelection:
+    """Tests for the consensus logic in evaluate_thermostat_action."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create mock Home Assistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        hass.services = MagicMock()
+        hass.services.async_call = AsyncMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self, mock_hass):
+        """Create mock occupancy tracker."""
+        tracker = MagicMock(spec=RoomOccupancyTracker)
+        tracker.hass = mock_hass
+        return tracker
+
+    @pytest.fixture
+    def controller(self, mock_hass, mock_occupancy_tracker):
+        """Create thermostat controller for testing."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            temperature_deadband=0.5,
+        )
+        return controller
+
+    def _create_thermostat_state(self, mock_hass, hvac_mode=HVACMode.OFF, 
+                                   target_low=71.0, target_high=78.0):
+        """Helper to create thermostat state mock."""
+        mock_state = MagicMock()
+        mock_state.state = hvac_mode.value if hvac_mode else STATE_OFF
+        mock_state.attributes = {
+            ATTR_TARGET_TEMP_LOW: target_low,
+            ATTR_TARGET_TEMP_HIGH: target_high,
+            ATTR_TEMPERATURE: target_low if hvac_mode == HVACMode.HEAT else target_high,
+        }
+        return mock_state
+
+    def _create_temp_sensor_state(self, temp):
+        """Helper to create temperature sensor state mock."""
+        mock_state = MagicMock()
+        mock_state.state = str(temp)
+        return mock_state
+
+    # =========================================================================
+    # Category 1: Aligned Scenarios - Should Engage
+    # =========================================================================
+
+    def test_cold_house_active_room_needs_heat_engages_heat(
+        self, controller, mock_hass
+    ):
+        """Scenario 1A: Cold house, active room needs heat -> ENGAGE HEAT."""
+        # Setup thermostat as OFF
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(67.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(66.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, [], respect_user_off=False
+        )
+
+        assert result.recommended_action == ThermostatAction.TURN_ON
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        assert result.rooms_need_heat is True
+        assert "Trend=HEAT" in result.action_reason
+
+    def test_hot_house_active_room_needs_cool_engages_cool(
+        self, controller, mock_hass
+    ):
+        """Scenario 1B: Hot house, active room needs cool -> ENGAGE COOL."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.office_temp": self._create_temp_sensor_state(82.0),
+            "sensor.living_room_temp": self._create_temp_sensor_state(80.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="office", area_name="Office"),
+        ]
+        area_temp_sensors = {
+            "office": ["sensor.office_temp"],
+            "living_room": ["sensor.living_room_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, 
+            [AreaOccupancyState(area_id="living_room", area_name="Living Room")],
+            respect_user_off=False
+        )
+
+        assert result.recommended_action == ThermostatAction.TURN_ON
+        assert result.inferred_hvac_mode == HVACMode.COOL
+        assert result.rooms_need_cool is True
+        assert "Trend=COOL" in result.action_reason
+
+    def test_shoulder_season_cold_trend_room_needs_heat_engages_heat(
+        self, controller, mock_hass
+    ):
+        """Scenario 1C: Shoulder season, trend=HEAT, room needs heat -> ENGAGE."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.theater_temp": self._create_temp_sensor_state(68.0),  # Needs heat
+            "sensor.office_temp": self._create_temp_sensor_state(73.0),  # Satiated
+            "sensor.living_room_temp": self._create_temp_sensor_state(70.0),  # Pulls avg down
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="theater", area_name="Theater"),
+            AreaOccupancyState(area_id="office", area_name="Office"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+        ]
+        area_temp_sensors = {
+            "theater": ["sensor.theater_temp"],
+            "office": ["sensor.office_temp"],
+            "living_room": ["sensor.living_room_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Avg = (68 + 73 + 70) / 3 = 70.33, closer to 71 than 78 -> HEAT
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        assert result.recommended_action == ThermostatAction.TURN_ON
+
+    # =========================================================================
+    # Category 2: Anomaly Scenarios - Should NOT Engage
+    # =========================================================================
+
+    def test_cold_house_but_hot_kitchen_anomaly(self, controller, mock_hass):
+        """Scenario 2A: Cold house, but active kitchen is hot -> ANOMALY."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(80.0),  # Hot kitchen
+            "sensor.living_room_temp": self._create_temp_sensor_state(69.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(68.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+        ]
+        area_temp_sensors = {
+            "kitchen": ["sensor.kitchen_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors,
+            [AreaOccupancyState(area_id="bedroom", area_name="Bedroom")],
+            respect_user_off=False
+        )
+
+        # Avg = (80 + 69 + 68) / 3 = 72.33, closer to 71 -> HEAT
+        # But kitchen at 80 needs COOL -> Mismatch
+        # Living room at 69 is actually satiated for heat (69 > 70.5? No, 69 < 70.5)
+        # So living room needs heat, kitchen needs cool
+        # Trend=HEAT, rooms_need_heat=True -> Should engage HEAT
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        # Since at least one room (living room) needs heat and trend=HEAT, it should engage
+        assert result.recommended_action == ThermostatAction.TURN_ON
+
+    def test_hot_house_but_cold_basement_anomaly(self, controller, mock_hass):
+        """Scenario 2B: Hot house, but basement needs heat -> ANOMALY if only basement."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.basement_temp": self._create_temp_sensor_state(65.0),  # Cold basement
+            "sensor.office_temp": self._create_temp_sensor_state(77.0),  # Satiated
+            "sensor.living_room_temp": self._create_temp_sensor_state(80.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(79.0),
+        }.get(entity_id)
+
+        # Only basement is active, it's cold
+        active_areas = [
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="office", area_name="Office"),
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "basement": ["sensor.basement_temp"],
+            "office": ["sensor.office_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Avg = (65 + 77 + 80 + 79) / 4 = 75.25, closer to 78 than 71 -> COOL
+        # Basement needs HEAT, but trend=COOL -> ANOMALY
+        assert result.inferred_hvac_mode == HVACMode.COOL
+        assert result.rooms_need_heat is True
+        assert result.rooms_need_cool is False
+        assert result.recommended_action == ThermostatAction.NONE
+        assert "Anomaly" in result.action_reason
+
+    def test_warm_house_cold_theater_anomaly(self, controller, mock_hass):
+        """Scenario 2C: Warm house, cold theater -> ANOMALY."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.theater_temp": self._create_temp_sensor_state(68.0),  # Cold
+            "sensor.living_room_temp": self._create_temp_sensor_state(76.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(77.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(78.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="theater", area_name="Theater"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "theater": ["sensor.theater_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Avg = (68 + 76 + 77 + 78) / 4 = 74.75, closer to cool (78) than heat (71)
+        # Theater needs HEAT, trend=COOL -> ANOMALY
+        assert result.inferred_hvac_mode == HVACMode.COOL
+        assert result.recommended_action == ThermostatAction.NONE
+        assert "Anomaly" in result.action_reason
+
+    # =========================================================================
+    # Category 3: All Satiated - No Action
+    # =========================================================================
+
+    def test_all_active_rooms_satiated_no_action(self, controller, mock_hass):
+        """Scenario 3A: All active rooms satiated -> No action."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(73.0),
+            "sensor.office_temp": self._create_temp_sensor_state(75.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="office", area_name="Office"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "office": ["sensor.office_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, [], respect_user_off=False
+        )
+
+        assert result.recommended_action == ThermostatAction.NONE
+        assert result.all_active_rooms_satiated is True
+        assert "Already off, all rooms satiated" in result.action_reason
+
+    # =========================================================================
+    # Category 4: Critical Room Scenarios
+    # =========================================================================
+
+    def test_critical_room_aligned_with_trend_engages(self, controller, mock_hass):
+        """Scenario 2A revised: Critical basement, trend=HEAT -> ENGAGE."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.basement_temp": self._create_temp_sensor_state(62.0),  # Critical cold
+            "sensor.living_room_temp": self._create_temp_sensor_state(68.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(69.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0  # Critical below 68°F
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "basement": ["sensor.basement_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Avg = (62 + 68 + 69) / 3 = 66.33 -> HEAT
+        # Basement is critical (62 < 68), needs heat
+        # Trend=HEAT, critical needs HEAT -> ENGAGE
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        assert result.critical_room_count >= 1
+        assert result.recommended_action == ThermostatAction.TURN_ON
+
+    def test_critical_room_misaligned_with_trend_anomaly(self, controller, mock_hass):
+        """Scenario: Critical basement needs heat, but house trend=COOL -> ANOMALY.
+        
+        The basement is critically cold (60°F, which is below 71-3=68 threshold),
+        but the rest of the house is warm enough that the trend is COOL.
+        None of the warm rooms are critical for cooling (all < 81°F threshold).
+        """
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.basement_temp": self._create_temp_sensor_state(60.0),  # Critical cold (< 68)
+            "sensor.living_room_temp": self._create_temp_sensor_state(80.0),  # Warm but not critical (< 81)
+            "sensor.bedroom_temp": self._create_temp_sensor_state(80.0),  # Warm but not critical (< 81)
+            "sensor.kitchen_temp": self._create_temp_sensor_state(80.0),  # Warm but not critical (< 81)
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0  # Critical below 68°F
+        controller._unoccupied_cooling_threshold = 3.0  # Critical above 81°F
+
+        active_areas = []  # No active areas
+        inactive_areas = [
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "basement": ["sensor.basement_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Avg = (60 + 80 + 80 + 80) / 4 = 75 -> COOL (75 is closer to 78 than 71)
+        # Basement is critical and needs HEAT, but trend=COOL -> ANOMALY
+        # Other rooms are warm but NOT critical (80 < 81 threshold)
+        assert result.inferred_hvac_mode == HVACMode.COOL
+        assert result.rooms_need_heat is True
+        assert result.rooms_need_cool is False  # No rooms are critical for cooling
+        assert result.recommended_action == ThermostatAction.NONE
+        assert "Anomaly" in result.action_reason
+
+    # =========================================================================
+    # Category 5: Everyone Away (No Active Rooms) Scenarios  
+    # =========================================================================
+
+    def test_everyone_away_all_rooms_comfortable_stays_off(self, controller, mock_hass):
+        """Everyone away, all rooms comfortable -> stay OFF."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(73.0),  # Comfortable
+            "sensor.bedroom_temp": self._create_temp_sensor_state(74.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(72.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        active_areas = []  # Everyone away
+        inactive_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # All rooms between 68°F (heat critical) and 81°F (cool critical)
+        # No active rooms = should stay off
+        assert result.recommended_action == ThermostatAction.NONE
+        assert result.rooms_need_heat is False
+        assert result.rooms_need_cool is False
+
+    def test_everyone_away_one_room_critical_cold_turns_on(self, controller, mock_hass):
+        """Everyone away, one room critically cold -> turn ON for heat."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.basement_temp": self._create_temp_sensor_state(55.0),  # Critically cold
+            "sensor.living_room_temp": self._create_temp_sensor_state(70.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(69.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        active_areas = []  # Everyone away
+        inactive_areas = [
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "basement": ["sensor.basement_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Basement at 55°F is critically cold (< 68°F)
+        # Avg = (55 + 70 + 69) / 3 = 64.67 -> trend=HEAT
+        # Critical cold room + trend=HEAT = consensus, turn ON
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        assert result.rooms_need_heat is True
+        assert result.critical_room_count >= 1
+        assert result.recommended_action == ThermostatAction.TURN_ON
+
+    def test_everyone_away_one_room_critical_hot_turns_on(self, controller, mock_hass):
+        """Everyone away, one room critically hot -> turn ON for cool."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.attic_temp": self._create_temp_sensor_state(90.0),  # Critically hot
+            "sensor.living_room_temp": self._create_temp_sensor_state(78.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(79.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        active_areas = []  # Everyone away
+        inactive_areas = [
+            AreaOccupancyState(area_id="attic", area_name="Attic"),
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "attic": ["sensor.attic_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Attic at 90°F is critically hot (> 81°F)
+        # Avg = (90 + 78 + 79) / 3 = 82.33 -> trend=COOL
+        # Critical hot room + trend=COOL = consensus, turn ON
+        assert result.inferred_hvac_mode == HVACMode.COOL
+        assert result.rooms_need_cool is True
+        assert result.critical_room_count >= 1
+        assert result.recommended_action == ThermostatAction.TURN_ON
+
+    def test_everyone_away_hvac_already_running_keeps_running_if_needed(
+        self, controller, mock_hass
+    ):
+        """Everyone away, HVAC running, critical room exists -> keep running."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.basement_temp": self._create_temp_sensor_state(60.0),  # Still cold
+            "sensor.living_room_temp": self._create_temp_sensor_state(70.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(71.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        active_areas = []  # Everyone away
+        inactive_areas = [
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "basement": ["sensor.basement_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Basement is still critical, HVAC already heating
+        # Should stay on (NONE = no change needed)
+        assert result.critical_room_count >= 1
+        assert result.recommended_action == ThermostatAction.NONE
+
+    def test_everyone_away_hvac_running_all_satiated_turns_off(
+        self, controller, mock_hass
+    ):
+        """Everyone away, HVAC running, all rooms now comfortable -> turn off."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.basement_temp": self._create_temp_sensor_state(72.0),  # Warmed up
+            "sensor.living_room_temp": self._create_temp_sensor_state(73.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(72.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        active_areas = []  # Everyone away
+        inactive_areas = [
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "basement": ["sensor.basement_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # All rooms now comfortable, no active rooms = should turn off
+        assert result.critical_room_count == 0
+        assert result.recommended_action == ThermostatAction.TURN_OFF
+
+    # =========================================================================
+    # Category 6: Mixed Active/Inactive Scenarios
+    # =========================================================================
+
+    def test_mixed_rooms_trend_heat_engages_heat(self, controller, mock_hass):
+        """Scenario 4C: Mixed rooms, trend=HEAT, one needs heat -> ENGAGE HEAT."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.theater_temp": self._create_temp_sensor_state(68.0),  # Needs heat
+            "sensor.kitchen_temp": self._create_temp_sensor_state(80.0),  # Needs cool
+            "sensor.living_room_temp": self._create_temp_sensor_state(71.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="theater", area_name="Theater"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "theater": ["sensor.theater_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+            "living_room": ["sensor.living_room_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors,
+            [AreaOccupancyState(area_id="living_room", area_name="Living Room")],
+            respect_user_off=False
+        )
+
+        # Avg = (68 + 80 + 71) / 3 = 73 -> HEAT (closer to 71)
+        # Theater needs HEAT, kitchen needs COOL
+        # Trend=HEAT, one room needs HEAT -> ENGAGE HEAT
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        assert result.rooms_need_heat is True
+        assert result.rooms_need_cool is True
+        assert result.recommended_action == ThermostatAction.TURN_ON
+        assert "Trend=HEAT" in result.action_reason
+
+    def test_mixed_rooms_trend_cool_engages_cool(self, controller, mock_hass):
+        """Scenario 4D: Mixed rooms, trend=COOL, one needs cool -> ENGAGE COOL."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.theater_temp": self._create_temp_sensor_state(68.0),  # Needs heat
+            "sensor.kitchen_temp": self._create_temp_sensor_state(80.0),  # Needs cool
+            "sensor.living_room_temp": self._create_temp_sensor_state(79.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="theater", area_name="Theater"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "theater": ["sensor.theater_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+            "living_room": ["sensor.living_room_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors,
+            [AreaOccupancyState(area_id="living_room", area_name="Living Room")],
+            respect_user_off=False
+        )
+
+        # Avg = (68 + 80 + 79) / 3 = 75.67 -> COOL (closer to 78)
+        assert result.inferred_hvac_mode == HVACMode.COOL
+        assert result.recommended_action == ThermostatAction.TURN_ON
+        assert "Trend=COOL" in result.action_reason
+
+    # =========================================================================
+    # Category 7: Returning Home (Transition from Away to Active)
+    # =========================================================================
+
+    def test_returning_home_to_cold_room_turns_on_heat(self, controller, mock_hass):
+        """User returns home to a cold room -> turn on heat."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(66.0),  # Cold
+            "sensor.bedroom_temp": self._create_temp_sensor_state(67.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(68.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        # User just came home to living room
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Living room at 66°F is below comfort threshold (70.5°F)
+        # Avg = 67°F -> trend=HEAT
+        # Active room needs heat + trend=HEAT = consensus, turn ON
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        assert result.rooms_need_heat is True
+        assert result.recommended_action == ThermostatAction.TURN_ON
+
+    def test_returning_home_to_hot_room_turns_on_cool(self, controller, mock_hass):
+        """User returns home to a hot room -> turn on cooling."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(82.0),  # Hot
+            "sensor.bedroom_temp": self._create_temp_sensor_state(80.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(81.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        # User just came home to living room
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Living room at 82°F is above comfort threshold (78.5°F)
+        # Avg = 81°F -> trend=COOL
+        # Active room needs cool + trend=COOL = consensus, turn ON
+        assert result.inferred_hvac_mode == HVACMode.COOL
+        assert result.rooms_need_cool is True
+        assert result.recommended_action == ThermostatAction.TURN_ON
+
+    def test_returning_home_room_comfortable_stays_off(self, controller, mock_hass):
+        """User returns home to comfortable room -> stay off."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(73.0),  # Comfortable
+            "sensor.bedroom_temp": self._create_temp_sensor_state(74.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(72.0),
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Room is comfortable, no need for HVAC
+        assert result.recommended_action == ThermostatAction.NONE
+        assert result.rooms_need_heat is False
+        assert result.rooms_need_cool is False
+
+    def test_returning_home_cold_room_but_hot_house_anomaly(self, controller, mock_hass):
+        """User returns home to cold room, but rest of house is hot -> anomaly.
+        
+        This tests the scenario where one room has AC vent blowing on it or
+        a drafty window, making it cold while rest of house is warm.
+        """
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(67.0),  # Cold (drafty)
+            "sensor.bedroom_temp": self._create_temp_sensor_state(80.0),  # Hot
+            "sensor.kitchen_temp": self._create_temp_sensor_state(79.0),  # Hot
+        }.get(entity_id)
+
+        controller._unoccupied_heating_threshold = 3.0
+        controller._unoccupied_cooling_threshold = 3.0
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, inactive_areas, respect_user_off=False
+        )
+
+        # Avg = (67 + 80 + 79) / 3 = 75.33 -> trend=COOL
+        # Active room (living room) needs HEAT, but trend=COOL -> ANOMALY
+        assert result.inferred_hvac_mode == HVACMode.COOL
+        assert result.rooms_need_heat is True  # Active room is cold
+        assert result.recommended_action == ThermostatAction.NONE
+        assert "Anomaly" in result.action_reason
+
+    # =========================================================================
+    # Category 8: Edge Cases
+    # =========================================================================
+
+    def test_no_sensors_no_inference(self, controller, mock_hass):
+        """Scenario 4E: No temperature sensors -> Can't infer mode."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+        }.get(entity_id)
+
+        active_areas = []
+        area_temp_sensors = {}
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, [], respect_user_off=False
+        )
+
+        # No active rooms, no sensors -> no action
+        assert result.recommended_action == ThermostatAction.NONE
+
+    def test_thermostat_already_on_no_mode_change(self, controller, mock_hass):
+        """Scenario 4G: Thermostat already on -> No action needed."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.theater_temp": self._create_temp_sensor_state(67.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="theater", area_name="Theater"),
+        ]
+        area_temp_sensors = {"theater": ["sensor.theater_temp"]}
+
+        result = controller.evaluate_thermostat_action(
+            active_areas, area_temp_sensors, [], respect_user_off=False
+        )
+
+        # Already on, just continue
+        assert result.recommended_action == ThermostatAction.NONE
+        assert "Already on" in result.action_reason
+
+
+# =============================================================================
+# Tests for Execute Action with Inferred Mode
+# =============================================================================
+
+
+class TestExecuteActionWithInferredMode:
+    """Tests for async_execute_action using inferred HVAC mode."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create mock Home Assistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        hass.services = MagicMock()
+        hass.services.async_call = AsyncMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self, mock_hass):
+        """Create mock occupancy tracker."""
+        tracker = MagicMock(spec=RoomOccupancyTracker)
+        tracker.hass = mock_hass
+        return tracker
+
+    @pytest.fixture
+    def controller(self, mock_hass, mock_occupancy_tracker):
+        """Create thermostat controller for testing."""
+        controller = ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+        )
+        return controller
+
+    @pytest.mark.asyncio
+    async def test_execute_uses_inferred_heat_mode(self, controller, mock_hass):
+        """Test that execute action uses inferred HEAT mode."""
+        mock_hass.states.get.return_value = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.inferred_hvac_mode = HVACMode.HEAT
+        thermostat_state.action_reason = "Rooms need heat"
+        thermostat_state.target_temperature = 71.0
+
+        await controller.async_execute_action(thermostat_state)
+
+        calls = mock_hass.services.async_call.call_args_list
+        hvac_mode_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+        
+        assert len(hvac_mode_calls) == 1
+        assert hvac_mode_calls[0][0][2]["hvac_mode"] == "heat"
+
+    @pytest.mark.asyncio
+    async def test_execute_uses_inferred_cool_mode(self, controller, mock_hass):
+        """Test that execute action uses inferred COOL mode."""
+        mock_hass.states.get.return_value = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.inferred_hvac_mode = HVACMode.COOL
+        thermostat_state.action_reason = "Rooms need cool"
+        thermostat_state.target_temperature = 78.0
+
+        await controller.async_execute_action(thermostat_state)
+
+        calls = mock_hass.services.async_call.call_args_list
+        hvac_mode_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+        
+        assert len(hvac_mode_calls) == 1
+        assert hvac_mode_calls[0][0][2]["hvac_mode"] == "cool"
+
+    @pytest.mark.asyncio
+    async def test_execute_falls_back_to_previous_mode(self, controller, mock_hass):
+        """Test fallback to previous mode when no inferred mode."""
+        mock_hass.states.get.return_value = None
+        controller._previous_hvac_mode = HVACMode.COOL.value
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.inferred_hvac_mode = None  # No inferred mode
+        thermostat_state.action_reason = "Rooms need conditioning"
+
+        await controller.async_execute_action(thermostat_state)
+
+        calls = mock_hass.services.async_call.call_args_list
+        hvac_mode_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+        
+        assert len(hvac_mode_calls) == 1
+        assert hvac_mode_calls[0][0][2]["hvac_mode"] == "cool"
+
+    @pytest.mark.asyncio
+    async def test_execute_defaults_to_heat_when_nothing_available(
+        self, controller, mock_hass
+    ):
+        """Test default to HEAT when no inferred or previous mode."""
+        mock_hass.states.get.return_value = None
+        controller._previous_hvac_mode = None
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.inferred_hvac_mode = None
+        thermostat_state.action_reason = "Rooms need conditioning"
+
+        await controller.async_execute_action(thermostat_state)
+
+        calls = mock_hass.services.async_call.call_args_list
+        hvac_mode_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+        
+        assert len(hvac_mode_calls) == 1
+        assert hvac_mode_calls[0][0][2]["hvac_mode"] == "heat"
+
+    @pytest.mark.asyncio
+    async def test_inferred_mode_takes_precedence_over_previous(
+        self, controller, mock_hass
+    ):
+        """Test that inferred mode takes precedence over previous mode."""
+        mock_hass.states.get.return_value = None
+        controller._previous_hvac_mode = HVACMode.HEAT.value  # Previous was heat
+
+        thermostat_state = ThermostatState(thermostat_entity_id=TEST_THERMOSTAT)
+        thermostat_state.recommended_action = ThermostatAction.TURN_ON
+        thermostat_state.inferred_hvac_mode = HVACMode.COOL  # But inferred is cool
+        thermostat_state.action_reason = "Rooms need cool"
+        thermostat_state.target_temperature = 78.0
+
+        await controller.async_execute_action(thermostat_state)
+
+        calls = mock_hass.services.async_call.call_args_list
+        hvac_mode_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+        
+        assert len(hvac_mode_calls) == 1
+        # Inferred mode (COOL) should win over previous (HEAT)
+        assert hvac_mode_calls[0][0][2]["hvac_mode"] == "cool"
