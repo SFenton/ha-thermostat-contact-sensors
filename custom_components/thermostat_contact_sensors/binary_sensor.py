@@ -30,6 +30,7 @@ async def async_setup_entry(
 
     entities = [
         ThermostatPausedBinarySensor(coordinator, entry),
+        AwayModeActiveBinarySensor(coordinator, entry),
     ]
 
     async_add_entities(entities)
@@ -114,3 +115,37 @@ class ThermostatPausedBinarySensor(CoordinatorEntity, RestoreEntity, BinarySenso
                 attrs["triggered_by"] = coordinator.trigger_sensor
 
         return attrs
+
+
+class AwayModeActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Binary sensor indicating if away mode is active."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
+    _attr_icon = "mdi:home-export-outline"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_away_mode_active"
+        self._attr_name = "Away Mode Active"
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if away mode is active (not home)."""
+        return self.coordinator.is_away
