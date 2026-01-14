@@ -1304,6 +1304,7 @@ class ThermostatController:
         inactive_areas: list[AreaOccupancyState] | None = None,
         now: datetime | None = None,
         respect_user_off: bool = True,
+        eco_mode: bool = False,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
 
@@ -1311,7 +1312,7 @@ class ThermostatController:
         - Whether we're paused by contact sensors
         - Current thermostat state and mode
         - Active room temperature satiation
-        - Inactive rooms with critical temperature levels
+        - Inactive rooms with critical temperature levels (unless eco_mode is enabled)
         - Cycle protection timers
         - Whether to respect user's choice to turn thermostat off
 
@@ -1323,6 +1324,9 @@ class ThermostatController:
             respect_user_off: If True (default), when the user turns off the
                 thermostat, the integration won't turn it back on. If False,
                 the integration will turn it on when rooms need conditioning.
+            eco_mode: If True, only consider active (occupied) rooms for thermostat
+                control. Unoccupied rooms will not trigger thermostat activation,
+                even if they reach critical temperatures.
 
         Returns:
             ThermostatState with the recommended action.
@@ -1433,6 +1437,7 @@ class ThermostatController:
         )
 
         # Evaluate inactive rooms for critical temperatures
+        # In eco mode, we still evaluate for display but won't use critical status for decisions
         critical_count = 0
         for area in inactive_areas:
             # Skip if this area was already evaluated as active
@@ -1458,10 +1463,17 @@ class ThermostatController:
             )
             thermostat_state.room_states[area.area_id] = room_state
 
-            if room_state.is_critical:
+            # Only count as critical for thermostat control if NOT in eco mode
+            if room_state.is_critical and not eco_mode:
                 critical_count += 1
                 _LOGGER.debug(
                     "Inactive room %s is critical: %s",
+                    area.area_id,
+                    room_state.critical_reason,
+                )
+            elif room_state.is_critical and eco_mode:
+                _LOGGER.debug(
+                    "Inactive room %s is critical but eco mode is enabled (ignoring): %s",
                     area.area_id,
                     room_state.critical_reason,
                 )
@@ -1473,8 +1485,15 @@ class ThermostatController:
         # Use target_temp as fallback for low/high if not available (ensures same units)
         effective_target_low = target_temp_low or target_temp or 70.0
         effective_target_high = target_temp_high or target_temp or 78.0
+        
+        # In eco mode, only consider active rooms for mode determination
+        rooms_for_mode_check = {
+            area_id: room_state
+            for area_id, room_state in thermostat_state.room_states.items()
+            if room_state.is_active or not eco_mode
+        }
         rooms_need_heat, rooms_need_cool = determine_rooms_need_mode(
-            thermostat_state.room_states,
+            rooms_for_mode_check,
             effective_target_low,
             effective_target_high,
             self._temperature_deadband,
@@ -1487,6 +1506,7 @@ class ThermostatController:
         # Determine if we need conditioning
         # When HVAC is OFF and we've inferred a mode, use absolute temperature needs
         # (not mode-specific satiation which can be misleading)
+        # In eco mode, only consider active rooms (critical_count will be 0)
         unsatiated_active = len(active_areas) - satiated_count
         if hvac_mode == HVACMode.OFF:
             # Use absolute temperature needs for consensus logic
@@ -1641,6 +1661,7 @@ class ThermostatController:
         area_temp_sensors: dict[str, list[str]],
         inactive_areas: list[AreaOccupancyState] | None = None,
         respect_user_off: bool = True,
+        eco_mode: bool = False,
     ) -> dict[str, Any]:
         """Get a summary of the current thermostat control state.
 
@@ -1649,6 +1670,7 @@ class ThermostatController:
             area_temp_sensors: Dict of area_id -> temperature sensor list.
             inactive_areas: List of inactive areas to check for critical temps.
             respect_user_off: Whether to respect user's choice to turn thermostat off.
+            eco_mode: Whether eco mode is enabled (only consider active rooms).
 
         Returns:
             Dict with summary information.
@@ -1656,6 +1678,7 @@ class ThermostatController:
         state = self.evaluate_thermostat_action(
             active_areas, area_temp_sensors, inactive_areas,
             respect_user_off=respect_user_off,
+            eco_mode=eco_mode,
         )
 
         return {
@@ -1668,6 +1691,7 @@ class ThermostatController:
             "temperature_deadband": self._temperature_deadband,
             "is_paused_by_contact_sensors": self._is_paused_by_contact_sensors,
             "we_turned_off": self._we_turned_off,
+            "eco_mode": eco_mode,
             "active_room_count": state.active_room_count,
             "satiated_room_count": state.satiated_room_count,
             "critical_room_count": state.critical_room_count,

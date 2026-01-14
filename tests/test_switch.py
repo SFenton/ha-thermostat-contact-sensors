@@ -414,3 +414,139 @@ class TestRespectUserOffBehavior:
         assert "respect" in attrs["description"].lower()
 
         await coordinator.async_shutdown()
+
+
+class TestEcoModeSwitch:
+    """Test the EcoModeSwitch entity."""
+
+    @pytest.mark.asyncio
+    async def test_switch_default_state_is_off(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test that the eco mode switch defaults to off."""
+        from custom_components.thermostat_contact_sensors.switch import EcoModeSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # Default should be False (consider all rooms)
+        assert coordinator.eco_mode is False
+
+        switch = EcoModeSwitch(coordinator, config_entry)
+        assert switch.is_on is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_switch_turn_on(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test turning the eco mode switch on."""
+        from custom_components.thermostat_contact_sensors.switch import EcoModeSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # Test directly on coordinator
+        assert coordinator.eco_mode is False
+        coordinator.eco_mode = True
+        assert coordinator.eco_mode is True
+
+        # Verify switch reflects the state
+        switch = EcoModeSwitch(coordinator, config_entry)
+        assert switch.is_on is True
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_switch_turn_off(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test turning the eco mode switch off."""
+        from custom_components.thermostat_contact_sensors.switch import EcoModeSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # Enable then disable
+        coordinator.eco_mode = True
+        assert coordinator.eco_mode is True
+
+        coordinator.eco_mode = False
+        assert coordinator.eco_mode is False
+
+        # Verify switch reflects the state
+        switch = EcoModeSwitch(coordinator, config_entry)
+        assert switch.is_on is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_switch_has_correct_attributes(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test that the switch has correct attributes."""
+        from custom_components.thermostat_contact_sensors.switch import EcoModeSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        switch = EcoModeSwitch(coordinator, config_entry)
+
+        assert switch.name == "Eco Mode"
+        assert switch.icon == "mdi:leaf"
+        assert "eco_mode" in switch.unique_id
+
+        attrs = switch.extra_state_attributes
+        assert "description" in attrs
+        assert "active" in attrs["description"].lower() or "occupied" in attrs["description"].lower()
+
+        await coordinator.async_shutdown()

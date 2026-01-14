@@ -104,6 +104,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._open_sensor_times: dict[str, float] = {}
         self.trigger_sensor: str | None = None
         self.respect_user_off: bool = False  # Default: always resume thermostat
+        self.eco_mode: bool = False  # Default: consider all rooms, not just active
         self._pausing_in_progress = False  # Flag to ignore state changes during pause
 
         # Timeout tracking
@@ -372,11 +373,13 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Evaluate what action should be taken
         # Pass respect_user_off so thermostat control knows whether to override user's off
+        # Pass eco_mode so thermostat control knows whether to only consider active rooms
         self._last_thermostat_state = self.thermostat_controller.evaluate_thermostat_action(
             active_areas=active_areas,
             area_temp_sensors=area_temp_sensors,
             inactive_areas=inactive_areas,
             respect_user_off=self.respect_user_off,
+            eco_mode=self.eco_mode,
         )
 
         return self._last_thermostat_state
