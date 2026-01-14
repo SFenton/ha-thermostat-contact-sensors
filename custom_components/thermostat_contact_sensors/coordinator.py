@@ -105,6 +105,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.trigger_sensor: str | None = None
         self.respect_user_off: bool = False  # Default: always resume thermostat
         self.eco_mode: bool = False  # Default: consider all rooms, not just active
+        # Default: disable eco when away (revert to normal behavior)
+        self.eco_away_behavior: str = "disable_eco_when_away"
         self._pausing_in_progress = False  # Flag to ignore state changes during pause
 
         # Timeout tracking
@@ -371,6 +373,28 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Update pause state on thermostat controller
         self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
 
+        # Determine effective eco_mode for this evaluation
+        # If eco mode is on but we're away, the eco_away_behavior determines what happens:
+        # - "disable_eco_when_away": Disable eco mode (use normal behavior with critical room protection)
+        # - "use_eco_away_targets": Keep eco mode, but use eco away thermostat targets
+        # - "keep_eco_active": Keep eco mode active (won't heat/cool while away - no active rooms)
+        effective_eco_mode = self.eco_mode
+        eco_away_targets: tuple[float, float] | None = None
+
+        if self.eco_mode and self.is_away:
+            if self.eco_away_behavior == "disable_eco_when_away":
+                # Revert to normal behavior - critical rooms will be protected
+                effective_eco_mode = False
+            elif self.eco_away_behavior == "use_eco_away_targets":
+                # Still in eco mode, but use eco away thermostat's targets
+                effective_eco_mode = False  # Don't ignore critical rooms
+                if hasattr(self, "eco_away_thermostat") and self.eco_away_thermostat is not None:
+                    eco_away_targets = (
+                        self.eco_away_thermostat.effective_target_temp_low,
+                        self.eco_away_thermostat.effective_target_temp_high,
+                    )
+            # else: "keep_eco_active" - eco_mode stays True (no conditioning while away)
+
         # Evaluate what action should be taken
         # Pass respect_user_off so thermostat control knows whether to override user's off
         # Pass eco_mode so thermostat control knows whether to only consider active rooms
@@ -379,7 +403,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             area_temp_sensors=area_temp_sensors,
             inactive_areas=inactive_areas,
             respect_user_off=self.respect_user_off,
-            eco_mode=self.eco_mode,
+            eco_mode=effective_eco_mode,
+            eco_away_targets=eco_away_targets,
         )
 
         return self._last_thermostat_state

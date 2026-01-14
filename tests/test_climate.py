@@ -182,16 +182,10 @@ class TestAreaVirtualThermostat:
             and entity.domain == CLIMATE_DOMAIN
         ]
         
-        # Should have 2 enabled areas (living_room and bedroom) + 1 global thermostat = 3
-        assert len(climate_entities) == 3
-        
-        # Verify no thermostat for disabled room
-        disabled_entity = entity_reg.async_get_entity_id(
-            CLIMATE_DOMAIN,
-            DOMAIN, 
-            f"{config_entry.entry_id}_disabled_room_thermostat"
-        )
-        assert disabled_entity is None
+        # Should have 2 enabled areas (living_room and bedroom) + 1 global thermostat + 1 eco away thermostat = 4
+        assert len(climate_entities) == 4
+        # disabled_thermostat should not exist (disabled area doesn't get a thermostat)
+        assert disabled_thermostat is None
 
         await hass.config_entries.async_unload(config_entry.entry_id)
 

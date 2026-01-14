@@ -84,4 +84,4 @@ DEFAULT_NOTIFICATION_TAG = "thermostat_contact_sensors_notification"
 DEFAULT_RESPECT_USER_OFF = False  # Default: integration will always resume thermostat
 
 # Platforms
-PLATFORMS = ["binary_sensor", "climate", "sensor", "switch"]
+PLATFORMS = ["binary_sensor", "climate", "select", "sensor", "switch"]

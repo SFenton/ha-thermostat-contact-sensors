@@ -92,6 +92,9 @@ async def async_setup_entry(
     # Create the global virtual thermostat
     entities.append(GlobalVirtualThermostat(coordinator, entry))
 
+    # Create the eco away virtual thermostat
+    entities.append(EcoAwayVirtualThermostat(coordinator, entry))
+
     async_add_entities(entities)
 
 
@@ -802,5 +805,258 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
                 attrs["away_heat_adjustment"] = coordinator.away_heat_temp_diff
                 attrs["away_cool_adjustment"] = coordinator.away_cool_temp_diff
                 attrs["presence_entity"] = coordinator.away_presence_entity
+
+        return attrs
+
+
+@dataclass
+class EcoAwayThermostatExtraStoredData(ExtraStoredData):
+    """Extra stored data for eco away virtual thermostat."""
+
+    target_temp_low: float
+    target_temp_high: float
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a dict representation of the extra data."""
+        return {
+            "target_temp_low": self.target_temp_low,
+            "target_temp_high": self.target_temp_high,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self | None:
+        """Initialize extra data from a dict."""
+        if data is None:
+            return None
+        try:
+            return cls(
+                target_temp_low=float(data["target_temp_low"]),
+                target_temp_high=float(data["target_temp_high"]),
+            )
+        except (KeyError, ValueError, TypeError):
+            return None
+
+
+# Default eco away targets - more conservative than normal
+DEFAULT_ECO_AWAY_TEMP_LOW = 62.0  # Lower heating target when eco away
+DEFAULT_ECO_AWAY_TEMP_HIGH = 85.0  # Higher cooling target when eco away
+
+
+class EcoAwayVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
+    """Virtual thermostat for eco away mode.
+    
+    This climate entity is used when eco mode is active AND the user is away
+    AND the eco_away_behavior is set to "use_eco_away_targets".
+    
+    It allows the user to set more conservative/energy-saving targets that
+    will be used instead of the regular area targets when away in eco mode.
+    """
+
+    _attr_has_entity_name = True
+    _attr_hvac_modes = [HVACMode.HEAT_COOL]
+    _attr_hvac_mode = HVACMode.HEAT_COOL
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+    )
+    _attr_temperature_unit = UnitOfTemperature.FAHRENHEIT
+    _attr_target_temperature_step = DEFAULT_TEMP_STEP
+    _attr_min_temp = DEFAULT_MIN_TEMP
+    _attr_max_temp = DEFAULT_MAX_TEMP
+    _attr_icon = "mdi:leaf-circle-outline"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the eco away virtual thermostat."""
+        super().__init__(coordinator)
+        self._entry = entry
+
+        self._attr_unique_id = f"{entry.entry_id}_eco_away_thermostat"
+        self._attr_name = "Eco Away Virtual Thermostat"
+
+        # Initialize with default eco away targets
+        self._target_temp_low: float = DEFAULT_ECO_AWAY_TEMP_LOW
+        self._target_temp_high: float = DEFAULT_ECO_AWAY_TEMP_HIGH
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state when added to hass."""
+        await super().async_added_to_hass()
+
+        restored = False
+
+        # Try to restore from extra stored data first
+        if (extra_data := await self.async_get_last_extra_data()) is not None:
+            if (stored := EcoAwayThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None:
+                self._target_temp_low = stored.target_temp_low
+                self._target_temp_high = stored.target_temp_high
+                restored = True
+                _LOGGER.info(
+                    "Restored eco away thermostat from extra data: heat=%s, cool=%s",
+                    self._target_temp_low, self._target_temp_high
+                )
+
+        # Fall back to restoring from state attributes
+        if not restored:
+            if (last_state := await self.async_get_last_state()) is not None:
+                if last_state.attributes:
+                    if (low := last_state.attributes.get("target_temp_low")) is not None:
+                        try:
+                            self._target_temp_low = float(low)
+                            restored = True
+                        except (ValueError, TypeError):
+                            pass
+                    if (high := last_state.attributes.get("target_temp_high")) is not None:
+                        try:
+                            self._target_temp_high = float(high)
+                            restored = True
+                        except (ValueError, TypeError):
+                            pass
+                if restored:
+                    _LOGGER.info(
+                        "Restored eco away thermostat from state: heat=%s, cool=%s",
+                        self._target_temp_low, self._target_temp_high
+                    )
+
+        # Register this thermostat with the coordinator
+        self._register_with_coordinator()
+
+    def _register_with_coordinator(self) -> None:
+        """Register this eco away thermostat with the coordinator."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        coordinator.eco_away_thermostat = self
+
+    @property
+    def extra_restore_state_data(self) -> EcoAwayThermostatExtraStoredData:
+        """Return extra state data to be stored for restore on restart."""
+        return EcoAwayThermostatExtraStoredData(
+            target_temp_low=self._target_temp_low,
+            target_temp_high=self._target_temp_high,
+        )
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    @property
+    def target_temperature_low(self) -> float:
+        """Return the low target temperature (heating target)."""
+        return self._target_temp_low
+
+    @property
+    def target_temperature_high(self) -> float:
+        """Return the high target temperature (cooling target)."""
+        return self._target_temp_high
+
+    @property
+    def effective_target_temp_low(self) -> float:
+        """Return the effective heating target with away adjustment applied.
+        
+        Eco away thermostat also respects the away adjustment buffers.
+        """
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        if coordinator.is_away and coordinator.away_mode_configured:
+            return self._target_temp_low + coordinator.away_heat_temp_diff
+        return self._target_temp_low
+
+    @property
+    def effective_target_temp_high(self) -> float:
+        """Return the effective cooling target with away adjustment applied.
+        
+        Eco away thermostat also respects the away adjustment buffers.
+        """
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        if coordinator.is_away and coordinator.away_mode_configured:
+            return self._target_temp_high + coordinator.away_cool_temp_diff
+        return self._target_temp_high
+
+    @property
+    def current_temperature(self) -> float | None:
+        """Return the current temperature - average across all areas."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+        if not hasattr(coordinator, "area_thermostats"):
+            return None
+
+        temps = []
+        for area_thermostat in coordinator.area_thermostats.values():
+            temp = area_thermostat.current_temperature
+            if temp is not None:
+                temps.append(temp)
+
+        if temps:
+            return round(sum(temps) / len(temps), 1)
+        return None
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        """Set new target temperature(s)."""
+        if ATTR_TEMPERATURE in kwargs:
+            # Single temperature mode - treat as both heating and cooling target
+            temp = float(kwargs[ATTR_TEMPERATURE])
+            self._target_temp_low = temp
+            self._target_temp_high = temp
+        else:
+            # Range mode
+            if "target_temp_low" in kwargs:
+                self._target_temp_low = float(kwargs["target_temp_low"])
+            if "target_temp_high" in kwargs:
+                self._target_temp_high = float(kwargs["target_temp_high"])
+
+        # Validate that low <= high
+        if self._target_temp_low > self._target_temp_high:
+            _LOGGER.warning(
+                "Eco away heating target (%s) is higher than cooling target (%s), swapping",
+                self._target_temp_low, self._target_temp_high
+            )
+            self._target_temp_low, self._target_temp_high = (
+                self._target_temp_high, self._target_temp_low
+            )
+
+        _LOGGER.info(
+            "Eco away thermostat targets updated: heat=%s, cool=%s",
+            self._target_temp_low, self._target_temp_high
+        )
+
+        self.async_write_ha_state()
+
+        # Trigger a thermostat update if eco away mode is active
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        if coordinator.eco_mode and coordinator.is_away:
+            if coordinator.eco_away_behavior == "use_eco_away_targets":
+                await coordinator.update_thermostat_state("eco_away_target_changed")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+        is_active = (
+            coordinator.eco_mode
+            and coordinator.is_away
+            and coordinator.eco_away_behavior == "use_eco_away_targets"
+        )
+
+        attrs = {
+            "is_currently_active": is_active,
+            "eco_mode": coordinator.eco_mode,
+            "is_away": coordinator.is_away,
+            "eco_away_behavior": coordinator.eco_away_behavior,
+            "description": (
+                "Used when eco mode is active AND everyone is away AND "
+                "'Use Eco Away Targets' behavior is selected. "
+                "Set conservative targets here for maximum energy savings while away."
+            ),
+        }
+
+        if coordinator.away_mode_configured:
+            attrs["effective_heat_target"] = self.effective_target_temp_low
+            attrs["effective_cool_target"] = self.effective_target_temp_high
 
         return attrs

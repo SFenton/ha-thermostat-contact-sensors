@@ -1305,6 +1305,7 @@ class ThermostatController:
         now: datetime | None = None,
         respect_user_off: bool = True,
         eco_mode: bool = False,
+        eco_away_targets: tuple[float, float] | None = None,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
 
@@ -1327,6 +1328,9 @@ class ThermostatController:
             eco_mode: If True, only consider active (occupied) rooms for thermostat
                 control. Unoccupied rooms will not trigger thermostat activation,
                 even if they reach critical temperatures.
+            eco_away_targets: Optional tuple of (heat_target, cool_target) to use
+                when eco mode is active and the user is away with "use_eco_away_targets"
+                behavior. If provided, these targets will be used instead of area targets.
 
         Returns:
             ThermostatState with the recommended action.
@@ -1406,6 +1410,22 @@ class ThermostatController:
         # When respect_user_off is False, we treat user's off as if we turned it off
         user_turned_off = hvac_mode == HVACMode.OFF and not self._we_turned_off and respect_user_off
 
+        # Helper to get target temperatures, optionally using eco_away_targets
+        def get_targets_for_area(area_id: str) -> tuple[float | None, float | None, float | None]:
+            if eco_away_targets is not None:
+                # Use eco away targets for all areas
+                eco_target_low, eco_target_high = eco_away_targets
+                if evaluation_hvac_mode == HVACMode.HEAT:
+                    eco_target_temp = eco_target_low
+                elif evaluation_hvac_mode == HVACMode.COOL:
+                    eco_target_temp = eco_target_high
+                else:
+                    eco_target_temp = (eco_target_low + eco_target_high) / 2
+                return eco_target_temp, eco_target_low, eco_target_high
+            else:
+                # Use normal area targets
+                return self.get_area_target_temperatures(area_id, hvac_mode_override=evaluation_hvac_mode)
+
         # Evaluate each active room for satiation (always, even when OFF for display)
         thermostat_state.active_room_count = len(active_areas)
         satiated_count = 0
@@ -1415,7 +1435,7 @@ class ThermostatController:
             # Get area-specific target temperatures from virtual thermostat
             # Pass evaluation_hvac_mode so we get the correct target even when thermostat is OFF
             area_target_temp, area_target_temp_low, area_target_temp_high = (
-                self.get_area_target_temperatures(area.area_id, hvac_mode_override=evaluation_hvac_mode)
+                get_targets_for_area(area.area_id)
             )
             room_state = self.evaluate_room_satiation(
                 area,
@@ -1451,7 +1471,7 @@ class ThermostatController:
             # Get area-specific target temperatures from virtual thermostat
             # Pass evaluation_hvac_mode so we get the correct target even when thermostat is OFF
             area_target_temp, area_target_temp_low, area_target_temp_high = (
-                self.get_area_target_temperatures(area.area_id, hvac_mode_override=evaluation_hvac_mode)
+                get_targets_for_area(area.area_id)
             )
             room_state = self.evaluate_room_critical(
                 area,

@@ -156,6 +156,21 @@
       "open_count": {
         "name": "Open Sensors"
       }
+    },
+    "select": {
+      "eco_behavior_when_away": {
+        "name": "Eco Behavior When Away",
+        "state": {
+          "disable_eco_when_away": "Disable Eco When Away",
+          "use_eco_away_targets": "Use Eco Away Targets",
+          "keep_eco_active": "Keep Eco Active"
+        }
+      }
+    },
+    "climate": {
+      "eco_away_virtual_thermostat": {
+        "name": "Eco Away Virtual Thermostat"
+      }
     }
   },
   "exceptions": {

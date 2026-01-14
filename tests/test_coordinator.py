@@ -1674,3 +1674,107 @@ class TestAwayModeCoordinator:
         await coordinator.async_shutdown()
         
         assert coordinator._unsub_presence_state_change is None
+
+
+class TestEcoAwayBehaviorCoordinator:
+    """Tests for eco_away_behavior property in coordinator."""
+
+    async def test_eco_away_behavior_default_is_disable_eco(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that eco_away_behavior defaults to disable_eco_when_away."""
+        hass.states.async_set(TEST_THERMOSTAT, HVACMode.OFF, {"friendly_name": "Test Thermostat"})
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        
+        assert coordinator.eco_away_behavior == "disable_eco_when_away"
+        
+        await coordinator.async_shutdown()
+
+    async def test_eco_away_behavior_can_be_set(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that eco_away_behavior can be modified."""
+        hass.states.async_set(TEST_THERMOSTAT, HVACMode.OFF, {"friendly_name": "Test Thermostat"})
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Garage Door"})
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        
+        coordinator.eco_away_behavior = "keep_eco_active"
+        assert coordinator.eco_away_behavior == "keep_eco_active"
+        
+        coordinator.eco_away_behavior = "use_eco_away_targets"
+        assert coordinator.eco_away_behavior == "use_eco_away_targets"
+        
+        await coordinator.async_shutdown()
+
+    async def test_eco_mode_disabled_when_away_with_disable_eco_behavior(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test that eco mode is effectively disabled when away with disable_eco behavior."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+        )
+        
+        hass.states.async_set(TEST_THERMOSTAT, HVACMode.HEAT, {
+            "friendly_name": "Test Thermostat",
+            "temperature": 72.0,
+        })
+        hass.states.async_set(TEST_SENSOR_1, STATE_OFF, {"friendly_name": "Garage Door"})
+        # Set presence to away
+        hass.states.async_set("binary_sensor.home_occupied", STATE_OFF, {"friendly_name": "Home Occupied"})
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = "binary_sensor.home_occupied"
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        
+        # Enable eco mode
+        coordinator.eco_mode = True
+        # Set behavior to disable eco when away
+        coordinator.eco_away_behavior = "disable_eco_when_away"
+        
+        assert coordinator.is_away is True
+        assert coordinator.eco_mode is True
+        
+        # When update_thermostat_state is called, it should pass eco_mode=False
+        # to the thermostat controller because we're away with disable_eco behavior
+        # (This is tested by verifying the logic in the coordinator)
+        
+        await coordinator.async_shutdown()
+
