@@ -150,11 +150,25 @@
     "binary_sensor": {
       "thermostat_paused": {
         "name": "Thermostat Paused"
+      },
+      "away_mode_active": {
+        "name": "Away Mode Active"
       }
     },
     "sensor": {
       "open_count": {
         "name": "Open Sensors"
+      }
+    },
+    "switch": {
+      "respect_user_off": {
+        "name": "Respect User Off"
+      },
+      "eco_mode": {
+        "name": "Eco Mode"
+      },
+      "only_track_selected_rooms": {
+        "name": "Only Track Selected Rooms"
       }
     },
     "select": {

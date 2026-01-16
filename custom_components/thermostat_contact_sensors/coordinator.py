@@ -109,6 +109,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.eco_away_behavior: str = "disable_eco_when_away"
         self._pausing_in_progress = False  # Flag to ignore state changes during pause
 
+        # Tracked rooms feature: only heat/cool selected rooms
+        self.only_track_selected_rooms: bool = False  # Default: consider all rooms
+        self._tracked_rooms: set[str] = set()  # Set of area_ids that are being tracked
+
         # Timeout tracking
         self._open_timer: asyncio.TimerHandle | None = None
         self._close_timer: asyncio.TimerHandle | None = None
@@ -311,6 +315,54 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         state_value = state.state.lower()
         return state_value in (STATE_NOT_HOME, STATE_OFF, "false", "away")
 
+    @property
+    def tracked_rooms(self) -> set[str]:
+        """Return the set of currently tracked room/area IDs."""
+        return self._tracked_rooms.copy()
+
+    @property
+    def all_enabled_area_ids(self) -> list[str]:
+        """Return all enabled area IDs from the configuration."""
+        return [
+            area_id
+            for area_id, area_config in self._areas_config.items()
+            if area_config.get(CONF_AREA_ENABLED, True)
+        ]
+
+    def is_room_tracked(self, area_id: str) -> bool:
+        """Check if a specific room/area is being tracked.
+
+        When only_track_selected_rooms is False, all rooms are considered tracked.
+        When True, only rooms in _tracked_rooms are considered tracked.
+
+        Args:
+            area_id: The area ID to check.
+
+        Returns:
+            True if the room is being tracked.
+        """
+        if not self.only_track_selected_rooms:
+            return True  # All rooms are tracked when feature is off
+        return area_id in self._tracked_rooms
+
+    def set_room_tracked(self, area_id: str, tracked: bool) -> None:
+        """Set whether a specific room/area should be tracked.
+
+        Args:
+            area_id: The area ID to set.
+            tracked: True to track the room, False to untrack.
+        """
+        if tracked:
+            self._tracked_rooms.add(area_id)
+        else:
+            self._tracked_rooms.discard(area_id)
+        _LOGGER.debug(
+            "Room tracking updated: area=%s, tracked=%s, all_tracked=%s",
+            area_id,
+            tracked,
+            self._tracked_rooms,
+        )
+
     def get_area_temp_sensors(self) -> dict[str, list[str]]:
         """Get temperature sensors for each enabled area.
 
@@ -366,9 +418,37 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             The updated ThermostatState.
         """
         # Get active and inactive areas from occupancy tracker
-        active_areas = self.occupancy_tracker.active_areas
-        inactive_areas = self.occupancy_tracker.inactive_areas
+        all_active_areas = self.occupancy_tracker.active_areas
+        all_inactive_areas = self.occupancy_tracker.inactive_areas
         area_temp_sensors = self.get_area_temp_sensors()
+
+        # Keep reference to all areas for global trend calculation (anomaly detection)
+        all_areas_for_trend = list(all_active_areas) + list(all_inactive_areas)
+
+        # Filter areas based on tracked rooms feature
+        # When only_track_selected_rooms is enabled, we only consider tracked rooms
+        # for heating/cooling decisions, but all rooms are still used for anomaly detection
+        active_areas = all_active_areas
+        inactive_areas = all_inactive_areas
+        
+        if self.only_track_selected_rooms and self._tracked_rooms:
+            # Filter to only tracked rooms
+            active_areas = [
+                area for area in all_active_areas
+                if area.area_id in self._tracked_rooms
+            ]
+            inactive_areas = [
+                area for area in all_inactive_areas
+                if area.area_id in self._tracked_rooms
+            ]
+            _LOGGER.debug(
+                "Tracked rooms filter applied: %d/%d active, %d/%d inactive (tracked: %s)",
+                len(active_areas),
+                len(all_active_areas),
+                len(inactive_areas),
+                len(all_inactive_areas),
+                self._tracked_rooms,
+            )
 
         # Update pause state on thermostat controller
         self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
@@ -398,6 +478,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Evaluate what action should be taken
         # Pass respect_user_off so thermostat control knows whether to override user's off
         # Pass eco_mode so thermostat control knows whether to only consider active rooms
+        # Pass all_areas_for_trend so anomaly detection uses ALL rooms, not just tracked ones
         self._last_thermostat_state = self.thermostat_controller.evaluate_thermostat_action(
             active_areas=active_areas,
             area_temp_sensors=area_temp_sensors,
@@ -405,6 +486,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             respect_user_off=self.respect_user_off,
             eco_mode=effective_eco_mode,
             eco_away_targets=eco_away_targets,
+            all_areas_for_trend=all_areas_for_trend if self.only_track_selected_rooms else None,
         )
 
         return self._last_thermostat_state

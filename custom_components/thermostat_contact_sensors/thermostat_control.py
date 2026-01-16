@@ -1306,6 +1306,7 @@ class ThermostatController:
         respect_user_off: bool = True,
         eco_mode: bool = False,
         eco_away_targets: tuple[float, float] | None = None,
+        all_areas_for_trend: list[AreaOccupancyState] | None = None,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
 
@@ -1331,6 +1332,9 @@ class ThermostatController:
             eco_away_targets: Optional tuple of (heat_target, cool_target) to use
                 when eco mode is active and the user is away with "use_eco_away_targets"
                 behavior. If provided, these targets will be used instead of area targets.
+            all_areas_for_trend: Optional list of ALL areas (regardless of tracking filter)
+                to use for global temperature trend calculation (anomaly detection).
+                If not provided, uses active_areas + inactive_areas.
 
         Returns:
             ThermostatState with the recommended action.
@@ -1361,9 +1365,11 @@ class ThermostatController:
 
         # Collect ALL sensor readings first to calculate global temperature trend
         # This is used to infer whether we're closer to needing heat or cooling
+        # Use all_areas_for_trend if provided (for tracked rooms feature to still detect anomalies)
+        # Otherwise, fall back to active + inactive areas
         all_sensor_readings: dict[str, float] = {}
-        all_areas = list(active_areas) + list(inactive_areas)
-        for area in all_areas:
+        areas_for_trend = all_areas_for_trend if all_areas_for_trend is not None else list(active_areas) + list(inactive_areas)
+        for area in areas_for_trend:
             temp_sensors = area_temp_sensors.get(area.area_id, [])
             for sensor_id in temp_sensors:
                 state = self.hass.states.get(sensor_id)

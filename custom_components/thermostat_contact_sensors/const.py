@@ -48,6 +48,10 @@ CONF_AREA_VENT_OPEN_DELAY_SECONDS = "area_vent_open_delay_seconds"
 # User override behavior
 CONF_RESPECT_USER_OFF = "respect_user_off"
 
+# Tracked rooms configuration keys
+CONF_ONLY_TRACK_SELECTED_ROOMS = "only_track_selected_rooms"
+CONF_TRACKED_ROOMS = "tracked_rooms"  # Set of area_ids that are being tracked
+
 # Away mode configuration keys
 CONF_AWAY_PRESENCE_ENTITY = "away_presence_entity"
 CONF_AWAY_HEAT_TEMP_DIFF = "away_heat_temp_diff"
