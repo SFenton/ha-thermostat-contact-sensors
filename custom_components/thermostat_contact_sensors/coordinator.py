@@ -425,29 +425,19 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Keep reference to all areas for global trend calculation (anomaly detection)
         all_areas_for_trend = list(all_active_areas) + list(all_inactive_areas)
 
-        # Filter areas based on tracked rooms feature
-        # When only_track_selected_rooms is enabled, we only consider tracked rooms
-        # for heating/cooling decisions, but all rooms are still used for anomaly detection
-        active_areas = all_active_areas
-        inactive_areas = all_inactive_areas
+        # Determine tracked_area_ids for the tracked rooms feature
+        # When only_track_selected_rooms is enabled, we pass the set of tracked rooms
+        # to the controller so it only counts those rooms for decisions,
+        # but ALL rooms are still evaluated for display (temperatures, satiation status)
+        tracked_area_ids: set[str] | None = None
         
         if self.only_track_selected_rooms and self._tracked_rooms:
-            # Filter to only tracked rooms
-            active_areas = [
-                area for area in all_active_areas
-                if area.area_id in self._tracked_rooms
-            ]
-            inactive_areas = [
-                area for area in all_inactive_areas
-                if area.area_id in self._tracked_rooms
-            ]
+            tracked_area_ids = self._tracked_rooms.copy()
             _LOGGER.debug(
-                "Tracked rooms filter applied: %d/%d active, %d/%d inactive (tracked: %s)",
-                len(active_areas),
-                len(all_active_areas),
-                len(inactive_areas),
-                len(all_inactive_areas),
-                self._tracked_rooms,
+                "Tracked rooms filter enabled: %d rooms tracked out of %d total (tracked: %s)",
+                len(tracked_area_ids),
+                len(all_active_areas) + len(all_inactive_areas),
+                tracked_area_ids,
             )
 
         # Update pause state on thermostat controller
@@ -479,14 +469,16 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Pass respect_user_off so thermostat control knows whether to override user's off
         # Pass eco_mode so thermostat control knows whether to only consider active rooms
         # Pass all_areas_for_trend so anomaly detection uses ALL rooms, not just tracked ones
+        # Pass tracked_area_ids so controller evaluates ALL rooms but only counts tracked for decisions
         self._last_thermostat_state = self.thermostat_controller.evaluate_thermostat_action(
-            active_areas=active_areas,
+            active_areas=list(all_active_areas),
             area_temp_sensors=area_temp_sensors,
-            inactive_areas=inactive_areas,
+            inactive_areas=list(all_inactive_areas),
             respect_user_off=self.respect_user_off,
             eco_mode=effective_eco_mode,
             eco_away_targets=eco_away_targets,
             all_areas_for_trend=all_areas_for_trend if self.only_track_selected_rooms else None,
+            tracked_area_ids=tracked_area_ids,
         )
 
         return self._last_thermostat_state

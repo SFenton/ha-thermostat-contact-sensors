@@ -1307,6 +1307,7 @@ class ThermostatController:
         eco_mode: bool = False,
         eco_away_targets: tuple[float, float] | None = None,
         all_areas_for_trend: list[AreaOccupancyState] | None = None,
+        tracked_area_ids: set[str] | None = None,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
 
@@ -1335,6 +1336,10 @@ class ThermostatController:
             all_areas_for_trend: Optional list of ALL areas (regardless of tracking filter)
                 to use for global temperature trend calculation (anomaly detection).
                 If not provided, uses active_areas + inactive_areas.
+            tracked_area_ids: Optional set of area IDs that are being tracked for
+                heating/cooling decisions. If provided, only these areas will count
+                toward satiation/critical room decisions. All areas are still evaluated
+                for temperature display. If None, all areas are considered tracked.
 
         Returns:
             ThermostatState with the recommended action.
@@ -1362,6 +1367,12 @@ class ThermostatController:
 
         # Track if paused - we still evaluate rooms for display, but won't take actions
         is_paused = self._is_paused_by_contact_sensors
+
+        # Helper to check if an area is tracked for decision-making
+        def is_area_tracked(area_id: str) -> bool:
+            if tracked_area_ids is None:
+                return True  # All areas tracked when not specified
+            return area_id in tracked_area_ids
 
         # Collect ALL sensor readings first to calculate global temperature trend
         # This is used to infer whether we're closer to needing heat or cooling
@@ -1433,7 +1444,8 @@ class ThermostatController:
                 return self.get_area_target_temperatures(area_id, hvac_mode_override=evaluation_hvac_mode)
 
         # Evaluate each active room for satiation (always, even when OFF for display)
-        thermostat_state.active_room_count = len(active_areas)
+        # Count only tracked rooms for decision-making, but evaluate ALL for display
+        tracked_active_count = 0
         satiated_count = 0
 
         for area in active_areas:
@@ -1454,16 +1466,21 @@ class ThermostatController:
             room_state.is_active = True
             thermostat_state.room_states[area.area_id] = room_state
 
-            if room_state.is_satiated:
-                satiated_count += 1
+            # Only count tracked rooms for decisions
+            if is_area_tracked(area.area_id):
+                tracked_active_count += 1
+                if room_state.is_satiated:
+                    satiated_count += 1
 
+        thermostat_state.active_room_count = tracked_active_count
         thermostat_state.satiated_room_count = satiated_count
         thermostat_state.all_active_rooms_satiated = (
-            len(active_areas) > 0 and satiated_count == len(active_areas)
+            tracked_active_count > 0 and satiated_count == tracked_active_count
         )
 
         # Evaluate inactive rooms for critical temperatures
         # In eco mode, we still evaluate for display but won't use critical status for decisions
+        # Only count tracked rooms for decisions, but evaluate ALL for display
         critical_count = 0
         for area in inactive_areas:
             # Skip if this area was already evaluated as active
@@ -1489,8 +1506,10 @@ class ThermostatController:
             )
             thermostat_state.room_states[area.area_id] = room_state
 
-            # Only count as critical for thermostat control if NOT in eco mode
-            if room_state.is_critical and not eco_mode:
+            # Only count as critical for thermostat control if:
+            # 1. NOT in eco mode
+            # 2. Room is tracked (or all rooms are tracked when tracked_area_ids is None)
+            if room_state.is_critical and not eco_mode and is_area_tracked(area.area_id):
                 critical_count += 1
                 _LOGGER.debug(
                     "Inactive room %s is critical: %s",
@@ -1503,6 +1522,12 @@ class ThermostatController:
                     area.area_id,
                     room_state.critical_reason,
                 )
+            elif room_state.is_critical and not is_area_tracked(area.area_id):
+                _LOGGER.debug(
+                    "Inactive room %s is critical but not tracked (ignoring for decisions): %s",
+                    area.area_id,
+                    room_state.critical_reason,
+                )
 
         thermostat_state.critical_room_count = critical_count
 
@@ -1512,11 +1537,13 @@ class ThermostatController:
         effective_target_low = target_temp_low or target_temp or 70.0
         effective_target_high = target_temp_high or target_temp or 78.0
         
-        # In eco mode, only consider active rooms for mode determination
+        # For mode determination, only consider:
+        # 1. Tracked rooms (or all rooms if tracked_area_ids is None)
+        # 2. Active rooms only when in eco_mode
         rooms_for_mode_check = {
             area_id: room_state
             for area_id, room_state in thermostat_state.room_states.items()
-            if room_state.is_active or not eco_mode
+            if is_area_tracked(area_id) and (room_state.is_active or not eco_mode)
         }
         rooms_need_heat, rooms_need_cool = determine_rooms_need_mode(
             rooms_for_mode_check,
@@ -1533,7 +1560,8 @@ class ThermostatController:
         # When HVAC is OFF and we've inferred a mode, use absolute temperature needs
         # (not mode-specific satiation which can be misleading)
         # In eco mode, only consider active rooms (critical_count will be 0)
-        unsatiated_active = len(active_areas) - satiated_count
+        # Use tracked_active_count (only tracked rooms) for decision making
+        unsatiated_active = tracked_active_count - satiated_count
         if hvac_mode == HVACMode.OFF:
             # Use absolute temperature needs for consensus logic
             needs_conditioning = rooms_need_heat or rooms_need_cool or critical_count > 0
