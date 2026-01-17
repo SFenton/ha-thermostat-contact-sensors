@@ -4797,3 +4797,505 @@ class TestEcoAwayTargets:
         # 62°F - 3°F = 59°F threshold for critical. 61°F > 59°F, so not critical yet
         # But it depends on the exact implementation of critical threshold
 
+
+# =============================================================================
+# Tests for tracked_area_ids parameter (Only Track Selected Rooms feature)
+# =============================================================================
+
+
+class TestTrackedAreaIds:
+    """Tests for the tracked_area_ids parameter in evaluate_thermostat_action.
+
+    This feature allows users to only track specific rooms for heating/cooling
+    decisions while still evaluating ALL rooms for temperature display and
+    using ALL sensors for anomaly detection (global trend calculation).
+    """
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Create a mock HomeAssistant instance."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.states = MagicMock()
+        return hass
+
+    @pytest.fixture
+    def mock_occupancy_tracker(self):
+        """Create a mock occupancy tracker."""
+        return MagicMock()
+
+    @pytest.fixture
+    def controller(self, mock_hass, mock_occupancy_tracker):
+        """Create a ThermostatController for testing."""
+        return ThermostatController(
+            hass=mock_hass,
+            thermostat_entity_id=TEST_THERMOSTAT,
+            occupancy_tracker=mock_occupancy_tracker,
+            temperature_deadband=0.5,
+            min_cycle_on_minutes=5,
+            min_cycle_off_minutes=5,
+        )
+
+    def _create_thermostat_state(self, mock_hass, hvac_mode, target=72.0):
+        """Helper to create thermostat state."""
+        mock_state = MagicMock()
+        mock_state.state = hvac_mode
+        mock_state.attributes = {
+            "temperature": target,
+            "target_temp_low": 70.0,
+            "target_temp_high": 78.0,
+            "current_temperature": 72.0,
+        }
+        return mock_state
+
+    def _create_temp_sensor_state(self, temp):
+        """Helper to create temperature sensor state."""
+        mock_state = MagicMock()
+        mock_state.state = str(temp)
+        return mock_state
+
+    # =========================================================================
+    # Test 1: All rooms get temperature measurements even when not tracked
+    # =========================================================================
+
+    def test_untracked_rooms_still_get_temperature_readings(self, controller, mock_hass):
+        """Test that untracked rooms still have their temperatures evaluated."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.living_room_temp": self._create_temp_sensor_state(72.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(68.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(75.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        # Only track living_room - bedroom and kitchen are NOT tracked
+        tracked_area_ids = {"living_room"}
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # ALL rooms should have room_states with temperatures (not NaN)
+        assert "living_room" in result.room_states
+        assert "bedroom" in result.room_states
+        assert "kitchen" in result.room_states
+
+        # All rooms should have valid average temperatures
+        assert result.room_states["living_room"].average_temperature == 72.0
+        assert result.room_states["bedroom"].average_temperature == 68.0
+        assert result.room_states["kitchen"].average_temperature == 75.0
+
+    def test_untracked_rooms_have_satiation_status(self, controller, mock_hass):
+        """Test that untracked rooms still show satiated/needs heat/cool status."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.living_room_temp": self._create_temp_sensor_state(72.0),  # Satiated
+            "sensor.bedroom_temp": self._create_temp_sensor_state(65.0),  # Needs heat
+            "sensor.kitchen_temp": self._create_temp_sensor_state(80.0),  # Needs cool
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        # Only track living_room
+        tracked_area_ids = {"living_room"}
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # Untracked rooms should still have satiation information
+        assert result.room_states["bedroom"].is_satiated is False  # 65°F needs heat
+        assert result.room_states["kitchen"].is_satiated is True  # 80°F is satiated for heat mode
+        assert result.room_states["living_room"].is_satiated is True  # 72°F is satiated
+
+    # =========================================================================
+    # Test 2: Only tracked rooms count for heating/cooling decisions
+    # =========================================================================
+
+    def test_only_tracked_rooms_count_for_active_room_count(self, controller, mock_hass):
+        """Test that active_room_count only includes tracked rooms."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.living_room_temp": self._create_temp_sensor_state(72.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(68.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(75.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        # Only track living_room
+        tracked_area_ids = {"living_room"}
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # Only 1 room should be counted as active (living_room)
+        assert result.active_room_count == 1
+
+    def test_only_tracked_rooms_count_for_satiated_room_count(self, controller, mock_hass):
+        """Test that satiated_room_count only includes tracked rooms."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.living_room_temp": self._create_temp_sensor_state(72.0),  # Satiated
+            "sensor.bedroom_temp": self._create_temp_sensor_state(72.0),  # Satiated (not tracked)
+            "sensor.kitchen_temp": self._create_temp_sensor_state(72.0),  # Satiated (not tracked)
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        # Only track living_room - even though all rooms are satiated,
+        # only living_room should count toward satiated_room_count
+        tracked_area_ids = {"living_room"}
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # Only 1 satiated room counted (living_room)
+        assert result.satiated_room_count == 1
+        assert result.active_room_count == 1
+        assert result.all_active_rooms_satiated is True
+
+    def test_only_tracked_rooms_count_for_critical_room_count(self, controller, mock_hass):
+        """Test that critical_room_count only includes tracked rooms."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.living_room_temp": self._create_temp_sensor_state(72.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(60.0),  # Critical (not tracked)
+            "sensor.basement_temp": self._create_temp_sensor_state(55.0),  # Critical (tracked)
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "basement": ["sensor.basement_temp"],
+        }
+
+        # Track living_room and basement, but NOT bedroom
+        # Even though bedroom is critical, it won't count
+        tracked_area_ids = {"living_room", "basement"}
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            inactive_areas=inactive_areas,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # Only basement should count as critical (bedroom is not tracked)
+        assert result.critical_room_count == 1
+        # But bedroom should still show as critical in its room_state for display
+        assert result.room_states["bedroom"].is_critical is True
+        assert result.room_states["basement"].is_critical is True
+
+    # =========================================================================
+    # Test 3: Anomaly detection uses ALL sensors for global trend
+    # =========================================================================
+
+    def test_anomaly_detection_uses_all_sensors_via_all_areas_for_trend(
+        self, controller, mock_hass
+    ):
+        """Test that anomaly detection uses all_areas_for_trend for global trend calculation.
+
+        When tracking only specific rooms, we pass all_areas_for_trend so that
+        global temperature trend (for anomaly detection) uses ALL sensors,
+        not just the tracked rooms.
+        """
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            # Only tracking the basement which is cold
+            "sensor.basement_temp": self._create_temp_sensor_state(65.0),
+            # Not tracking these hot rooms, but they should affect trend
+            "sensor.living_room_temp": self._create_temp_sensor_state(80.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(79.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(78.0),
+        }.get(entity_id)
+
+        # Only basement is active and tracked
+        active_areas = [
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+        ]
+        # Other rooms are inactive but should affect trend
+        inactive_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "basement": ["sensor.basement_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        # Only track basement
+        tracked_area_ids = {"basement"}
+
+        # Pass all areas for trend calculation (this is what coordinator does)
+        all_areas = active_areas + inactive_areas
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            inactive_areas=inactive_areas,
+            respect_user_off=False,
+            all_areas_for_trend=all_areas,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # Basement at 65°F needs heat
+        # But with ALL sensors: avg = (65 + 80 + 79 + 78) / 4 = 75.5 -> trend is COOL
+        # This should trigger anomaly detection
+        assert result.inferred_hvac_mode == HVACMode.COOL  # Trend is toward cooling
+        assert result.rooms_need_heat is True  # Tracked room needs heat
+        # Because tracked room needs heat but house trend is cool -> ANOMALY
+        assert result.recommended_action == ThermostatAction.NONE
+        assert "Anomaly" in result.action_reason
+
+    def test_anomaly_not_triggered_when_trend_matches_tracked_room_needs(
+        self, controller, mock_hass
+    ):
+        """Test that heating works when tracked room needs match house trend."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            # Tracking basement which is cold
+            "sensor.basement_temp": self._create_temp_sensor_state(65.0),
+            # Other rooms are also cold - trend matches
+            "sensor.living_room_temp": self._create_temp_sensor_state(66.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(67.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(68.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="basement", area_name="Basement"),
+        ]
+        inactive_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "basement": ["sensor.basement_temp"],
+            "living_room": ["sensor.living_room_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        tracked_area_ids = {"basement"}
+        all_areas = active_areas + inactive_areas
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            inactive_areas=inactive_areas,
+            respect_user_off=False,
+            all_areas_for_trend=all_areas,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # Avg = (65 + 66 + 67 + 68) / 4 = 66.5 -> trend is HEAT
+        # Basement needs heat, trend is heat -> should turn on
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        assert result.rooms_need_heat is True
+        assert result.recommended_action == ThermostatAction.TURN_ON
+
+    # =========================================================================
+    # Test 4: No tracked_area_ids means all rooms are tracked (default behavior)
+    # =========================================================================
+
+    def test_none_tracked_area_ids_tracks_all_rooms(self, controller, mock_hass):
+        """Test that tracked_area_ids=None means all rooms are tracked."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.living_room_temp": self._create_temp_sensor_state(72.0),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(72.0),
+            "sensor.kitchen_temp": self._create_temp_sensor_state(72.0),
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        # No tracked_area_ids - all rooms should be tracked
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            tracked_area_ids=None,  # Default: all tracked
+        )
+
+        # All 3 rooms should be counted
+        assert result.active_room_count == 3
+        assert result.satiated_room_count == 3
+        assert result.all_active_rooms_satiated is True
+
+    def test_empty_tracked_area_ids_tracks_no_rooms(self, controller, mock_hass):
+        """Test that empty tracked_area_ids means no rooms count for decisions."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.living_room_temp": self._create_temp_sensor_state(65.0),  # Needs heat
+            "sensor.bedroom_temp": self._create_temp_sensor_state(65.0),  # Needs heat
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        # Empty set - no rooms tracked for decisions
+        tracked_area_ids = set()
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # No rooms counted for decisions
+        assert result.active_room_count == 0
+        assert result.satiated_room_count == 0
+        # But rooms still have temperature readings
+        assert result.room_states["living_room"].average_temperature == 65.0
+        assert result.room_states["bedroom"].average_temperature == 65.0
+
+    # =========================================================================
+    # Test 5: rooms_for_mode_check respects tracked_area_ids
+    # =========================================================================
+
+    def test_rooms_need_heat_cool_only_considers_tracked_rooms(self, controller, mock_hass):
+        """Test that rooms_need_heat/rooms_need_cool only consider tracked rooms."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(72.0),  # Satiated (tracked)
+            "sensor.bedroom_temp": self._create_temp_sensor_state(60.0),  # Needs heat (not tracked)
+            "sensor.kitchen_temp": self._create_temp_sensor_state(85.0),  # Needs cool (not tracked)
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        # Only track living_room which is satiated
+        tracked_area_ids = {"living_room"}
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            respect_user_off=False,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # Only tracked room (living_room at 72°F) is considered for mode check
+        # Since it's satiated, neither heat nor cool is needed
+        assert result.rooms_need_heat is False
+        assert result.rooms_need_cool is False
+
+    def test_tracked_room_determines_mode_even_with_untracked_anomalies(
+        self, controller, mock_hass
+    ):
+        """Test that tracked room's needs determine mode, not untracked rooms."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.OFF),
+            "sensor.living_room_temp": self._create_temp_sensor_state(68.0),  # Needs heat (tracked)
+            "sensor.bedroom_temp": self._create_temp_sensor_state(68.0),  # Same temp (not tracked)
+            "sensor.kitchen_temp": self._create_temp_sensor_state(68.0),  # Same temp (not tracked)
+        }.get(entity_id)
+
+        active_areas = [
+            AreaOccupancyState(area_id="living_room", area_name="Living Room"),
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+            AreaOccupancyState(area_id="kitchen", area_name="Kitchen"),
+        ]
+        area_temp_sensors = {
+            "living_room": ["sensor.living_room_temp"],
+            "bedroom": ["sensor.bedroom_temp"],
+            "kitchen": ["sensor.kitchen_temp"],
+        }
+
+        tracked_area_ids = {"living_room"}
+        # For trend, use all areas
+        all_areas = active_areas
+
+        result = controller.evaluate_thermostat_action(
+            active_areas,
+            area_temp_sensors,
+            respect_user_off=False,
+            all_areas_for_trend=all_areas,
+            tracked_area_ids=tracked_area_ids,
+        )
+
+        # Avg of all rooms = 68°F -> trend is HEAT
+        # Tracked room (living_room) at 68°F needs heat
+        # Trend matches, so should turn on
+        assert result.inferred_hvac_mode == HVACMode.HEAT
+        assert result.rooms_need_heat is True
+        assert result.recommended_action == ThermostatAction.TURN_ON
