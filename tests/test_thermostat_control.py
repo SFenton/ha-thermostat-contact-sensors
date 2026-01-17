@@ -4891,10 +4891,15 @@ class TestTrackedAreaIds:
         assert "bedroom" in result.room_states
         assert "kitchen" in result.room_states
 
-        # All rooms should have valid average temperatures
-        assert result.room_states["living_room"].average_temperature == 72.0
-        assert result.room_states["bedroom"].average_temperature == 68.0
-        assert result.room_states["kitchen"].average_temperature == 75.0
+        # All rooms should have valid sensor readings
+        assert result.room_states["living_room"].has_valid_readings is True
+        assert result.room_states["bedroom"].has_valid_readings is True
+        assert result.room_states["kitchen"].has_valid_readings is True
+
+        # Verify the actual temperature values are in the sensor_readings dict
+        assert result.room_states["living_room"].sensor_readings["sensor.living_room_temp"] == 72.0
+        assert result.room_states["bedroom"].sensor_readings["sensor.bedroom_temp"] == 68.0
+        assert result.room_states["kitchen"].sensor_readings["sensor.kitchen_temp"] == 75.0
 
     def test_untracked_rooms_have_satiation_status(self, controller, mock_hass):
         """Test that untracked rooms still show satiated/needs heat/cool status."""
@@ -5217,8 +5222,10 @@ class TestTrackedAreaIds:
         assert result.active_room_count == 0
         assert result.satiated_room_count == 0
         # But rooms still have temperature readings
-        assert result.room_states["living_room"].average_temperature == 65.0
-        assert result.room_states["bedroom"].average_temperature == 65.0
+        assert result.room_states["living_room"].has_valid_readings is True
+        assert result.room_states["bedroom"].has_valid_readings is True
+        assert result.room_states["living_room"].sensor_readings["sensor.living_room_temp"] == 65.0
+        assert result.room_states["bedroom"].sensor_readings["sensor.bedroom_temp"] == 65.0
 
     # =========================================================================
     # Test 5: rooms_for_mode_check respects tracked_area_ids
