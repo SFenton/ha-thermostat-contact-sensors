@@ -551,6 +551,68 @@ class TestEcoModeSwitch:
 
         await coordinator.async_shutdown()
 
+    @pytest.mark.asyncio
+    async def test_switch_turn_on_triggers_thermostat_reevaluation(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test that turning eco mode ON triggers thermostat state re-evaluation."""
+        from unittest.mock import AsyncMock, MagicMock
+        from custom_components.thermostat_contact_sensors.switch import EcoModeSwitch
+
+        config_entry.add_to_hass(hass)
+
+        # Use a MagicMock coordinator to avoid lingering timers
+        coordinator = MagicMock(spec=ThermostatContactSensorsCoordinator)
+        coordinator.eco_mode = False
+        coordinator.async_update_thermostat_state = AsyncMock()
+
+        switch = EcoModeSwitch(coordinator, config_entry)
+        switch.hass = hass
+        # Mock async_write_ha_state since entity is not fully registered
+        switch.async_write_ha_state = MagicMock()
+
+        # Turn on eco mode
+        await switch.async_turn_on()
+        await hass.async_block_till_done()
+
+        # Verify the update was triggered
+        coordinator.async_update_thermostat_state.assert_called_once()
+        assert coordinator.eco_mode is True
+
+    @pytest.mark.asyncio
+    async def test_switch_turn_off_triggers_thermostat_reevaluation(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test that turning eco mode OFF triggers thermostat state re-evaluation."""
+        from unittest.mock import AsyncMock, MagicMock
+        from custom_components.thermostat_contact_sensors.switch import EcoModeSwitch
+
+        config_entry.add_to_hass(hass)
+
+        # Use a MagicMock coordinator to avoid lingering timers
+        coordinator = MagicMock(spec=ThermostatContactSensorsCoordinator)
+        coordinator.eco_mode = True  # Start with eco mode ON
+        coordinator.async_update_thermostat_state = AsyncMock()
+
+        switch = EcoModeSwitch(coordinator, config_entry)
+        switch.hass = hass
+        # Mock async_write_ha_state since entity is not fully registered
+        switch.async_write_ha_state = MagicMock()
+
+        # Turn off eco mode
+        await switch.async_turn_off()
+        await hass.async_block_till_done()
+
+        # Verify the update was triggered
+        coordinator.async_update_thermostat_state.assert_called_once()
+        assert coordinator.eco_mode is False
+
 
 class TestOnlyTrackSelectedRoomsSwitch:
     """Test the OnlyTrackSelectedRoomsSwitch entity."""

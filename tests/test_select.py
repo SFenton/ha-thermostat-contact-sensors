@@ -133,6 +133,28 @@ class TestEcoAwayBehaviorSelect:
 
         assert select.icon == "mdi:leaf-circle"
 
+    async def test_select_option_triggers_thermostat_reevaluation(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ):
+        """Test that selecting an option triggers thermostat state re-evaluation."""
+        from unittest.mock import AsyncMock
+
+        coordinator = MagicMock(spec=ThermostatContactSensorsCoordinator)
+        coordinator.eco_away_behavior = EcoAwayBehavior.DISABLE_ECO
+        coordinator.async_update_thermostat_state = AsyncMock()
+
+        select = EcoAwayBehaviorSelect(coordinator, config_entry)
+        select.hass = hass
+        # Mock async_write_ha_state since entity is not fully set up in test
+        select.async_write_ha_state = MagicMock()
+
+        await select.async_select_option("Use Eco Away Targets")
+        await hass.async_block_till_done()
+
+        # Verify the coordinator update was triggered
+        coordinator.async_update_thermostat_state.assert_called_once()
+        assert coordinator.eco_away_behavior == EcoAwayBehavior.USE_ECO_AWAY_TARGETS
+
 
 class TestEcoAwayBehaviorEnum:
     """Test the EcoAwayBehavior enum."""

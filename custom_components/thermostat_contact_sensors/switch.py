@@ -188,6 +188,8 @@ class EcoModeSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         coordinator.eco_mode = True
         _LOGGER.info("Eco mode enabled - thermostat will only respond to active (occupied) rooms")
         self.async_write_ha_state()
+        # Trigger coordinator update to re-evaluate thermostat state
+        self.hass.async_create_task(coordinator.async_update_thermostat_state())
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn off eco mode - consider all rooms including critical unoccupied ones."""
@@ -195,6 +197,8 @@ class EcoModeSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         coordinator.eco_mode = False
         _LOGGER.info("Eco mode disabled - thermostat will respond to all rooms including unoccupied critical rooms")
         self.async_write_ha_state()
+        # Trigger coordinator update to re-evaluate thermostat state
+        self.hass.async_create_task(coordinator.async_update_thermostat_state())
 
     @property
     def extra_state_attributes(self) -> dict:

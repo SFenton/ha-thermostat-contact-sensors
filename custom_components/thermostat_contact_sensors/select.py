@@ -122,6 +122,8 @@ class EcoAwayBehaviorSelect(CoordinatorEntity, RestoreEntity, SelectEntity):
             self.coordinator.eco_away_behavior = behavior
             _LOGGER.info("Eco away behavior set to: %s", behavior)
             self.async_write_ha_state()
+            # Trigger coordinator update to re-evaluate thermostat state
+            self.hass.async_create_task(self.coordinator.async_update_thermostat_state())
 
     @property
     def extra_state_attributes(self) -> dict:
