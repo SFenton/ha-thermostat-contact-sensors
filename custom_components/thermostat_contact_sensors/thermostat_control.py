@@ -1308,6 +1308,7 @@ class ThermostatController:
         eco_away_targets: tuple[float, float] | None = None,
         all_areas_for_trend: list[AreaOccupancyState] | None = None,
         tracked_area_ids: set[str] | None = None,
+        force_critical_area_ids: set[str] | None = None,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
 
@@ -1315,7 +1316,7 @@ class ThermostatController:
         - Whether we're paused by contact sensors
         - Current thermostat state and mode
         - Active room temperature satiation
-        - Inactive rooms with critical temperature levels (unless eco_mode is enabled)
+        - Inactive rooms with critical temperature levels (critical protection)
         - Cycle protection timers
         - Whether to respect user's choice to turn thermostat off
 
@@ -1327,9 +1328,9 @@ class ThermostatController:
             respect_user_off: If True (default), when the user turns off the
                 thermostat, the integration won't turn it back on. If False,
                 the integration will turn it on when rooms need conditioning.
-            eco_mode: If True, only consider active (occupied) rooms for thermostat
-                control. Unoccupied rooms will not trigger thermostat activation,
-                even if they reach critical temperatures.
+            eco_mode: If True, only consider active (occupied) rooms for *normal*
+                thermostat control decisions. Critical temperature protection can
+                still trigger HVAC operation.
             eco_away_targets: Optional tuple of (heat_target, cool_target) to use
                 when eco mode is active and the user is away with "use_eco_away_targets"
                 behavior. If provided, these targets will be used instead of area targets.
@@ -1340,6 +1341,9 @@ class ThermostatController:
                 heating/cooling decisions. If provided, only these areas will count
                 toward satiation/critical room decisions. All areas are still evaluated
                 for temperature display. If None, all areas are considered tracked.
+            force_critical_area_ids: Optional set of area IDs that should be considered
+                for CRITICAL temperature protection even when they are not tracked.
+                This is intended to be used with the tracked rooms feature.
 
         Returns:
             ThermostatState with the recommended action.
@@ -1373,6 +1377,14 @@ class ThermostatController:
             if tracked_area_ids is None:
                 return True  # All areas tracked when not specified
             return area_id in tracked_area_ids
+
+        # Helper: should this area be considered for CRITICAL protection decisions?
+        def is_area_critical_eligible(area_id: str) -> bool:
+            if is_area_tracked(area_id):
+                return True
+            if force_critical_area_ids is None:
+                return False
+            return area_id in force_critical_area_ids
 
         # Collect ALL sensor readings first to calculate global temperature trend
         # This is used to infer whether we're closer to needing heat or cooling
@@ -1479,8 +1491,8 @@ class ThermostatController:
         )
 
         # Evaluate inactive rooms for critical temperatures
-        # In eco mode, we still evaluate for display but won't use critical status for decisions
-        # Only count tracked rooms for decisions, but evaluate ALL for display
+        # We always evaluate for display. For decisions, only count rooms that are
+        # either tracked OR force-critical eligible.
         critical_count = 0
         for area in inactive_areas:
             # Skip if this area was already evaluated as active
@@ -1506,23 +1518,16 @@ class ThermostatController:
             )
             thermostat_state.room_states[area.area_id] = room_state
 
-            # Only count as critical for thermostat control if:
-            # 1. NOT in eco mode
-            # 2. Room is tracked (or all rooms are tracked when tracked_area_ids is None)
-            if room_state.is_critical and not eco_mode and is_area_tracked(area.area_id):
+            # Only count as critical for thermostat control if the room is eligible
+            # (tracked or force-critical). Critical protection overrides eco mode.
+            if room_state.is_critical and is_area_critical_eligible(area.area_id):
                 critical_count += 1
                 _LOGGER.debug(
                     "Inactive room %s is critical: %s",
                     area.area_id,
                     room_state.critical_reason,
                 )
-            elif room_state.is_critical and eco_mode:
-                _LOGGER.debug(
-                    "Inactive room %s is critical but eco mode is enabled (ignoring): %s",
-                    area.area_id,
-                    room_state.critical_reason,
-                )
-            elif room_state.is_critical and not is_area_tracked(area.area_id):
+            elif room_state.is_critical and not is_area_critical_eligible(area.area_id):
                 _LOGGER.debug(
                     "Inactive room %s is critical but not tracked (ignoring for decisions): %s",
                     area.area_id,
@@ -1538,12 +1543,15 @@ class ThermostatController:
         effective_target_high = target_temp_high or target_temp or 78.0
         
         # For mode determination, only consider:
-        # 1. Tracked rooms (or all rooms if tracked_area_ids is None)
-        # 2. Active rooms only when in eco_mode
+        # 1. Tracked active rooms (normal eco-mode behavior)
+        # 2. Any CRITICAL-eligible room that is currently critical
         rooms_for_mode_check = {
             area_id: room_state
             for area_id, room_state in thermostat_state.room_states.items()
-            if is_area_tracked(area_id) and (room_state.is_active or not eco_mode)
+            if (
+                (is_area_tracked(area_id) and (room_state.is_active or not eco_mode))
+                or (room_state.is_critical and is_area_critical_eligible(area_id))
+            )
         }
         rooms_need_heat, rooms_need_cool = determine_rooms_need_mode(
             rooms_for_mode_check,

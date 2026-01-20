@@ -113,6 +113,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.only_track_selected_rooms: bool = False  # Default: consider all rooms
         self._tracked_rooms: set[str] = set()  # Set of area_ids that are being tracked
 
+        # Per-room override: force room to be considered for CRITICAL temp protection
+        # even when it is not tracked and/or eco mode is enabled.
+        # This only affects thermostat ON/OFF decisions at critical thresholds;
+        # it does not make the room participate in normal (non-critical) conditioning.
+        self._force_critical_rooms: set[str] = set()
+
         # Timeout tracking
         self._open_timer: asyncio.TimerHandle | None = None
         self._close_timer: asyncio.TimerHandle | None = None
@@ -321,6 +327,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         return self._tracked_rooms.copy()
 
     @property
+    def force_critical_rooms(self) -> set[str]:
+        """Return the set of rooms that are force-tracked for critical protection."""
+        return self._force_critical_rooms.copy()
+
+    @property
     def all_enabled_area_ids(self) -> list[str]:
         """Return all enabled area IDs from the configuration."""
         return [
@@ -361,6 +372,23 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             area_id,
             tracked,
             self._tracked_rooms,
+        )
+
+    def is_room_force_critical(self, area_id: str) -> bool:
+        """Check if a room is force-tracked for critical temperature protection."""
+        return area_id in self._force_critical_rooms
+
+    def set_room_force_critical(self, area_id: str, enabled: bool) -> None:
+        """Set whether a room is force-tracked for critical temperature protection."""
+        if enabled:
+            self._force_critical_rooms.add(area_id)
+        else:
+            self._force_critical_rooms.discard(area_id)
+        _LOGGER.debug(
+            "Force critical tracking updated: area=%s, enabled=%s, all_force=%s",
+            area_id,
+            enabled,
+            self._force_critical_rooms,
         )
 
     def get_area_temp_sensors(self) -> dict[str, list[str]]:
@@ -426,12 +454,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         all_areas_for_trend = list(all_active_areas) + list(all_inactive_areas)
 
         # Determine tracked_area_ids for the tracked rooms feature
-        # When only_track_selected_rooms is enabled, we pass the set of tracked rooms
-        # to the controller so it only counts those rooms for decisions,
-        # but ALL rooms are still evaluated for display (temperatures, satiation status)
+        # When only_track_selected_rooms is enabled, we pass the (possibly empty)
+        # set of tracked rooms to the controller so it only counts those rooms for
+        # decisions. ALL rooms are still evaluated for display.
+        #
+        # Important: when only_track_selected_rooms is True and _tracked_rooms is empty,
+        # this means "track NONE" (not "track ALL").
         tracked_area_ids: set[str] | None = None
-        
-        if self.only_track_selected_rooms and self._tracked_rooms:
+        if self.only_track_selected_rooms:
             tracked_area_ids = self._tracked_rooms.copy()
             _LOGGER.debug(
                 "Tracked rooms filter enabled: %d rooms tracked out of %d total (tracked: %s)",
@@ -439,6 +469,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 len(all_active_areas) + len(all_inactive_areas),
                 tracked_area_ids,
             )
+
+        force_critical_area_ids: set[str] | None = None
+        if self.only_track_selected_rooms:
+            force_critical_area_ids = self._force_critical_rooms.copy()
 
         # Update pause state on thermostat controller
         self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
@@ -479,6 +513,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             eco_away_targets=eco_away_targets,
             all_areas_for_trend=all_areas_for_trend if self.only_track_selected_rooms else None,
             tracked_area_ids=tracked_area_ids,
+            force_critical_area_ids=force_critical_area_ids,
         )
 
         return self._last_thermostat_state

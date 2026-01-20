@@ -4381,9 +4381,9 @@ class TestExecuteActionWithInferredMode:
 class TestEcoMode:
     """Tests for eco mode functionality.
     
-    When eco mode is enabled, the thermostat should only consider active (occupied)
-    rooms for control decisions. Critical temperatures in unoccupied rooms should
-    be ignored (but still evaluated for display purposes).
+    When eco mode is enabled, the thermostat should prioritize active (occupied)
+    rooms for *normal* control decisions. Critical temperature protection should
+    still be evaluated and can trigger HVAC operation.
     """
 
     @pytest.fixture
@@ -4412,8 +4412,8 @@ class TestEcoMode:
             unoccupied_cooling_threshold=3.0,
         )
 
-    def test_eco_mode_ignores_critical_room(self, controller, mock_hass):
-        """Test that eco mode ignores critical unoccupied rooms."""
+    def test_eco_mode_does_not_suppress_critical_room(self, controller, mock_hass):
+        """Test that eco mode does not suppress critical unoccupied rooms."""
         inactive_area = AreaOccupancyState(
             area_id=TEST_AREA_BEDROOM,
             area_name="Bedroom",
@@ -4445,15 +4445,14 @@ class TestEcoMode:
         )
         assert state_normal.critical_room_count == 1
 
-        # With eco mode, critical room should be ignored for control
+        # With eco mode, critical room should still be counted for control
         state_eco = controller.evaluate_thermostat_action(
             active_areas=[],
             area_temp_sensors=area_temp_sensors,
             inactive_areas=[inactive_area],
             eco_mode=True,
         )
-        # critical_room_count is 0 when eco mode is on (ignored for control)
-        assert state_eco.critical_room_count == 0
+        assert state_eco.critical_room_count == 1
         # The room state is still evaluated and shows as critical for display
         assert TEST_AREA_BEDROOM in state_eco.room_states
         assert state_eco.room_states[TEST_AREA_BEDROOM].is_critical is True
@@ -4512,7 +4511,7 @@ class TestEcoMode:
                 return mock_state
             elif entity_id == TEST_TEMP_SENSOR_1:
                 mock_state = MagicMock()
-                mock_state.state = "16.0"  # Critical - but eco mode ignores it
+                mock_state.state = "16.0"  # Critical - should still be protected
                 return mock_state
             return None
 
@@ -4525,16 +4524,15 @@ class TestEcoMode:
             eco_mode=True,
         )
 
-        # With eco mode and no active rooms, should recommend turning off (idle)
-        assert state.critical_room_count == 0
-        assert state.recommended_action == ThermostatAction.TURN_OFF
-        assert "idle" in state.action_reason.lower() or "no active" in state.action_reason.lower()
+        # Critical protection should still be active under eco mode
+        assert state.critical_room_count == 1
+        assert state.recommended_action != ThermostatAction.TURN_OFF
 
     def test_eco_mode_with_active_and_inactive_rooms(self, controller, mock_hass):
         """Test eco mode with both active and critical inactive rooms.
         
         Active room is satiated, inactive room is critical.
-        With eco mode: should turn off (only active rooms matter, they're satiated)
+        With eco mode: should still stay on (critical room protection)
         Without eco mode: should stay on (critical room needs it)
         """
         active_area = AreaOccupancyState(
@@ -4585,18 +4583,17 @@ class TestEcoMode:
         assert state_normal.recommended_action == ThermostatAction.NONE
         assert "1 critical rooms" in state_normal.action_reason
 
-        # With eco mode - ignores critical room, turns off since active is satiated
+        # With eco mode - critical room is still protected
         state_eco = controller.evaluate_thermostat_action(
             active_areas=[active_area],
             area_temp_sensors=area_temp_sensors,
             inactive_areas=[inactive_area],
             eco_mode=True,
         )
-        assert state_eco.critical_room_count == 0  # Ignored in eco mode
+        assert state_eco.critical_room_count == 1
         assert state_eco.all_active_rooms_satiated is True
-        # Should turn off since only active rooms matter and they're satiated
-        assert state_eco.recommended_action == ThermostatAction.TURN_OFF
-        assert "satiated" in state_eco.action_reason.lower()
+        assert state_eco.recommended_action == ThermostatAction.NONE
+        assert "critical" in state_eco.action_reason.lower()
 
     def test_eco_mode_respects_anomaly_detection(self, controller, mock_hass):
         """Test that eco mode still respects anomaly detection.
@@ -4638,7 +4635,9 @@ class TestEcoMode:
                 return mock_state
             elif entity_id == TEST_TEMP_SENSOR_1:
                 mock_state = MagicMock()
-                mock_state.state = "65.0"  # Cold - drives house trend towards HEAT
+                # Cold enough to bias house trend towards HEAT, but not cold enough
+                # to be in the unoccupied *critical* range (critical protection overrides eco mode).
+                mock_state.state = "67.0"
                 return mock_state
             return None
 
@@ -5044,6 +5043,59 @@ class TestTrackedAreaIds:
         # But bedroom should still show as critical in its room_state for display
         assert result.room_states["bedroom"].is_critical is True
         assert result.room_states["basement"].is_critical is True
+
+    def test_tracked_area_ids_empty_tracks_no_rooms_for_decisions(self, controller, mock_hass):
+        """Test that an empty tracked_area_ids set means track NONE for decisions."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(55.0),  # Critical but not tracked
+        }.get(entity_id)
+
+        inactive_areas = [
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas=[],
+            area_temp_sensors=area_temp_sensors,
+            inactive_areas=inactive_areas,
+            tracked_area_ids=set(),
+        )
+
+        # Bedroom is still evaluated for display
+        assert result.room_states["bedroom"].is_critical is True
+        # But no rooms are tracked for decisions
+        assert result.critical_room_count == 0
+        assert result.active_room_count == 0
+
+    def test_force_critical_area_ids_allows_untracked_critical_in_eco_mode(self, controller, mock_hass):
+        """Test that force_critical_area_ids can trigger critical protection under eco mode."""
+        mock_hass.states.get.side_effect = lambda entity_id: {
+            TEST_THERMOSTAT: self._create_thermostat_state(mock_hass, HVACMode.HEAT),
+            "sensor.bedroom_temp": self._create_temp_sensor_state(55.0),  # Critical
+        }.get(entity_id)
+
+        inactive_areas = [
+            AreaOccupancyState(area_id="bedroom", area_name="Bedroom"),
+        ]
+        area_temp_sensors = {
+            "bedroom": ["sensor.bedroom_temp"],
+        }
+
+        result = controller.evaluate_thermostat_action(
+            active_areas=[],
+            area_temp_sensors=area_temp_sensors,
+            inactive_areas=inactive_areas,
+            eco_mode=True,
+            tracked_area_ids=set(),
+            force_critical_area_ids={"bedroom"},
+        )
+
+        assert result.room_states["bedroom"].is_critical is True
+        assert result.critical_room_count == 1
 
     # =========================================================================
     # Test 3: Anomaly detection uses ALL sensors for global trend

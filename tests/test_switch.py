@@ -748,6 +748,107 @@ class TestTrackedRoomSwitch:
 
         await coordinator.async_shutdown()
 
+
+class TestForceCriticalRoomSwitch:
+    """Test the ForceCriticalRoomSwitch entity."""
+
+    @pytest.mark.asyncio
+    async def test_switch_default_state_is_off(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test that the force critical switch defaults to off."""
+        from custom_components.thermostat_contact_sensors.switch import ForceCriticalRoomSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        assert "living_room" not in coordinator.force_critical_rooms
+
+        switch = ForceCriticalRoomSwitch(coordinator, config_entry, "living_room", "Living Room")
+        assert switch.is_on is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_switch_turn_on_and_off(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test enabling and disabling force critical on the coordinator."""
+        from custom_components.thermostat_contact_sensors.switch import ForceCriticalRoomSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        coordinator.set_room_force_critical("living_room", True)
+        assert "living_room" in coordinator.force_critical_rooms
+
+        switch = ForceCriticalRoomSwitch(coordinator, config_entry, "living_room", "Living Room")
+        assert switch.is_on is True
+
+        coordinator.set_room_force_critical("living_room", False)
+        assert "living_room" not in coordinator.force_critical_rooms
+        assert switch.is_on is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_switch_has_correct_attributes(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test that the switch has correct attributes."""
+        from custom_components.thermostat_contact_sensors.switch import ForceCriticalRoomSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        switch = ForceCriticalRoomSwitch(coordinator, config_entry, "living_room", "Living Room")
+
+        assert "force_critical" in switch.unique_id
+        assert "thermometer" in (switch.icon or "")
+
+        attrs = switch.extra_state_attributes
+        assert attrs["area_id"] == "living_room"
+        assert attrs["area_name"] == "Living Room"
+        assert "description" in attrs
+
+        await coordinator.async_shutdown()
+
     @pytest.mark.asyncio
     async def test_switch_turn_on(
         self,
