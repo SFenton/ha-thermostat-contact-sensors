@@ -496,6 +496,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Three options for how to handle inactive critical rooms:
         # 1. ECO_CRITICAL_NONE = ignore all inactive rooms (original Eco Mode ON behavior)
         # 2. ECO_CRITICAL_SELECT = only track rooms with force_track_when_critical override
+        #    OR rooms in the tracked rooms list (when TSR is enabled)
         # 3. ECO_CRITICAL_ALL = track all inactive critical rooms (original Eco Mode OFF behavior)
 
         if not eco_mode_for_thermostat:
@@ -507,6 +508,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 area
                 for area in all_inactive_areas
                 if self._area_has_critical_override(area.area_id)
+                or (self.only_track_selected_rooms and self.is_room_tracked(area.area_id))
             ]
         else:  # ECO_CRITICAL_ALL
             inactive_areas = all_inactive_areas

@@ -509,8 +509,14 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the determining temperature for this room."""
-        # Compute directly from sensor states so this sensor reflects the room
-        # independent of Eco/TSR/force-critical filtering.
+        # Prefer the determining_temperature from the room state (which is what the
+        # thermostat controller is actually using), falling back to live computation
+        # only if no room state is available.
+        room_state = self._get_room_state()
+        if room_state is not None and room_state.determining_temperature is not None:
+            return round(room_state.determining_temperature, 1)
+        
+        # Fallback: compute directly from sensor states
         overall_temp, _ = self._compute_overall_temperature(self._get_live_sensor_readings())
         if overall_temp is None:
             return None

@@ -1077,6 +1077,53 @@ class ThermostatController:
             room_state.is_satiated = True
             room_state.satiation_reason = SatiationReason.SATIATED
 
+        # Evaluate critical status for active rooms as well
+        # Active rooms can be both active and critical (e.g., occupied but too cold/hot)
+        if hvac_mode == HVACMode.HEAT and target_temp is not None:
+            coldest_sensor, coldest_temp = min(
+                room_state.sensor_readings.items(), key=lambda x: x[1]
+            )
+            critical_threshold = target_temp - self._unoccupied_heating_threshold
+            if coldest_temp < critical_threshold:
+                room_state.is_critical = True
+                room_state.critical_reason = (
+                    f"Temperature {coldest_temp:.1f}° is {target_temp - coldest_temp:.1f}° "
+                    f"below heat target {target_temp:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
+                )
+        elif hvac_mode == HVACMode.COOL and target_temp is not None:
+            warmest_sensor, warmest_temp = max(
+                room_state.sensor_readings.items(), key=lambda x: x[1]
+            )
+            critical_threshold = target_temp + self._unoccupied_cooling_threshold
+            if warmest_temp > critical_threshold:
+                room_state.is_critical = True
+                room_state.critical_reason = (
+                    f"Temperature {warmest_temp:.1f}° is {warmest_temp - target_temp:.1f}° "
+                    f"above cool target {target_temp:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
+                )
+        elif hvac_mode == HVACMode.HEAT_COOL and target_temp_low is not None and target_temp_high is not None:
+            coldest_sensor, coldest_temp = min(
+                room_state.sensor_readings.items(), key=lambda x: x[1]
+            )
+            warmest_sensor, warmest_temp = max(
+                room_state.sensor_readings.items(), key=lambda x: x[1]
+            )
+            heat_critical_threshold = target_temp_low - self._unoccupied_heating_threshold
+            cool_critical_threshold = target_temp_high + self._unoccupied_cooling_threshold
+            
+            if coldest_temp < heat_critical_threshold:
+                room_state.is_critical = True
+                room_state.critical_reason = (
+                    f"Temperature {coldest_temp:.1f}° is {target_temp_low - coldest_temp:.1f}° "
+                    f"below heat target {target_temp_low:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
+                )
+            elif warmest_temp > cool_critical_threshold:
+                room_state.is_critical = True
+                room_state.critical_reason = (
+                    f"Temperature {warmest_temp:.1f}° is {warmest_temp - target_temp_high:.1f}° "
+                    f"above cool target {target_temp_high:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
+                )
+
         return room_state
 
     def evaluate_room_critical(
