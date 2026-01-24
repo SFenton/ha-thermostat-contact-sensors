@@ -1198,20 +1198,19 @@ class ThermostatController:
                 set_average_temperature()
                 return room_state
 
-            # For heating critical protection, use the coldest sensor (worst-case)
-            # A room is critical if ANY spot is too cold.
-            coldest_sensor, coldest_temp = min(
+            # For heating critical protection, use the warmest sensor (same as satiation logic)
+            warmest_sensor, warmest_temp = max(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp - self._unoccupied_heating_threshold
 
-            room_state.determining_sensor = coldest_sensor
-            room_state.determining_temperature = coldest_temp
+            room_state.determining_sensor = warmest_sensor
+            room_state.determining_temperature = warmest_temp
 
-            if coldest_temp < critical_threshold:
+            if warmest_temp < critical_threshold:
                 room_state.is_critical = True
                 room_state.critical_reason = (
-                    f"Temperature {coldest_temp:.1f}° is {target_temp - coldest_temp:.1f}° "
+                    f"Temperature {warmest_temp:.1f}° is {target_temp - warmest_temp:.1f}° "
                     f"below heat target {target_temp:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
                 )
 
@@ -1220,20 +1219,19 @@ class ThermostatController:
                 set_average_temperature()
                 return room_state
 
-            # For cooling critical protection, use the warmest sensor (worst-case)
-            # A room is critical if ANY spot is too hot.
-            warmest_sensor, warmest_temp = max(
+            # For cooling critical protection, use the coolest sensor (same as satiation logic)
+            coolest_sensor, coolest_temp = min(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp + self._unoccupied_cooling_threshold
 
-            room_state.determining_sensor = warmest_sensor
-            room_state.determining_temperature = warmest_temp
+            room_state.determining_sensor = coolest_sensor
+            room_state.determining_temperature = coolest_temp
 
-            if warmest_temp > critical_threshold:
+            if coolest_temp > critical_threshold:
                 room_state.is_critical = True
                 room_state.critical_reason = (
-                    f"Temperature {warmest_temp:.1f}° is {warmest_temp - target_temp:.1f}° "
+                    f"Temperature {coolest_temp:.1f}° is {coolest_temp - target_temp:.1f}° "
                     f"above cool target {target_temp:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
                 )
 
