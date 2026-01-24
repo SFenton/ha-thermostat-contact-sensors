@@ -1995,3 +1995,174 @@ class TestForceTrackWhenCriticalOverride:
         assert "living_room" not in filtered_area_ids
 
         await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_active_room_with_force_track_critical_and_tsr_gets_evaluated(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test that active rooms filtered by TSR but with force_track_when_critical still get evaluated for critical temps."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "music_room": {
+                CONF_AREA_ID: "music_room",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.music_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.music_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+            },
+            "living_room": {
+                CONF_AREA_ID: "living_room",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.living_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.living_temp"],
+            },
+        }
+
+        # Set up temperature sensors
+        hass.states.async_set(
+            "sensor.music_temp",
+            "16.0",  # Critical cold
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.living_temp",
+            "15.0",  # Also cold
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        # Set up motion sensors
+        hass.states.async_set("binary_sensor.music_motion", STATE_ON)
+        hass.states.async_set("binary_sensor.living_motion", STATE_OFF)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Enable TSR but DON'T track music_room (only track living_room, but it's inactive)
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = ["living_room"]  # Music room NOT tracked
+
+        # Manually update occupancy to make music_room active
+        await coordinator.async_config_entry_first_refresh()
+        
+        # Music room should be active (motion detected)
+        assert any(a.area_id == "music_room" for a in coordinator.occupancy_tracker.active_areas)
+
+        # Update thermostat state
+        thermostat_state = coordinator.update_thermostat_state()
+
+        # Music room should have a room_state despite being filtered from active_areas by TSR
+        # because it has force_track_when_critical
+        assert thermostat_state is not None
+        assert "music_room" in thermostat_state.room_states
+        
+        music_state = thermostat_state.room_states["music_room"]
+        
+        # Should be marked as critical (16°C is below default 22°C - 3°C threshold)
+        assert music_state.is_critical is True
+        assert music_state.determining_temperature == 16.0
+        
+        # Living room should NOT be in room_states (it's inactive AND not tracked)
+        assert "living_room" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_tsr_tracked_active_room_gets_normal_evaluation(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test that active rooms that ARE tracked by TSR get normal satiation evaluation."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+        )
+
+        areas_config = {
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.office_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+        }
+
+        # Set up temperature sensors
+        hass.states.async_set(
+            "sensor.office_temp",
+            "20.0",  # Below target, not satiated
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.bedroom_temp",
+            "19.0",
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        # Set up motion sensors - both active
+        hass.states.async_set("binary_sensor.office_motion", STATE_ON)
+        hass.states.async_set("binary_sensor.bedroom_motion", STATE_ON)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Enable TSR and only track office
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = ["office"]
+
+        await coordinator.async_config_entry_first_refresh()
+
+        # Both should be active
+        active_area_ids = {a.area_id for a in coordinator.occupancy_tracker.active_areas}
+        assert "office" in active_area_ids
+        assert "bedroom" in active_area_ids
+
+        # Update thermostat state
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        
+        # Office (tracked) should have room_state with satiation evaluation
+        assert "office" in thermostat_state.room_states
+        office_state = thermostat_state.room_states["office"]
+        assert office_state.is_active is True
+        assert office_state.is_satiated is False  # Below target
+        
+        # Bedroom (not tracked, no force_track_when_critical) should NOT be in room_states
+        assert "bedroom" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
