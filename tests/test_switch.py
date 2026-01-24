@@ -1100,3 +1100,129 @@ class TestTrackedRoomsBehavior:
         assert len(all_areas) == 3
 
         await coordinator.async_shutdown()
+
+
+class TestSwitchEdgeCases:
+    """Tests for switch edge cases and error handling."""
+
+    @pytest.mark.asyncio
+    async def test_tracked_room_switch_with_disabled_area(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test tracked room switch handles disabled area gracefully."""
+        from custom_components.thermostat_contact_sensors.switch import TrackedRoomSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=[],
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        # Create switch for a disabled area
+        switch = TrackedRoomSwitch(coordinator, config_entry, "disabled_room", "Disabled Room")
+        switch.hass = hass
+        
+        # Should default to off since area is disabled
+        assert switch.is_on is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_force_track_critical_switch_toggles_state(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test force track when critical switch toggles correctly."""
+        from custom_components.thermostat_contact_sensors.switch import ForceTrackWhenCriticalSwitch
+        from unittest.mock import MagicMock
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=[],
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        switch = ForceTrackWhenCriticalSwitch(coordinator, config_entry, "living_room", "Living Room")
+        switch.hass = hass
+        switch.async_write_ha_state = MagicMock()
+
+        # Initially off (from config)
+        initial_state = switch.is_on
+
+        # Turn on
+        await switch.async_turn_on()
+        await hass.async_block_till_done()
+        assert coordinator._area_has_critical_override("living_room") is True
+
+        # Turn off
+        await switch.async_turn_off()
+        await hass.async_block_till_done()
+        assert coordinator._area_has_critical_override("living_room") is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_respect_user_off_switch_extra_attributes(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Test respect user off switch has correct extra attributes."""
+        from custom_components.thermostat_contact_sensors.switch import RespectUserOffSwitch
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=[],
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        switch = RespectUserOffSwitch(coordinator, config_entry)
+        switch.hass = hass
+
+        attrs = switch.extra_state_attributes
+        assert attrs is not None
+        assert "description" in attrs
+        # RespectUserOffSwitch only has description attribute
+        assert "respects user's choice" in attrs["description"].lower() or "respects user" in attrs["description"].lower()
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eco_mode_critical_tracking_enum_coverage(
+        self,
+    ):
+        """Test ECO critical tracking enum values."""
+        from custom_components.thermostat_contact_sensors.const import (
+            ECO_CRITICAL_NONE,
+            ECO_CRITICAL_SELECT,
+            ECO_CRITICAL_ALL,
+        )
+
+        # Verify all enum values exist
+        assert ECO_CRITICAL_NONE == "do_not_track_critical"
+        assert ECO_CRITICAL_SELECT == "track_select_critical"
+        assert ECO_CRITICAL_ALL == "track_all_critical"

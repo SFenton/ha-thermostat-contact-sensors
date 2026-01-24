@@ -517,7 +517,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             else:
                 inactive_areas = all_inactive_areas
         elif effective_eco_critical_tracking == ECO_CRITICAL_NONE:
-            inactive_areas = []
+            # Even with ECO_CRITICAL_NONE, respect per-area FTCR overrides
+            inactive_areas = [
+                area
+                for area in all_inactive_areas
+                if self._area_has_critical_override(area.area_id)
+            ]
         elif effective_eco_critical_tracking == ECO_CRITICAL_SELECT:
             inactive_areas = [
                 area

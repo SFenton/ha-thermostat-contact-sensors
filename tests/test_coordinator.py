@@ -2200,3 +2200,1309 @@ class TestForceTrackWhenCriticalOverride:
         assert "bedroom" not in thermostat_state.room_states
 
         await coordinator.async_shutdown()
+
+
+class TestEcoCriticalTrackingModes:
+    """Tests for different ECO_CRITICAL tracking modes (NONE, SELECT, ALL)."""
+
+    @pytest.mark.asyncio
+    async def test_eco_none_ignores_all_inactive_rooms(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_CRITICAL_NONE ignores all inactive rooms regardless of critical status."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_NONE,
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+        }
+
+        # Bedroom critically cold, office normal
+        hass.states.async_set(
+            "sensor.bedroom_temp",
+            "15.0",  # Critical: 15°C < (22°C - 3°C threshold)
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.office_temp",
+            "20.0",  # Normal temp
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_NONE
+
+        # Both rooms are inactive (no occupancy)
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # No inactive rooms should be tracked with ECO_CRITICAL_NONE
+        assert "bedroom" not in thermostat_state.room_states
+        assert "office" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eco_none_with_ftcr_still_tracks_critical_room(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_CRITICAL_NONE with FTCR override still tracks critical room."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_NONE,
+        )
+
+        areas_config = {
+            "basement": {
+                CONF_AREA_ID: "basement",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.basement_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+            },
+            "garage": {
+                CONF_AREA_ID: "garage",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.garage_temp"],
+            },
+        }
+
+        hass.states.async_set(
+            "sensor.basement_temp",
+            "14.0",  # Critical cold
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.garage_temp",
+            "13.0",  # Also critical but no FTCR
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_NONE
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # Basement has FTCR override, should be tracked
+        assert "basement" in thermostat_state.room_states
+        assert thermostat_state.room_states["basement"].is_critical is True
+        
+        # Garage doesn't have FTCR, should not be tracked
+        assert "garage" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eco_all_tracks_all_inactive_rooms(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_CRITICAL_ALL tracks all inactive rooms for critical temps."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_ALL,
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+            "kitchen": {
+                CONF_AREA_ID: "kitchen",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.kitchen_temp"],
+            },
+        }
+
+        hass.states.async_set(
+            "sensor.bedroom_temp",
+            "16.0",  # Critical
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.office_temp",
+            "20.0",  # Normal
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.kitchen_temp",
+            "21.0",  # Normal
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_ALL
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # All inactive rooms should be evaluated
+        assert "bedroom" in thermostat_state.room_states
+        assert "office" in thermostat_state.room_states
+        assert "kitchen" in thermostat_state.room_states
+        
+        # Bedroom should be marked critical
+        assert thermostat_state.room_states["bedroom"].is_critical is True
+        # Others should not be critical
+        assert thermostat_state.room_states["office"].is_critical is False
+        assert thermostat_state.room_states["kitchen"].is_critical is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eco_all_with_no_critical_rooms(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_CRITICAL_ALL with no critical rooms - all evaluated but none critical."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_ALL,
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+        }
+
+        hass.states.async_set(
+            "sensor.bedroom_temp",
+            "20.0",  # Normal
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.office_temp",
+            "21.0",  # Normal
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_ALL
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # All rooms evaluated
+        assert "bedroom" in thermostat_state.room_states
+        assert "office" in thermostat_state.room_states
+        
+        # None should be critical
+        assert thermostat_state.room_states["bedroom"].is_critical is False
+        assert thermostat_state.room_states["office"].is_critical is False
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eco_select_with_no_tracked_rooms(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_CRITICAL_SELECT with empty tracked list - no rooms evaluated."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_SELECT,
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+        }
+
+        hass.states.async_set(
+            "sensor.bedroom_temp",
+            "15.0",  # Critical
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.office_temp",
+            "16.0",  # Critical
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_SELECT
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = []  # No rooms tracked
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # No rooms should be evaluated (not tracked, no FTCR)
+        assert "bedroom" not in thermostat_state.room_states
+        assert "office" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eco_select_with_all_rooms_tracked(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_CRITICAL_SELECT with all rooms tracked - behaves like ALL."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_SELECT,
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+        }
+
+        hass.states.async_set(
+            "sensor.bedroom_temp",
+            "15.0",  # Critical
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+        hass.states.async_set(
+            "sensor.office_temp",
+            "20.0",  # Normal
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_SELECT
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = ["bedroom", "office"]  # All tracked
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # Both rooms should be evaluated
+        assert "bedroom" in thermostat_state.room_states
+        assert "office" in thermostat_state.room_states
+        
+        assert thermostat_state.room_states["bedroom"].is_critical is True
+        assert thermostat_state.room_states["office"].is_critical is False
+
+        await coordinator.async_shutdown()
+
+
+class TestEcoAwayBehaviors:
+    """Tests for different eco away behaviors."""
+
+    @pytest.mark.asyncio
+    async def test_away_with_keep_eco_active_behavior(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test that eco mode stays active when away with KEEP_ECO_ACTIVE."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_SELECT,
+        )
+
+        hass.states.async_set("binary_sensor.home_occupied", STATE_OFF)  # Away
+        hass.states.async_set(
+            "sensor.bedroom_temp",
+            "15.0",  # Critical
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+        }
+
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = "binary_sensor.home_occupied"
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_SELECT
+        coordinator.eco_away_behavior = "keep_eco_active"
+
+        assert coordinator.is_away is True
+        
+        # Update thermostat state - eco should remain active
+        thermostat_state = coordinator.update_thermostat_state()
+        
+        # Eco mode filtering should apply (no rooms tracked with SELECT)
+        assert thermostat_state is not None
+        assert "bedroom" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_away_with_use_eco_targets_behavior(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test that away targets are used with USE_ECO_AWAY_TARGETS."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_TEMPERATURE_SENSORS,
+        )
+
+        hass.states.async_set("binary_sensor.home_occupied", STATE_OFF)  # Away
+        hass.states.async_set(
+            "sensor.bedroom_temp",
+            "15.0",
+            {"unit_of_measurement": "°C", "device_class": "temperature"},
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+        }
+
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = "binary_sensor.home_occupied"
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_away_behavior = "use_eco_away_targets"
+
+        assert coordinator.is_away is True
+        
+        # Update should use away behavior
+        thermostat_state = coordinator.update_thermostat_state()
+        assert thermostat_state is not None
+        
+        # When use_eco_away_targets is set and eco_away_thermostat exists,
+        # eco_away_targets should be populated from that virtual thermostat
+        # For this test without the virtual thermostat entity, eco_away_targets will be None
+        # The behavior is tested in integration tests with actual climate entities
+
+        await coordinator.async_shutdown()
+
+
+class TestTSREdgeCases:
+    """Tests for Track Selected Rooms edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_tsr_on_no_rooms_tracked_no_ftcr(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test TSR enabled with empty list and no FTCR - no rooms evaluated."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.office_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "20.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.office_temp", "21.0", {"unit_of_measurement": "°C"})
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Make both rooms active
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["bedroom"] = AreaOccupancyState(
+            area_id="bedroom",
+            area_name="Bedroom",
+            binary_sensors=["binary_sensor.bedroom_motion"],
+            occupied_binary_sensors={"binary_sensor.bedroom_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+        coordinator.occupancy_tracker._areas["office"] = AreaOccupancyState(
+            area_id="office",
+            area_name="Office",
+            binary_sensors=["binary_sensor.office_motion"],
+            occupied_binary_sensors={"binary_sensor.office_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = []  # No rooms tracked
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # No rooms should be evaluated (TSR filters them all out)
+        assert "bedroom" not in thermostat_state.room_states
+        assert "office" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_tsr_on_all_rooms_tracked(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test TSR with all rooms tracked - behaves like TSR off."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.office_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+            "kitchen": {
+                CONF_AREA_ID: "kitchen",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.kitchen_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.kitchen_temp"],
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "20.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.office_temp", "21.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.kitchen_temp", "22.0", {"unit_of_measurement": "°C"})
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Make all rooms active
+        now = dt_util.utcnow()
+        for room_id in ["bedroom", "office", "kitchen"]:
+            coordinator.occupancy_tracker._areas[room_id] = AreaOccupancyState(
+                area_id=room_id,
+                area_name=room_id.capitalize(),
+                binary_sensors=[f"binary_sensor.{room_id}_motion"],
+                occupied_binary_sensors={f"binary_sensor.{room_id}_motion"},
+                occupancy_start_time=now - timedelta(minutes=10),
+                is_active=True,
+            )
+
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = ["bedroom", "office", "kitchen"]  # All tracked
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # All rooms should be evaluated
+        assert "bedroom" in thermostat_state.room_states
+        assert "office" in thermostat_state.room_states
+        assert "kitchen" in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_tsr_on_some_tracked_inactive_untracked_not_critical(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test TSR with some tracked - only tracked inactive rooms evaluated."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "20.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.office_temp", "21.0", {"unit_of_measurement": "°C"})
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = ["bedroom"]  # Only bedroom tracked
+
+        # Both inactive (no occupancy)
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # Only tracked bedroom should be evaluated
+        assert "bedroom" in thermostat_state.room_states
+        assert "office" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+
+class TestComplexCombinedScenarios:
+    """Tests for complex combinations of settings."""
+
+    @pytest.mark.asyncio
+    async def test_eco_all_plus_tsr_on_some_tracked(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_ALL evaluates all inactive, TSR filters active."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_ALL,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.office_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+            "kitchen": {
+                CONF_AREA_ID: "kitchen",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.kitchen_temp"],
+            },
+            "living_room": {
+                CONF_AREA_ID: "living_room",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.living_temp"],
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "20.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.office_temp", "21.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.kitchen_temp", "19.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.living_temp", "18.0", {"unit_of_measurement": "°C"})
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Make bedroom and office active
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["bedroom"] = AreaOccupancyState(
+            area_id="bedroom",
+            area_name="Bedroom",
+            binary_sensors=["binary_sensor.bedroom_motion"],
+            occupied_binary_sensors={"binary_sensor.bedroom_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+        coordinator.occupancy_tracker._areas["office"] = AreaOccupancyState(
+            area_id="office",
+            area_name="Office",
+            binary_sensors=["binary_sensor.office_motion"],
+            occupied_binary_sensors={"binary_sensor.office_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_ALL
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = ["bedroom"]  # Only bedroom tracked
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # Active: only bedroom (tracked)
+        assert "bedroom" in thermostat_state.room_states
+        assert "office" not in thermostat_state.room_states  # Active but not tracked
+        
+        # Inactive: all should be evaluated (ECO_ALL)
+        assert "kitchen" in thermostat_state.room_states
+        assert "living_room" in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eco_none_plus_tsr_plus_ftcr(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_NONE + TSR + FTCR: FTCR overrides both."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_NONE,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "basement": {
+                CONF_AREA_ID: "basement",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.basement_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+            },
+            "garage": {
+                CONF_AREA_ID: "garage",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.garage_temp"],
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "20.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.basement_temp", "14.0", {"unit_of_measurement": "°C"})  # Critical
+        hass.states.async_set("sensor.garage_temp", "15.0", {"unit_of_measurement": "°C"})  # Critical
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Make bedroom active but not tracked
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["bedroom"] = AreaOccupancyState(
+            area_id="bedroom",
+            area_name="Bedroom",
+            binary_sensors=["binary_sensor.bedroom_motion"],
+            occupied_binary_sensors={"binary_sensor.bedroom_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_NONE
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = []  # Nothing tracked
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # Bedroom: active but not tracked - filtered out
+        assert "bedroom" not in thermostat_state.room_states
+        
+        # Basement: inactive with FTCR - should appear
+        assert "basement" in thermostat_state.room_states
+        assert thermostat_state.room_states["basement"].is_critical is True
+        
+        # Garage: inactive, critical, but no FTCR - filtered out
+        assert "garage" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eco_select_plus_tsr_different_lists(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test ECO_SELECT + TSR with different tracked lists for each."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_SELECT,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.office_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+            "kitchen": {
+                CONF_AREA_ID: "kitchen",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.kitchen_temp"],
+            },
+            "living_room": {
+                CONF_AREA_ID: "living_room",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.living_temp"],
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "20.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.office_temp", "21.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.kitchen_temp", "19.0", {"unit_of_measurement": "°C"})
+        hass.states.async_set("sensor.living_temp", "18.0", {"unit_of_measurement": "°C"})
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Make bedroom and office active
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["bedroom"] = AreaOccupancyState(
+            area_id="bedroom",
+            area_name="Bedroom",
+            binary_sensors=["binary_sensor.bedroom_motion"],
+            occupied_binary_sensors={"binary_sensor.bedroom_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+        coordinator.occupancy_tracker._areas["office"] = AreaOccupancyState(
+            area_id="office",
+            area_name="Office",
+            binary_sensors=["binary_sensor.office_motion"],
+            occupied_binary_sensors={"binary_sensor.office_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_SELECT
+        coordinator.only_track_selected_rooms = True
+        # TSR tracks bedroom, eco SELECT tracks kitchen
+        coordinator._tracked_rooms = ["bedroom", "kitchen"]
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # Active: bedroom tracked
+        assert "bedroom" in thermostat_state.room_states
+        # Active: office not tracked
+        assert "office" not in thermostat_state.room_states
+        
+        # Inactive: kitchen tracked by eco SELECT
+        assert "kitchen" in thermostat_state.room_states
+        # Inactive: living_room not tracked
+        assert "living_room" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+
+class TestRoomStateCombinations:
+    """Tests for various room state combinations."""
+
+    @pytest.mark.asyncio
+    async def test_active_critical_room_with_ftcr_tsr_off_eco_select(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test active critical room gets satiation eval, not critical eval."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_SELECT,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "16.0", {"unit_of_measurement": "°C"})  # Critical
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Make bedroom active
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["bedroom"] = AreaOccupancyState(
+            area_id="bedroom",
+            area_name="Bedroom",
+            binary_sensors=["binary_sensor.bedroom_motion"],
+            occupied_binary_sensors={"binary_sensor.bedroom_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_SELECT
+        coordinator.only_track_selected_rooms = False  # TSR off
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        assert "bedroom" in thermostat_state.room_states
+        
+        bedroom_state = thermostat_state.room_states["bedroom"]
+        # Active rooms get satiation evaluation
+        assert bedroom_state.is_active is True
+        # Should be marked critical even though active (evaluated during satiation check)
+        assert bedroom_state.is_critical is True
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_active_non_critical_no_ftcr_tsr_on_not_tracked(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test active room not tracked by TSR is filtered out."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "20.0", {"unit_of_measurement": "°C"})
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Make bedroom active
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["bedroom"] = AreaOccupancyState(
+            area_id="bedroom",
+            area_name="Bedroom",
+            binary_sensors=["binary_sensor.bedroom_motion"],
+            occupied_binary_sensors={"binary_sensor.bedroom_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = []  # Not tracked
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        # Active but not tracked - filtered out
+        assert "bedroom" not in thermostat_state.room_states
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_inactive_critical_no_ftcr_tsr_on_tracked(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test inactive critical room tracked by TSR is evaluated (eco off)."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+        )
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "15.0", {"unit_of_measurement": "°C"})  # Critical
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = False  # Eco off - all inactive evaluated
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = ["bedroom"]  # Tracked
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        assert "bedroom" in thermostat_state.room_states
+        assert thermostat_state.room_states["bedroom"].is_critical is True
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_multiple_ftcr_rooms_different_states(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test multiple FTCR rooms in different states."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_NONE,
+        )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
+
+        areas_config = {
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.bedroom_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+            },
+            "basement": {
+                CONF_AREA_ID: "basement",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.basement_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+            },
+            "garage": {
+                CONF_AREA_ID: "garage",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: ["sensor.garage_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+            },
+        }
+
+        hass.states.async_set("sensor.bedroom_temp", "16.0", {"unit_of_measurement": "°C"})  # Critical
+        hass.states.async_set("sensor.basement_temp", "14.0", {"unit_of_measurement": "°C"})  # Critical
+        hass.states.async_set("sensor.garage_temp", "20.0", {"unit_of_measurement": "°C"})  # Normal
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Make bedroom active
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["bedroom"] = AreaOccupancyState(
+            area_id="bedroom",
+            area_name="Bedroom",
+            binary_sensors=["binary_sensor.bedroom_motion"],
+            occupied_binary_sensors={"binary_sensor.bedroom_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_NONE
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        
+        # All FTCR rooms should be evaluated
+        assert "bedroom" in thermostat_state.room_states  # Active, critical, FTCR
+        assert "basement" in thermostat_state.room_states  # Inactive, critical, FTCR
+        assert "garage" in thermostat_state.room_states  # Inactive, normal, FTCR
+        
+        # Check critical flags
+        assert thermostat_state.room_states["bedroom"].is_critical is True
+        assert thermostat_state.room_states["basement"].is_critical is True
+        assert thermostat_state.room_states["garage"].is_critical is False
+
+        await coordinator.async_shutdown()
