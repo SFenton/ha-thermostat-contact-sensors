@@ -449,12 +449,15 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Filter active areas based on Track Selected Rooms setting.
         # (The thermostat controller's decision logic assumes active_areas reflects
         # the rooms participating in control decisions.)
+        filtered_out_active_areas: list[AreaOccupancyState] = []
         if self.only_track_selected_rooms:
-            active_areas = [
-                area
-                for area in all_active_areas
-                if self.is_room_tracked(area.area_id)
-            ]
+            active_areas = []
+            for area in all_active_areas:
+                if self.is_room_tracked(area.area_id):
+                    active_areas.append(area)
+                else:
+                    # Track filtered-out active areas to check for critical temps
+                    filtered_out_active_areas.append(area)
             tracked_area_ids: set[str] | None = set(self._tracked_rooms)
         else:
             active_areas = all_active_areas
@@ -463,7 +466,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         force_critical_area_ids = {
             area_id
             for area_id in self._areas_config.keys()
-            if self._area_has_critical_override(area_id)
+            if self._area_has_critical_override(area.area_id)
         }
 
         # Apply eco-away behavior when everyone is away.
@@ -498,6 +501,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # 2. ECO_CRITICAL_SELECT = only track rooms with force_track_when_critical override
         #    OR rooms in the tracked rooms list (when TSR is enabled)
         # 3. ECO_CRITICAL_ALL = track all inactive critical rooms (original Eco Mode OFF behavior)
+        #
+        # Also include active areas that were filtered out by TSR but have force_track_when_critical.
+        # These need to be evaluated for critical temperatures even though they don't participate
+        # in normal thermostat decisions.
 
         if not eco_mode_for_thermostat:
             inactive_areas = all_inactive_areas
@@ -512,6 +519,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             ]
         else:  # ECO_CRITICAL_ALL
             inactive_areas = all_inactive_areas
+
+        # Add filtered-out active areas with force_track_when_critical to inactive_areas
+        # so they get evaluated for critical temperatures
+        for area in filtered_out_active_areas:
+            if self._area_has_critical_override(area.area_id):
+                inactive_areas.append(area)
 
         # Update pause state on thermostat controller
         self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
