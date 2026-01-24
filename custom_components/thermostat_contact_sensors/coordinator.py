@@ -466,7 +466,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         force_critical_area_ids = {
             area_id
             for area_id in self._areas_config.keys()
-            if self._area_has_critical_override(area.area_id)
+            if self._area_has_critical_override(area_id)
         }
 
         # Apply eco-away behavior when everyone is away.
