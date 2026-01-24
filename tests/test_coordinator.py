@@ -2059,8 +2059,8 @@ class TestForceTrackWhenCriticalOverride:
         coordinator.only_track_selected_rooms = True
         coordinator._tracked_rooms = ["living_room"]  # Music room NOT tracked
 
-        # Manually update occupancy to make music_room active
-        await coordinator.async_config_entry_first_refresh()
+        # Allow state changes to propagate
+        await hass.async_block_till_done()
         
         # Music room should be active (motion detected)
         assert any(a.area_id == "music_room" for a in coordinator.occupancy_tracker.active_areas)
@@ -2144,7 +2144,8 @@ class TestForceTrackWhenCriticalOverride:
         coordinator.only_track_selected_rooms = True
         coordinator._tracked_rooms = ["office"]
 
-        await coordinator.async_config_entry_first_refresh()
+        # Allow state changes to propagate
+        await hass.async_block_till_done()
 
         # Both should be active
         active_area_ids = {a.area_id for a in coordinator.occupancy_tracker.active_areas}
