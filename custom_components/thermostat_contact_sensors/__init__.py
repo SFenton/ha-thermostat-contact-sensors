@@ -147,7 +147,16 @@ async def async_setup_entry(
     await _async_cleanup_disabled_area_entities(hass, entry)
 
     # Get areas config
-    areas_config = entry.data.get(CONF_AREAS, {})
+    areas_config = entry.data.get(CONF_AREAS)
+    if not areas_config:
+        # Backwards compatibility: some older versions stored area config in options.
+        areas_config = entry.options.get(CONF_AREAS, {})
+        if areas_config:
+            _LOGGER.warning(
+                "Using areas config from entry.options for %s; consider opening Options and saving to migrate.",
+                entry.title,
+            )
+    areas_config = areas_config or {}
 
     # Gather contact sensors from enabled areas (door/window sensors for pause feature)
     contact_sensors = []

@@ -748,6 +748,99 @@ class TestTrackedRoomSwitch:
 
         await coordinator.async_shutdown()
 
+
+class TestForceTrackWhenCriticalSwitch:
+    """Test the ForceTrackWhenCriticalSwitch entity."""
+
+    @pytest.mark.asyncio
+    async def test_switch_defaults_to_config_value(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Switch should reflect the area config value by default."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+        )
+        from custom_components.thermostat_contact_sensors.switch import (
+            ForceTrackWhenCriticalSwitch,
+        )
+
+        # Ensure config starts with the override enabled.
+        areas = dict(config_entry.data[CONF_AREAS])
+        living = dict(areas["living_room"])
+        living[CONF_AREA_FORCE_TRACK_WHEN_CRITICAL] = True
+        areas["living_room"] = living
+
+        # MockConfigEntry.data is immutable; create a new entry with updated data.
+        config_entry = MockConfigEntry(
+            domain=config_entry.domain,
+            title=config_entry.title,
+            version=config_entry.version,
+            data={**dict(config_entry.data), CONF_AREAS: areas},
+            options=dict(config_entry.options),
+        )
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        switch = ForceTrackWhenCriticalSwitch(
+            coordinator, config_entry, "living_room", "Living Room"
+        )
+        assert switch.is_on is True
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_turn_on_updates_in_memory_state(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Turning on should update coordinator's areas_config immediately."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+        )
+        from custom_components.thermostat_contact_sensors.switch import (
+            ForceTrackWhenCriticalSwitch,
+        )
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass=hass,
+            config_entry_id=config_entry.entry_id,
+            contact_sensors=get_contact_sensors_from_areas(config_entry.data[CONF_AREAS]),
+            thermostat=THERMOSTAT,
+            options=config_entry.options,
+            areas_config=config_entry.data[CONF_AREAS],
+        )
+        await coordinator.async_setup()
+
+        switch = ForceTrackWhenCriticalSwitch(
+            coordinator, config_entry, "living_room", "Living Room"
+        )
+        assert coordinator.areas_config["living_room"].get(
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL, False
+        ) is False
+
+        # Attach hass so the switch can persist via async_update_entry.
+        switch.hass = hass
+        await switch.async_turn_on()
+        assert coordinator.areas_config["living_room"][CONF_AREA_FORCE_TRACK_WHEN_CRITICAL] is True
+
+        await coordinator.async_shutdown()
+
     @pytest.mark.asyncio
     async def test_switch_turn_on(
         self,

@@ -13,7 +13,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import area_registry as ar
 
 from .const import (
+    CONF_AREAS,
     CONF_AREA_ENABLED,
+    CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
     DOMAIN,
 )
 from .coordinator import ThermostatContactSensorsCoordinator
@@ -42,8 +44,9 @@ async def async_setup_entry(
             # Get area name from registry or use area_id as fallback
             area_entry = area_registry.async_get_area(area_id)
             area_name = area_entry.name if area_entry else area_id.replace("_", " ").title()
+            entities.append(TrackedRoomSwitch(coordinator, entry, area_id, area_name))
             entities.append(
-                TrackedRoomSwitch(coordinator, entry, area_id, area_name)
+                ForceTrackWhenCriticalSwitch(coordinator, entry, area_id, area_name)
             )
 
     async_add_entities(entities)
@@ -385,7 +388,6 @@ class TrackedRoomSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         coordinator.set_room_tracked(self._area_id, True)
         _LOGGER.info("Room %s is now tracked for heating/cooling", self._area_name)
         self.async_write_ha_state()
-        # Trigger coordinator update to re-evaluate thermostat state
         self.hass.async_create_task(coordinator.async_update_thermostat_state())
 
     async def async_turn_off(self, **kwargs) -> None:
@@ -394,7 +396,6 @@ class TrackedRoomSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         coordinator.set_room_tracked(self._area_id, False)
         _LOGGER.info("Room %s is no longer tracked for heating/cooling", self._area_name)
         self.async_write_ha_state()
-        # Trigger coordinator update to re-evaluate thermostat state
         self.hass.async_create_task(coordinator.async_update_thermostat_state())
 
     @property
@@ -409,5 +410,98 @@ class TrackedRoomSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
             "description": (
                 f"When ON: {self._area_name} is included in heating/cooling decisions. "
                 "This only takes effect when 'Only Track Selected Rooms' is enabled."
+            ),
+        }
+
+
+class ForceTrackWhenCriticalSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
+    """Per-area override: always track the room when it's critical.
+
+    This is the per-room override used by Eco Mode Critical Tracking = "Track Select Critical".
+    When enabled for a room, that room will still be considered for critical-temperature
+    protection even if it's inactive and Eco is enabled (depending on policy).
+    """
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:alert-decagram"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+        area_id: str,
+        area_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._area_id = area_id
+        self._area_name = area_name
+        self._attr_unique_id = f"{entry.entry_id}_{area_id}_force_track_when_critical"
+        self._attr_name = f"{area_name} Force Track When Critical"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    def _get_current_value(self) -> bool:
+        area_config = self.coordinator.areas_config.get(self._area_id, {})
+        return bool(area_config.get(CONF_AREA_FORCE_TRACK_WHEN_CRITICAL, False))
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        # Prefer restored switch state, falling back to config entry value.
+        if (last_state := await self.async_get_last_state()) is not None:
+            desired = last_state.state == "on"
+            await self._apply_value(desired, trigger_update=False)
+
+    @property
+    def is_on(self) -> bool:
+        return self._get_current_value()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._apply_value(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._apply_value(False)
+
+    async def _apply_value(self, enabled: bool, *, trigger_update: bool = True) -> None:
+        """Persist the override and optionally trigger re-evaluation."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+        # Update in-memory config immediately so UI reflects the change without waiting for reload.
+        coordinator.areas_config.setdefault(self._area_id, {})[
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL
+        ] = enabled
+
+        # Persist to config entry data so it survives restarts.
+        areas_config = dict(self._entry.data.get(CONF_AREAS, {}))
+        area_cfg = dict(areas_config.get(self._area_id, {}))
+        area_cfg[CONF_AREA_FORCE_TRACK_WHEN_CRITICAL] = enabled
+        areas_config[self._area_id] = area_cfg
+
+        new_data = {**self._entry.data, CONF_AREAS: areas_config}
+        if self.hass is not None:
+            self.hass.config_entries.async_update_entry(self._entry, data=new_data)
+
+        if self.entity_id is not None:
+            self.async_write_ha_state()
+
+        if trigger_update:
+            self.hass.async_create_task(coordinator.async_update_thermostat_state())
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "area_id": self._area_id,
+            "area_name": self._area_name,
+            "description": (
+                "When ON: This room is always included for critical-temperature tracking when applicable. "
+                "Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'."
             ),
         }
