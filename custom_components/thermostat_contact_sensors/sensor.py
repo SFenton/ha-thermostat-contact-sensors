@@ -25,6 +25,8 @@ from .coordinator import ThermostatContactSensorsCoordinator
 from .occupancy import AreaOccupancyState
 from .thermostat_control import RoomTemperatureState, ThermostatState, get_temperature_from_state
 
+from homeassistant.components.climate import HVACMode
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -463,24 +465,56 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
                 readings[sensor_id] = temp
         return readings
 
-    def _compute_display_temperature(self, readings: dict[str, float]) -> float | None:
-        if not readings:
+    def _get_trend_mode(self) -> HVACMode | None:
+        """Get the effective mode used for 'trend' decisions.
+
+        When the thermostat is OFF, we use inferred_hvac_mode (trend).
+        Otherwise, we use the current hvac_mode.
+        """
+        thermostat_state = self.coordinator.last_thermostat_state
+        if thermostat_state is None:
             return None
-        return sum(readings.values()) / len(readings)
+
+        if thermostat_state.hvac_mode == HVACMode.OFF and thermostat_state.inferred_hvac_mode:
+            return thermostat_state.inferred_hvac_mode
+        return thermostat_state.hvac_mode
+
+    def _compute_overall_temperature(self, readings: dict[str, float]) -> tuple[float | None, str | None]:
+        """Compute the room's overall temperature based on the house trend.
+
+        Desired behavior:
+        - Trend=HEAT (house trending cold): use the coldest sensor in the room.
+        - Trend=COOL (house trending hot): use the warmest sensor in the room.
+        - Otherwise: fall back to average.
+
+        Returns:
+            Tuple of (temperature, sensor_id_used)
+        """
+        if not readings:
+            return None, None
+
+        mode = self._get_trend_mode()
+        if mode == HVACMode.HEAT:
+            sensor_id, temp = min(readings.items(), key=lambda x: x[1])
+            return temp, sensor_id
+        if mode == HVACMode.COOL:
+            sensor_id, temp = max(readings.items(), key=lambda x: x[1])
+            return temp, sensor_id
+
+        avg = sum(readings.values()) / len(readings)
+        # Pick the sensor closest to the avg for consistency.
+        sensor_id = min(readings.keys(), key=lambda s: abs(readings[s] - avg))
+        return avg, sensor_id
 
     @property
     def native_value(self) -> float | None:
         """Return the determining temperature for this room."""
-        # Prefer the controller's determining temperature when available.
-        room_state = self._get_room_state()
-        if room_state is not None and room_state.determining_temperature is not None:
-            return round(room_state.determining_temperature, 1)
-
-        # Fallback: compute directly from sensor states so inactive rooms still report.
-        display_temp = self._compute_display_temperature(self._get_live_sensor_readings())
-        if display_temp is None:
+        # Compute directly from sensor states so this sensor reflects the room
+        # independent of Eco/TSR/force-critical filtering.
+        overall_temp, _ = self._compute_overall_temperature(self._get_live_sensor_readings())
+        if overall_temp is None:
             return None
-        return round(display_temp, 1)
+        return round(overall_temp, 1)
 
     @property
     def icon(self) -> str:
@@ -504,12 +538,18 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
 
         configured_sensors = self._get_configured_temperature_sensors()
         live_readings = self._get_live_sensor_readings()
-        display_temp = self._compute_display_temperature(live_readings)
+        overall_temp, overall_sensor = self._compute_overall_temperature(live_readings)
 
         attrs: dict[str, Any] = {
             "area_id": self._area_id,
             "area_name": self._area_name,
             "temperature_sensors": configured_sensors,
+            "live_min_temperature": min(live_readings.values()) if live_readings else None,
+            "live_max_temperature": max(live_readings.values()) if live_readings else None,
+            "live_avg_temperature": (sum(live_readings.values()) / len(live_readings)) if live_readings else None,
+            "overall_temperature": overall_temp,
+            "overall_temperature_sensor": overall_sensor,
+            "trend_mode": self._get_trend_mode().value if self._get_trend_mode() else None,
         }
 
         if room_state is None:
@@ -517,8 +557,8 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
             attrs["satiation_reason"] = None
             attrs["has_valid_readings"] = bool(live_readings)
             attrs["sensor_readings"] = live_readings
-            attrs["determining_sensor"] = None
-            attrs["determining_temperature"] = display_temp
+            attrs["determining_sensor"] = overall_sensor
+            attrs["determining_temperature"] = overall_temp
             return attrs
 
         # Satiation status
