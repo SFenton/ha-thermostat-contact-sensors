@@ -522,7 +522,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             respect_user_off=self.respect_user_off,
             eco_mode=eco_mode_for_thermostat,
             eco_away_targets=eco_away_targets,
-            all_areas_for_trend=list(all_active_areas) + list(all_inactive_areas),
+            # Trend/inferred HVAC mode should always be based on *all* rooms' sensors,
+            # independent of Eco/TSR/force-critical filtering.
+            all_areas_for_trend=list(self.occupancy_tracker.areas.values()),
             tracked_area_ids=tracked_area_ids,
             force_critical_area_ids=force_critical_area_ids,
         )
