@@ -23,7 +23,7 @@ from .const import (
 )
 from .coordinator import ThermostatContactSensorsCoordinator
 from .occupancy import AreaOccupancyState
-from .thermostat_control import RoomTemperatureState, ThermostatState
+from .thermostat_control import RoomTemperatureState, ThermostatState, get_temperature_from_state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,11 +48,9 @@ async def async_setup_entry(
             entities.append(
                 RoomOccupancySensor(coordinator, entry, area_id)
             )
-            # Temperature/satiation sensor (only if area has temp sensors)
-            if area_config.get(CONF_TEMPERATURE_SENSORS):
-                entities.append(
-                    RoomTemperatureSensor(coordinator, entry, area_id)
-                )
+            # Temperature sensor should exist for every enabled area.
+            # It will report None + diagnostics if no temp sensors are configured.
+            entities.append(RoomTemperatureSensor(coordinator, entry, area_id))
 
     async_add_entities(entities)
 
@@ -444,15 +442,45 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
             return None
         return thermostat_state.room_states.get(self._area_id)
 
+    def _get_configured_temperature_sensors(self) -> list[str]:
+        area_config = self.coordinator.areas_config.get(self._area_id, {})
+        sensors = area_config.get(CONF_TEMPERATURE_SENSORS, [])
+        return list(sensors) if sensors else []
+
+    def _get_live_sensor_readings(self) -> dict[str, float]:
+        """Get current readings directly from HA state machine.
+
+        This is intentionally independent of Eco/TSR/critical filtering so all rooms
+        can always report temperature.
+        """
+        readings: dict[str, float] = {}
+        if self.hass is None:
+            return readings
+
+        for sensor_id in self._get_configured_temperature_sensors():
+            temp = get_temperature_from_state(self.hass.states.get(sensor_id))
+            if temp is not None:
+                readings[sensor_id] = temp
+        return readings
+
+    def _compute_display_temperature(self, readings: dict[str, float]) -> float | None:
+        if not readings:
+            return None
+        return sum(readings.values()) / len(readings)
+
     @property
     def native_value(self) -> float | None:
         """Return the determining temperature for this room."""
+        # Prefer the controller's determining temperature when available.
         room_state = self._get_room_state()
-        if room_state is None:
+        if room_state is not None and room_state.determining_temperature is not None:
+            return round(room_state.determining_temperature, 1)
+
+        # Fallback: compute directly from sensor states so inactive rooms still report.
+        display_temp = self._compute_display_temperature(self._get_live_sensor_readings())
+        if display_temp is None:
             return None
-        if room_state.determining_temperature is None:
-            return None
-        return round(room_state.determining_temperature, 1)
+        return round(display_temp, 1)
 
     @property
     def icon(self) -> str:
@@ -474,15 +502,23 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
         room_state = self._get_room_state()
         thermostat_state = self.coordinator.last_thermostat_state
 
+        configured_sensors = self._get_configured_temperature_sensors()
+        live_readings = self._get_live_sensor_readings()
+        display_temp = self._compute_display_temperature(live_readings)
+
         attrs: dict[str, Any] = {
             "area_id": self._area_id,
             "area_name": self._area_name,
+            "temperature_sensors": configured_sensors,
         }
 
         if room_state is None:
             attrs["is_satiated"] = None
             attrs["satiation_reason"] = None
-            attrs["has_valid_readings"] = False
+            attrs["has_valid_readings"] = bool(live_readings)
+            attrs["sensor_readings"] = live_readings
+            attrs["determining_sensor"] = None
+            attrs["determining_temperature"] = display_temp
             return attrs
 
         # Satiation status
@@ -496,7 +532,8 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
 
         # Temperature details
         attrs["has_valid_readings"] = room_state.has_valid_readings
-        attrs["sensor_readings"] = room_state.sensor_readings
+        # Prefer controller readings, but include live readings for completeness.
+        attrs["sensor_readings"] = room_state.sensor_readings or live_readings
         attrs["determining_sensor"] = room_state.determining_sensor
         attrs["determining_temperature"] = room_state.determining_temperature
         attrs["target_temperature"] = room_state.target_temperature
@@ -515,7 +552,7 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
 
         # Sensor friendly names
         sensor_names = {}
-        for sensor_id in room_state.temperature_sensors:
+        for sensor_id in configured_sensors:
             state = self.hass.states.get(sensor_id)
             if state:
                 sensor_names[sensor_id] = state.attributes.get("friendly_name", sensor_id)
