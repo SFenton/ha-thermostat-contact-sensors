@@ -486,8 +486,8 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
         """Compute the room's overall temperature based on the house trend.
 
         Desired behavior:
-        - Trend=HEAT (house trending cold): use the coldest sensor in the room.
-        - Trend=COOL (house trending hot): use the warmest sensor in the room.
+        - Trend=HEAT (house trending cold): use the warmest sensor in the room.
+        - Trend=COOL (house trending hot): use the coolest sensor in the room.
         - Otherwise: fall back to average.
 
         Returns:
@@ -498,10 +498,10 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
 
         mode = self._get_trend_mode()
         if mode == HVACMode.HEAT:
-            sensor_id, temp = min(readings.items(), key=lambda x: x[1])
+            sensor_id, temp = max(readings.items(), key=lambda x: x[1])
             return temp, sensor_id
         if mode == HVACMode.COOL:
-            sensor_id, temp = max(readings.items(), key=lambda x: x[1])
+            sensor_id, temp = min(readings.items(), key=lambda x: x[1])
             return temp, sensor_id
 
         avg = sum(readings.values()) / len(readings)
