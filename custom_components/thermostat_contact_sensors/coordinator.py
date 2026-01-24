@@ -507,7 +507,15 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # in normal thermostat decisions.
 
         if not eco_mode_for_thermostat:
-            inactive_areas = all_inactive_areas
+            # When eco mode is off, apply TSR filtering if enabled
+            if self.only_track_selected_rooms:
+                inactive_areas = [
+                    area
+                    for area in all_inactive_areas
+                    if self.is_room_tracked(area.area_id) or self._area_has_critical_override(area.area_id)
+                ]
+            else:
+                inactive_areas = all_inactive_areas
         elif effective_eco_critical_tracking == ECO_CRITICAL_NONE:
             inactive_areas = []
         elif effective_eco_critical_tracking == ECO_CRITICAL_SELECT:
