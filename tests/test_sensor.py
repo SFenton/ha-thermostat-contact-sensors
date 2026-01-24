@@ -281,10 +281,10 @@ async def test_room_temperature_sensor_overall_temp_uses_trend_min_max(
     mock_config_entry: ConfigEntry,
     mock_climate_service,
 ) -> None:
-    """Overall room temperature should be worst-case by trend (min/max).
+    """Overall room temperature should be best-case by trend (min/max).
 
-    - Trend=HEAT => coldest sensor
-    - Trend=COOL => warmest sensor
+    - Trend=HEAT => warmest sensor
+    - Trend=COOL => coolest sensor
     """
     # Seed one temperature sensor that already exists in the default config.
     hass.states.async_set(
@@ -316,17 +316,17 @@ async def test_room_temperature_sensor_overall_temp_uses_trend_min_max(
     )
 
     expected_heat = TemperatureConverter.convert(
-        70.0,
-        UnitOfTemperature.FAHRENHEIT,
-        hass.config.units.temperature_unit,
-    )
-    expected_cool = TemperatureConverter.convert(
         75.0,
         UnitOfTemperature.FAHRENHEIT,
         hass.config.units.temperature_unit,
     )
+    expected_cool = TemperatureConverter.convert(
+        70.0,
+        UnitOfTemperature.FAHRENHEIT,
+        hass.config.units.temperature_unit,
+    )
 
-    # Trend heat => pick coldest (70)
+    # Trend heat => pick warmest (75)
     coordinator._last_thermostat_state = ThermostatState(
         thermostat_entity_id=TEST_THERMOSTAT,
         hvac_mode=HVACMode.OFF,
@@ -336,7 +336,7 @@ async def test_room_temperature_sensor_overall_temp_uses_trend_min_max(
     await hass.async_block_till_done()
     assert float(hass.states.get(living_entity_id).state) == pytest.approx(expected_heat, abs=0.1)
 
-    # Trend cool => pick warmest (75)
+    # Trend cool => pick coolest (70)
     coordinator._last_thermostat_state = ThermostatState(
         thermostat_entity_id=TEST_THERMOSTAT,
         hvac_mode=HVACMode.OFF,
