@@ -5,13 +5,26 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv*/
 .venv-*/
+.venv_py312/
 venv/
 ENV/
+
+# Python tooling caches / build outputs
+.mypy_cache/
+.ruff_cache/
+.tox/
+.eggs/
+*.egg-info/
+build/
+dist/
 
 # pytest
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 
 # IDE
@@ -28,6 +41,10 @@ Thumbs.db
 *.log
 install.log
 logs.yaml
+custom_components/thermostat_contact_sensors/logs.txt
+
+# Local scratch/diagnostics
+tmp_diagnostics.json
 
 # Original automation file (not part of the integration)
 original-automation.yaml
