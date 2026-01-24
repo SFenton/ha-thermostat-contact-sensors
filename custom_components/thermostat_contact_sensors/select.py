@@ -12,7 +12,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    DEFAULT_ECO_MODE_CRITICAL_TRACKING,
+    DOMAIN,
+    ECO_CRITICAL_ALL,
+    ECO_CRITICAL_NONE,
+    ECO_CRITICAL_SELECT,
+)
 from .coordinator import ThermostatContactSensorsCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,6 +43,17 @@ ECO_AWAY_BEHAVIOR_LABELS = {
 ECO_AWAY_BEHAVIOR_BY_LABEL = {v: k for k, v in ECO_AWAY_BEHAVIOR_LABELS.items()}
 
 
+# Eco Mode Critical Tracking options
+ECO_CRITICAL_TRACKING_LABELS = {
+    ECO_CRITICAL_NONE: "Do Not Track Critical",
+    ECO_CRITICAL_SELECT: "Track Select Critical",
+    ECO_CRITICAL_ALL: "Track All Critical",
+}
+
+# Reverse mapping for lookup
+ECO_CRITICAL_TRACKING_BY_LABEL = {v: k for k, v in ECO_CRITICAL_TRACKING_LABELS.items()}
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -47,6 +64,7 @@ async def async_setup_entry(
 
     entities = [
         EcoAwayBehaviorSelect(coordinator, entry),
+        EcoModeCriticalTrackingSelect(coordinator, entry),
     ]
 
     async_add_entities(entities)
@@ -134,5 +152,88 @@ class EcoAwayBehaviorSelect(CoordinatorEntity, RestoreEntity, SelectEntity):
                 "'Disable Eco When Away' reverts to normal behavior with critical room protection. "
                 "'Use Eco Away Targets' uses the Eco Away thermostat targets. "
                 "'Keep Eco Active' will not heat/cool while away (energy savings, but no protection)."
+            ),
+        }
+
+
+class EcoModeCriticalTrackingSelect(CoordinatorEntity, RestoreEntity, SelectEntity):
+    """Select entity to control which critical rooms are tracked when Eco Mode is enabled.
+    
+    Options:
+    - Do Not Track Critical: When Eco Mode is on, ignore all inactive rooms (even critical ones)
+    - Track Select Critical: Only track inactive rooms with "Force Track When Critical" enabled
+    - Track All Critical: Track all inactive rooms with critical temperatures (Eco Mode effectively off for critical temps)
+    """
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:leaf-circle"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the select entity."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_eco_mode_critical_tracking"
+        self._attr_name = "Eco Mode Critical Tracking"
+        self._attr_options = list(ECO_CRITICAL_TRACKING_LABELS.values())
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state when added to hass."""
+        await super().async_added_to_hass()
+
+        # Try to restore previous state
+        if (last_state := await self.async_get_last_state()) is not None:
+            if last_state.state in self._attr_options:
+                # Convert label back to value
+                if last_state.state in ECO_CRITICAL_TRACKING_BY_LABEL:
+                    value = ECO_CRITICAL_TRACKING_BY_LABEL[last_state.state]
+                    self.coordinator.eco_mode_critical_tracking = value
+                    _LOGGER.info(
+                        "Restored eco_mode_critical_tracking state: %s", value
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Could not restore eco_mode_critical_tracking, using default: %s",
+                        last_state.state
+                    )
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    @property
+    def current_option(self) -> str:
+        """Return the currently selected option."""
+        value = getattr(self.coordinator, "eco_mode_critical_tracking", DEFAULT_ECO_MODE_CRITICAL_TRACKING)
+        return ECO_CRITICAL_TRACKING_LABELS.get(value, ECO_CRITICAL_TRACKING_LABELS[DEFAULT_ECO_MODE_CRITICAL_TRACKING])
+
+    async def async_select_option(self, option: str) -> None:
+        """Handle option selection."""
+        if option in ECO_CRITICAL_TRACKING_BY_LABEL:
+            value = ECO_CRITICAL_TRACKING_BY_LABEL[option]
+            self.coordinator.eco_mode_critical_tracking = value
+            _LOGGER.info("Eco mode critical tracking set to: %s", value)
+            self.async_write_ha_state()
+            # Trigger coordinator update to re-evaluate thermostat state
+            self.hass.async_create_task(self.coordinator.async_update_thermostat_state())
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return extra state attributes."""
+        return {
+            "description": (
+                "Controls which critical temperature rooms are tracked when Eco Mode is active. "
+                "'Do Not Track Critical' ignores all inactive rooms. "
+                "'Track Select Critical' only tracks rooms with 'Force Track When Critical' enabled. "
+                "'Track All Critical' tracks all inactive critical rooms (eco savings only for non-critical)."
             ),
         }

@@ -178,11 +178,18 @@ async def async_setup_entry(
     # Store coordinator
     entry.runtime_data = coordinator
 
-    # Set up coordinator
-    await coordinator.async_setup()
+    try:
+        # Set up coordinator
+        await coordinator.async_setup(run_initial_actions=True)
 
-    # Set up platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Set up platforms
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        # Avoid leaking listeners/timers if setup fails part-way through.
+        try:
+            await coordinator.async_shutdown()
+        finally:
+            raise
 
     # Register services (only once for the domain)
     await _async_setup_services(hass)

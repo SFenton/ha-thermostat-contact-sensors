@@ -7,21 +7,32 @@ import time
 from typing import Any
 
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
-from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN, STATE_HOME, STATE_NOT_HOME
+from homeassistant.components.climate import ClimateEntityFeature
+from homeassistant.const import (
+    STATE_HOME,
+    STATE_NOT_HOME,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_AREA_ENABLED,
+    CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_AWAY_COOL_TEMP_DIFF,
     CONF_AWAY_HEAT_TEMP_DIFF,
     CONF_AWAY_PRESENCE_ENTITY,
     CONF_CLOSE_TIMEOUT,
-    CONF_COOLING_BOOST_OFFSET,
+    CONF_ECO_MODE_CRITICAL_TRACKING,
     CONF_GRACE_PERIOD_MINUTES,
+    CONF_COOLING_BOOST_OFFSET,
     CONF_HEATING_BOOST_OFFSET,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
@@ -45,6 +56,7 @@ from .const import (
     DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_COOLING_BOOST_OFFSET,
+    DEFAULT_ECO_MODE_CRITICAL_TRACKING,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_HEATING_BOOST_OFFSET,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
@@ -63,6 +75,9 @@ from .const import (
     DEFAULT_VENT_DEBOUNCE_SECONDS,
     DEFAULT_VENT_OPEN_DELAY_SECONDS,
     DOMAIN,
+    ECO_CRITICAL_ALL,
+    ECO_CRITICAL_NONE,
+    ECO_CRITICAL_SELECT,
 )
 from .occupancy import RoomOccupancyTracker
 from .thermostat_control import ThermostatController, ThermostatState
@@ -97,27 +112,20 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._options = options
 
         # State tracking
-        self.is_paused = False  # Paused by contact sensors
-        self.integration_paused = False  # Completely paused (no automation at all)
+        self.is_paused = False
+        # When True, the integration will not run any automation (timers, pause/resume,
+        # thermostat/vent recalculation). Used by pause_integration/resume_integration services.
+        self.integration_paused: bool = False
         self.previous_hvac_mode: str | None = None
         # Dict of entity_id -> timestamp when sensor opened
         self._open_sensor_times: dict[str, float] = {}
         self.trigger_sensor: str | None = None
         self.respect_user_off: bool = False  # Default: always resume thermostat
-        self.eco_mode: bool = False  # Default: consider all rooms, not just active
-        # Default: disable eco when away (revert to normal behavior)
-        self.eco_away_behavior: str = "disable_eco_when_away"
-        self._pausing_in_progress = False  # Flag to ignore state changes during pause
 
-        # Tracked rooms feature: only heat/cool selected rooms
-        self.only_track_selected_rooms: bool = False  # Default: consider all rooms
-        self._tracked_rooms: set[str] = set()  # Set of area_ids that are being tracked
-
-        # Per-room override: force room to be considered for CRITICAL temp protection
-        # even when it is not tracked and/or eco mode is enabled.
-        # This only affects thermostat ON/OFF decisions at critical thresholds;
-        # it does not make the room participate in normal (non-critical) conditioning.
-        self._force_critical_rooms: set[str] = set()
+        # Tracked rooms feature: only heat/cool selected rooms.
+        # When disabled, all rooms are considered.
+        self.only_track_selected_rooms: bool = False
+        self._tracked_rooms: set[str] = set()
 
         # Timeout tracking
         self._open_timer: asyncio.TimerHandle | None = None
@@ -126,9 +134,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Track last known non-off HVAC mode for manual override detection
         self._last_known_hvac_mode: str | None = None
-        
-        # Track last hvac_action to detect changes
-        self._last_hvac_action: str | None = None
 
         # Listener cleanup
         self._unsub_state_change: callable | None = None
@@ -138,6 +143,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Away mode tracking
         self._is_away: bool = False
+
+        # Eco away behavior: controls eco mode behavior when away.
+        # Values are defined in select.EcoAwayBehavior.
+        self.eco_away_behavior: str = "disable_eco_when_away"
 
         # Occupancy tracker
         min_occupancy = self._options.get(
@@ -205,6 +214,126 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Last thermostat state for sensors
         self._last_thermostat_state: ThermostatState | None = None
 
+        # Eco Mode Critical Tracking - will be set by Select entity restore or default
+        self.eco_mode_critical_tracking: str = self._options.get(
+            CONF_ECO_MODE_CRITICAL_TRACKING,
+            DEFAULT_ECO_MODE_CRITICAL_TRACKING,
+        )
+
+        # Climate platform populates these, but tests and controllers expect them to exist.
+        self.area_thermostats: dict[str, Any] = {}
+        self.global_thermostat: Any | None = None
+
+        # Eco Mode enabled/disabled (boolean). The select controls how eco behaves
+        # for inactive critical rooms, but does not toggle eco itself.
+        self._eco_mode_enabled: bool = False
+
+    @property
+    def eco_mode(self) -> bool:
+        """Return True if eco mode is enabled."""
+        return self._eco_mode_enabled
+
+    @eco_mode.setter
+    def eco_mode(self, value: bool) -> None:
+        """Enable/disable eco mode (boolean)."""
+        self._eco_mode_enabled = bool(value)
+
+    @property
+    def tracked_rooms(self) -> set[str]:
+        """Return the set of tracked room/area IDs."""
+        return set(self._tracked_rooms)
+
+    def set_room_tracked(self, area_id: str, tracked: bool) -> None:
+        """Add or remove a room from the tracked set."""
+        if tracked:
+            self._tracked_rooms.add(area_id)
+        else:
+            self._tracked_rooms.discard(area_id)
+
+    def is_room_tracked(self, area_id: str) -> bool:
+        """Return True if a room is currently tracked."""
+        if not self.only_track_selected_rooms:
+            # When the feature is disabled, all rooms are effectively tracked.
+            return True
+        return area_id in self._tracked_rooms
+
+    @property
+    def all_enabled_area_ids(self) -> set[str]:
+        """Return all enabled area IDs."""
+        enabled: set[str] = set()
+        for area_id, area_config in self._areas_config.items():
+            if area_config.get(CONF_AREA_ENABLED, True):
+                enabled.add(area_id)
+        return enabled
+
+    @property
+    def away_presence_entity(self) -> str:
+        """Return the presence entity for away mode detection."""
+        return self._options.get(CONF_AWAY_PRESENCE_ENTITY, "")
+
+    @property
+    def away_heat_temp_diff(self) -> float:
+        """Return the heat temperature adjustment when away."""
+        return self._options.get(CONF_AWAY_HEAT_TEMP_DIFF, DEFAULT_AWAY_HEAT_TEMP_DIFF)
+
+    @property
+    def away_cool_temp_diff(self) -> float:
+        """Return the cool temperature adjustment when away."""
+        return self._options.get(CONF_AWAY_COOL_TEMP_DIFF, DEFAULT_AWAY_COOL_TEMP_DIFF)
+
+    @property
+    def is_away(self) -> bool:
+        """Return whether away mode is currently active."""
+        return self._is_away
+
+    @property
+    def away_mode_configured(self) -> bool:
+        """Return whether away mode has been configured with a presence entity."""
+        return bool(self.away_presence_entity)
+
+    def get_physical_thermostat_hvac_action(self):
+        """Return hvac_action of the physical thermostat if available."""
+        from homeassistant.components.climate import HVACAction
+
+        state = self.hass.states.get(self.thermostat)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return None
+
+        hvac_action = state.attributes.get("hvac_action")
+        if hvac_action is None:
+            return None
+        try:
+            return HVACAction(hvac_action)
+        except ValueError:
+            return None
+
+    def _check_presence_entity_state(self) -> bool:
+        """Check if the presence entity indicates 'away' state."""
+        entity_id = self.away_presence_entity
+        if not entity_id:
+            return False
+
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False
+
+        state_value = state.state.lower()
+        return state_value in (STATE_NOT_HOME, STATE_OFF, "false", "away")
+
+    @callback
+    def _async_presence_state_changed(self, event) -> None:
+        """Handle presence entity state changes."""
+        new_state: State | None = event.data.get("new_state")
+        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+
+        was_away = self._is_away
+        self._is_away = self._check_presence_entity_state()
+
+        if was_away != self._is_away:
+            _LOGGER.info("Away mode changed: is_away=%s", self._is_away)
+            self.hass.async_create_task(self._async_occupancy_changed())
+
     @property
     def open_timeout(self) -> int:
         """Return open timeout in minutes."""
@@ -255,169 +384,27 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Return the last evaluated vent control state."""
         return self._last_vent_control_state
 
-    @property
-    def away_presence_entity(self) -> str:
-        """Return the presence entity for away mode detection."""
-        return self._options.get(CONF_AWAY_PRESENCE_ENTITY, "")
-
-    @property
-    def away_heat_temp_diff(self) -> float:
-        """Return the heat temperature adjustment when away."""
-        return self._options.get(CONF_AWAY_HEAT_TEMP_DIFF, DEFAULT_AWAY_HEAT_TEMP_DIFF)
-
-    @property
-    def away_cool_temp_diff(self) -> float:
-        """Return the cool temperature adjustment when away."""
-        return self._options.get(CONF_AWAY_COOL_TEMP_DIFF, DEFAULT_AWAY_COOL_TEMP_DIFF)
-
-    @property
-    def is_away(self) -> bool:
-        """Return whether away mode is currently active."""
-        return self._is_away
-
-    @property
-    def away_mode_configured(self) -> bool:
-        """Return whether away mode has been configured with a presence entity."""
-        return bool(self.away_presence_entity)
-
-    def get_physical_thermostat_hvac_action(self) -> str | None:
-        """Get the hvac_action of the physical thermostat.
-        
-        Returns:
-            The hvac_action (heating, cooling, idle, off, etc.) or None if unavailable.
-        """
-        from homeassistant.components.climate import HVACAction
-        
-        state = self.hass.states.get(self.thermostat)
-        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return None
-        
-        hvac_action = state.attributes.get("hvac_action")
-        if hvac_action:
-            try:
-                return HVACAction(hvac_action)
-            except ValueError:
-                return None
-        return None
-
-    def _check_presence_entity_state(self) -> bool:
-        """Check if the presence entity indicates 'away' state.
-
-        Returns:
-            True if the entity indicates everyone is away, False if home.
-        """
-        entity_id = self.away_presence_entity
-        if not entity_id:
-            return False
-
-        state = self.hass.states.get(entity_id)
-        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return False
-
-        # Check various "away" states
-        # person/device_tracker: 'not_home'
-        # binary_sensor/input_boolean: 'off' typically means away
-        # group: 'not_home' for person groups
-        state_value = state.state.lower()
-        return state_value in (STATE_NOT_HOME, STATE_OFF, "false", "away")
-
-    @property
-    def tracked_rooms(self) -> set[str]:
-        """Return the set of currently tracked room/area IDs."""
-        return self._tracked_rooms.copy()
-
-    @property
-    def force_critical_rooms(self) -> set[str]:
-        """Return the set of rooms that are force-tracked for critical protection."""
-        return self._force_critical_rooms.copy()
-
-    @property
-    def all_enabled_area_ids(self) -> list[str]:
-        """Return all enabled area IDs from the configuration."""
-        return [
-            area_id
-            for area_id, area_config in self._areas_config.items()
-            if area_config.get(CONF_AREA_ENABLED, True)
-        ]
-
-    def is_room_tracked(self, area_id: str) -> bool:
-        """Check if a specific room/area is being tracked.
-
-        When only_track_selected_rooms is False, all rooms are considered tracked.
-        When True, only rooms in _tracked_rooms are considered tracked.
-
-        Args:
-            area_id: The area ID to check.
-
-        Returns:
-            True if the room is being tracked.
-        """
-        if not self.only_track_selected_rooms:
-            return True  # All rooms are tracked when feature is off
-        return area_id in self._tracked_rooms
-
-    def set_room_tracked(self, area_id: str, tracked: bool) -> None:
-        """Set whether a specific room/area should be tracked.
-
-        Args:
-            area_id: The area ID to set.
-            tracked: True to track the room, False to untrack.
-        """
-        if tracked:
-            self._tracked_rooms.add(area_id)
-        else:
-            self._tracked_rooms.discard(area_id)
-        _LOGGER.debug(
-            "Room tracking updated: area=%s, tracked=%s, all_tracked=%s",
-            area_id,
-            tracked,
-            self._tracked_rooms,
-        )
-
-    def is_room_force_critical(self, area_id: str) -> bool:
-        """Check if a room is force-tracked for critical temperature protection."""
-        return area_id in self._force_critical_rooms
-
-    def set_room_force_critical(self, area_id: str, enabled: bool) -> None:
-        """Set whether a room is force-tracked for critical temperature protection."""
-        if enabled:
-            self._force_critical_rooms.add(area_id)
-        else:
-            self._force_critical_rooms.discard(area_id)
-        _LOGGER.debug(
-            "Force critical tracking updated: area=%s, enabled=%s, all_force=%s",
-            area_id,
-            enabled,
-            self._force_critical_rooms,
-        )
-
     def get_area_temp_sensors(self) -> dict[str, list[str]]:
-        """Get temperature sensors for each enabled area.
+        """Get temperature sensors for each area.
 
         Returns:
             Dict of area_id -> list of temperature sensor entity IDs.
         """
         result = {}
         for area_id, area_config in self._areas_config.items():
-            # Skip disabled areas
-            if not area_config.get(CONF_AREA_ENABLED, True):
-                continue
             temp_sensors = area_config.get(CONF_TEMPERATURE_SENSORS, [])
             if temp_sensors:
                 result[area_id] = list(temp_sensors)
         return result
 
     def get_area_vents(self) -> dict[str, list[str]]:
-        """Get vents for each enabled area.
+        """Get vents for each area.
 
         Returns:
             Dict of area_id -> list of vent entity IDs.
         """
         result = {}
         for area_id, area_config in self._areas_config.items():
-            # Skip disabled areas
-            if not area_config.get(CONF_AREA_ENABLED, True):
-                continue
             vents = area_config.get(CONF_VENTS, [])
             if vents:
                 result[area_id] = list(vents)
@@ -431,13 +418,22 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """
         result = {}
         for area_id, area_config in self._areas_config.items():
-            # Skip disabled areas
-            if not area_config.get(CONF_AREA_ENABLED, True):
-                continue
             delay = area_config.get(CONF_AREA_VENT_OPEN_DELAY_SECONDS)
             if delay is not None:
                 result[area_id] = delay
         return result
+
+    def _area_has_critical_override(self, area_id: str) -> bool:
+        """Check if an area has the force_track_when_critical override enabled.
+
+        Args:
+            area_id: The area ID to check.
+
+        Returns:
+            True if the area should always be checked for critical temperatures.
+        """
+        area_config = self._areas_config.get(area_id, {})
+        return area_config.get(CONF_AREA_FORCE_TRACK_WHEN_CRITICAL, False)
 
     def update_thermostat_state(self) -> ThermostatState | None:
         """Evaluate and update the current thermostat control state.
@@ -450,68 +446,83 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         all_inactive_areas = self.occupancy_tracker.inactive_areas
         area_temp_sensors = self.get_area_temp_sensors()
 
-        # Keep reference to all areas for global trend calculation (anomaly detection)
-        all_areas_for_trend = list(all_active_areas) + list(all_inactive_areas)
-
-        # Determine tracked_area_ids for the tracked rooms feature
-        # When only_track_selected_rooms is enabled, we pass the (possibly empty)
-        # set of tracked rooms to the controller so it only counts those rooms for
-        # decisions. ALL rooms are still evaluated for display.
-        #
-        # Important: when only_track_selected_rooms is True and _tracked_rooms is empty,
-        # this means "track NONE" (not "track ALL").
-        tracked_area_ids: set[str] | None = None
+        # Filter active areas based on Track Selected Rooms setting.
+        # (The thermostat controller's decision logic assumes active_areas reflects
+        # the rooms participating in control decisions.)
         if self.only_track_selected_rooms:
-            tracked_area_ids = self._tracked_rooms.copy()
-            _LOGGER.debug(
-                "Tracked rooms filter enabled: %d rooms tracked out of %d total (tracked: %s)",
-                len(tracked_area_ids),
-                len(all_active_areas) + len(all_inactive_areas),
-                tracked_area_ids,
-            )
+            active_areas = [
+                area
+                for area in all_active_areas
+                if self.is_room_tracked(area.area_id)
+            ]
+            tracked_area_ids: set[str] | None = set(self._tracked_rooms)
+        else:
+            active_areas = all_active_areas
+            tracked_area_ids = None
 
-        force_critical_area_ids: set[str] | None = None
-        if self.only_track_selected_rooms:
-            force_critical_area_ids = self._force_critical_rooms.copy()
+        force_critical_area_ids = {
+            area_id
+            for area_id in self._areas_config.keys()
+            if self._area_has_critical_override(area_id)
+        }
+
+        # Apply eco-away behavior when everyone is away.
+        # Critical tracking policy is only meaningful when eco is enabled.
+        eco_mode_for_thermostat = self.eco_mode
+        effective_eco_critical_tracking = (
+            self.eco_mode_critical_tracking
+            if eco_mode_for_thermostat
+            else ECO_CRITICAL_ALL
+        )
+        eco_away_targets: tuple[float, float] | None = None
+
+        if self.away_mode_configured and self.is_away and eco_mode_for_thermostat:
+            if self.eco_away_behavior in (
+                "disable_eco_when_away",
+                "use_eco_away_targets",
+            ):
+                eco_mode_for_thermostat = False
+                effective_eco_critical_tracking = ECO_CRITICAL_ALL
+
+            if self.eco_away_behavior == "use_eco_away_targets":
+                eco_away_thermostat = getattr(self, "eco_away_thermostat", None)
+                if eco_away_thermostat is not None:
+                    eco_away_targets = (
+                        eco_away_thermostat.effective_target_temp_low,
+                        eco_away_thermostat.effective_target_temp_high,
+                    )
+
+        # Filter inactive areas based on Eco Mode Critical Tracking setting and per-area overrides
+        # Three options for how to handle inactive critical rooms:
+        # 1. ECO_CRITICAL_NONE = ignore all inactive rooms (original Eco Mode ON behavior)
+        # 2. ECO_CRITICAL_SELECT = only track rooms with force_track_when_critical override
+        # 3. ECO_CRITICAL_ALL = track all inactive critical rooms (original Eco Mode OFF behavior)
+
+        if not eco_mode_for_thermostat:
+            inactive_areas = all_inactive_areas
+        elif effective_eco_critical_tracking == ECO_CRITICAL_NONE:
+            inactive_areas = []
+        elif effective_eco_critical_tracking == ECO_CRITICAL_SELECT:
+            inactive_areas = [
+                area
+                for area in all_inactive_areas
+                if self._area_has_critical_override(area.area_id)
+            ]
+        else:  # ECO_CRITICAL_ALL
+            inactive_areas = all_inactive_areas
 
         # Update pause state on thermostat controller
         self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
 
-        # Determine effective eco_mode for this evaluation
-        # If eco mode is on but we're away, the eco_away_behavior determines what happens:
-        # - "disable_eco_when_away": Disable eco mode (use normal behavior with critical room protection)
-        # - "use_eco_away_targets": Keep eco mode, but use eco away thermostat targets
-        # - "keep_eco_active": Keep eco mode active (won't heat/cool while away - no active rooms)
-        effective_eco_mode = self.eco_mode
-        eco_away_targets: tuple[float, float] | None = None
-
-        if self.eco_mode and self.is_away:
-            if self.eco_away_behavior == "disable_eco_when_away":
-                # Revert to normal behavior - critical rooms will be protected
-                effective_eco_mode = False
-            elif self.eco_away_behavior == "use_eco_away_targets":
-                # Still in eco mode, but use eco away thermostat's targets
-                effective_eco_mode = False  # Don't ignore critical rooms
-                if hasattr(self, "eco_away_thermostat") and self.eco_away_thermostat is not None:
-                    eco_away_targets = (
-                        self.eco_away_thermostat.effective_target_temp_low,
-                        self.eco_away_thermostat.effective_target_temp_high,
-                    )
-            # else: "keep_eco_active" - eco_mode stays True (no conditioning while away)
-
         # Evaluate what action should be taken
-        # Pass respect_user_off so thermostat control knows whether to override user's off
-        # Pass eco_mode so thermostat control knows whether to only consider active rooms
-        # Pass all_areas_for_trend so anomaly detection uses ALL rooms, not just tracked ones
-        # Pass tracked_area_ids so controller evaluates ALL rooms but only counts tracked for decisions
         self._last_thermostat_state = self.thermostat_controller.evaluate_thermostat_action(
-            active_areas=list(all_active_areas),
+            active_areas=active_areas,
             area_temp_sensors=area_temp_sensors,
-            inactive_areas=list(all_inactive_areas),
+            inactive_areas=inactive_areas,
             respect_user_off=self.respect_user_off,
-            eco_mode=effective_eco_mode,
+            eco_mode=eco_mode_for_thermostat,
             eco_away_targets=eco_away_targets,
-            all_areas_for_trend=all_areas_for_trend if self.only_track_selected_rooms else None,
+            all_areas_for_trend=list(all_active_areas) + list(all_inactive_areas),
             tracked_area_ids=tracked_area_ids,
             force_critical_area_ids=force_critical_area_ids,
         )
@@ -526,9 +537,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         Returns:
             The updated ThermostatState.
         """
-        # Don't take any actions if integration is completely paused
         if self.integration_paused:
-            _LOGGER.debug("Skipping thermostat state update - integration paused")
             return self._last_thermostat_state
 
         # First evaluate the state
@@ -578,12 +587,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.thermostat_controller.unoccupied_cooling_threshold = options.get(
             CONF_UNOCCUPIED_COOLING_THRESHOLD, DEFAULT_UNOCCUPIED_COOLING_THRESHOLD
         )
-        self.thermostat_controller.heating_boost_offset = options.get(
-            CONF_HEATING_BOOST_OFFSET, DEFAULT_HEATING_BOOST_OFFSET
-        )
-        self.thermostat_controller.cooling_boost_offset = options.get(
-            CONF_COOLING_BOOST_OFFSET, DEFAULT_COOLING_BOOST_OFFSET
-        )
 
         # Update vent controller
         self.vent_controller.min_vents_open = options.get(
@@ -596,36 +599,29 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             CONF_VENT_DEBOUNCE_SECONDS, DEFAULT_VENT_DEBOUNCE_SECONDS
         )
 
-        # Update away mode - re-subscribe if presence entity changed
-        old_presence_entity = self._options.get(CONF_AWAY_PRESENCE_ENTITY, "")
-        new_presence_entity = options.get(CONF_AWAY_PRESENCE_ENTITY, "")
-        if old_presence_entity != new_presence_entity:
-            # Unsubscribe from old entity
-            if self._unsub_presence_state_change:
-                self._unsub_presence_state_change()
-                self._unsub_presence_state_change = None
+    async def async_setup(self, *, run_initial_actions: bool = False) -> None:
+        """Set up the coordinator and start listening to state changes.
 
-            # Subscribe to new entity if configured
-            if new_presence_entity:
-                self._unsub_presence_state_change = async_track_state_change_event(
-                    self.hass,
-                    [new_presence_entity],
-                    self._async_presence_state_changed,
-                )
-                self._is_away = self._check_presence_entity_state()
-                _LOGGER.debug(
-                    "Away mode presence entity changed to %s, is_away: %s",
-                    new_presence_entity,
-                    self._is_away,
-                )
-            else:
-                self._is_away = False
-                _LOGGER.debug("Away mode disabled (no presence entity configured)")
-
-    async def async_setup(self) -> None:
-        """Set up the coordinator and start listening to state changes."""
+        Args:
+            run_initial_actions: When True, performs an initial thermostat + vent
+                update that may call Home Assistant services. The config-entry setup
+                path uses this to initialize state on startup. Unit tests that
+                construct the coordinator directly typically leave this False to
+                avoid unwanted service side effects.
+        """
         # Initial scan of sensor states
         self._update_open_sensors()
+        # If sensors are already open on startup, start the timer (unless integration paused).
+        self._check_initial_open_sensors()
+
+        # Initialize away state and subscribe to presence entity changes if configured
+        self._is_away = self._check_presence_entity_state()
+        if self.away_presence_entity:
+            self._unsub_presence_state_change = async_track_state_change_event(
+                self.hass,
+                [self.away_presence_entity],
+                self._async_presence_state_changed,
+            )
 
         # Initialize last known HVAC mode from current thermostat state
         climate_state = self.hass.states.get(self.thermostat)
@@ -674,40 +670,48 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self.thermostat,
         )
 
-        # Subscribe to presence entity state changes for away mode
-        if self.away_presence_entity:
-            self._unsub_presence_state_change = async_track_state_change_event(
-                self.hass,
-                [self.away_presence_entity],
-                self._async_presence_state_changed,
-            )
-            # Set initial away state
-            self._is_away = self._check_presence_entity_state()
-            _LOGGER.debug(
-                "Away mode initialized. Presence entity: %s, is_away: %s",
-                self.away_presence_entity,
-                self._is_away,
-            )
+        # Initial evaluation (no service calls)
+        self.update_thermostat_state()
 
-        # Initial thermostat state evaluation and action execution
+        # Optionally run initial actions (may call HA services)
+        if run_initial_actions:
+            await self.async_update_thermostat_state()
+            await self.async_update_vents()
+
+    async def async_pause_integration(self) -> None:
+        """Pause the integration - completely stops all automation."""
+        if self.integration_paused:
+            _LOGGER.info("Integration already paused")
+            return
+
+        _LOGGER.info("Pausing integration automation")
+        self.integration_paused = True
+
+        # Cancel any pending timers so nothing fires while paused
+        self._cancel_open_timer()
+        self._cancel_close_timer()
+
+        # Notify listeners
+        self.async_set_updated_data(None)
+
+    async def async_resume_integration(self) -> None:
+        """Resume the integration - re-enables all automation."""
+        if not self.integration_paused:
+            _LOGGER.info("Integration not paused")
+            return
+
+        _LOGGER.info("Resuming integration automation")
+        self.integration_paused = False
+
+        # On resume, check for sensors already open and start timers accordingly
+        self._check_initial_open_sensors()
+
+        # Re-evaluate state now that automation is active again
         await self.async_update_thermostat_state()
-
-        # Initial vent control evaluation
         await self.async_update_vents()
 
-        # Check for already-open sensors and start timers if needed
-        self._check_initial_open_sensors()
-        
-        # Initialize hvac_action tracking from current physical thermostat state
-        self._last_hvac_action = self._get_current_hvac_action()
-        _LOGGER.debug("Initialized hvac_action tracking: %s", self._last_hvac_action)
-
-    def _get_current_hvac_action(self) -> str | None:
-        """Get the current hvac_action from the physical thermostat."""
-        state = self.hass.states.get(self.thermostat)
-        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return None
-        return state.attributes.get("hvac_action")
+        # Notify listeners
+        self.async_set_updated_data(None)
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator."""
@@ -738,6 +742,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_occupancy_changed(self) -> None:
         """Handle occupancy state changes."""
+        if self.integration_paused:
+            _LOGGER.debug("Integration paused, ignoring occupancy change")
+            return
         _LOGGER.debug("Occupancy changed, updating thermostat state")
         await self.async_update_thermostat_state()
         await self.async_update_vents()
@@ -767,60 +774,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_handle_temp_change(self) -> None:
         """Handle temperature change - evaluate and execute thermostat actions."""
+        if self.integration_paused:
+            _LOGGER.debug("Integration paused, ignoring temperature change")
+            return
         await self.async_update_thermostat_state()
         await self.async_update_vents()
         self.async_set_updated_data(None)
-
-    @callback
-    def _async_presence_state_changed(self, event) -> None:
-        """Handle presence entity state changes for away mode."""
-        entity_id = event.data.get("entity_id")
-        old_state = event.data.get("old_state")
-        new_state = event.data.get("new_state")
-
-        if new_state is None:
-            return
-
-        # Ignore unavailable/unknown states
-        if new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return
-
-        was_away = self._is_away
-        self._is_away = self._check_presence_entity_state()
-
-        if was_away != self._is_away:
-            _LOGGER.info(
-                "Away mode changed: %s -> %s (presence entity %s: %s -> %s)",
-                "away" if was_away else "home",
-                "away" if self._is_away else "home",
-                entity_id,
-                old_state.state if old_state else "unknown",
-                new_state.state,
-            )
-            # Trigger async handling of away mode change
-            self.hass.async_create_task(self._async_handle_away_mode_change(was_away))
-
-    async def _async_handle_away_mode_change(self, was_away: bool) -> None:
-        """Handle away mode state change - update virtual thermostats.
-
-        When transitioning to away mode, apply temperature adjustments.
-        When transitioning to home mode, remove adjustments.
-        """
-        if self._is_away:
-            _LOGGER.info(
-                "Entering away mode. Heat adjustment: %s°, Cool adjustment: +%s°",
-                self.away_heat_temp_diff,
-                self.away_cool_temp_diff,
-            )
-        else:
-            _LOGGER.info("Leaving away mode. Restoring home temperatures.")
-
-        # Notify climate entities to update their displayed temperatures
-        self.async_set_updated_data(None)
-
-        # Trigger thermostat state evaluation with new temps
-        await self.async_update_thermostat_state()
-        await self.async_update_vents()
 
     async def async_update_vents(self) -> VentControlState | None:
         """Evaluate and execute vent control.
@@ -828,20 +787,33 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         Returns:
             The VentControlState with any pending commands executed.
         """
-        # Don't control vents if integration is completely paused
         if self.integration_paused:
-            _LOGGER.debug("Skipping vent update - integration paused")
             return self._last_vent_control_state
 
         area_vents = self.get_area_vents()
         if not area_vents:
             return None
 
-        # Get all occupied and active areas
-        active_areas = self.occupancy_tracker.active_areas
-        occupied_areas = self.occupancy_tracker.occupied_areas
+        # Get all occupied and active areas from occupancy tracker
+        all_active_areas = self.occupancy_tracker.active_areas
+        all_occupied_areas = self.occupancy_tracker.occupied_areas
 
-        # Get room temperature states from last thermostat state
+        # Filter areas based on Track Selected Rooms setting
+        # Vents follow the same filtering as thermostat control
+        if self.only_track_selected_rooms:
+            active_areas = [
+                area for area in all_active_areas
+                if self.is_room_tracked(area.area_id)
+            ]
+            occupied_areas = [
+                area for area in all_occupied_areas
+                if self.is_room_tracked(area.area_id)
+            ]
+        else:
+            active_areas = all_active_areas
+            occupied_areas = all_occupied_areas
+
+        # Get room temperature states and target temperatures from last thermostat state
         room_temp_states = {}
         hvac_mode = None
         target_temp_low = None
@@ -884,6 +856,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     def _update_open_sensors(self) -> None:
         """Update the dict of currently open sensors with timestamps."""
         current_time = time.monotonic()
+        now_utc = dt_util.utcnow()
         new_open_sensors: dict[str, float] = {}
         for sensor in self.contact_sensors:
             state = self.hass.states.get(sensor)
@@ -892,8 +865,52 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 if sensor in self._open_sensor_times:
                     new_open_sensors[sensor] = self._open_sensor_times[sensor]
                 else:
-                    new_open_sensors[sensor] = current_time
+                    # Approximate monotonic open time based on HA state's last_changed,
+                    # so that sensors that were opened earlier are treated as earlier.
+                    opened_at = getattr(state, "last_changed", None)
+                    if opened_at is not None:
+                        age_seconds = (now_utc - opened_at).total_seconds()
+                        if age_seconds < 0:
+                            age_seconds = 0
+                        new_open_sensors[sensor] = current_time - age_seconds
+                    else:
+                        new_open_sensors[sensor] = current_time
         self._open_sensor_times = new_open_sensors
+
+    def _check_initial_open_sensors(self) -> None:
+        """Start the open timer for sensors already open on startup/resume."""
+        if self.integration_paused:
+            return
+
+        if self.is_paused:
+            # Already paused by contact sensor; don't start new timers.
+            return
+
+        self._update_open_sensors()
+        if not self._open_sensor_times:
+            return
+
+        # If a timer is already running, leave it alone.
+        if self._open_timer is not None:
+            return
+
+        # Find earliest still-open sensor and schedule remaining time
+        earliest_sensor = min(
+            self._open_sensor_times.keys(),
+            key=lambda s: self._open_sensor_times[s],
+        )
+        earliest_time = self._open_sensor_times[earliest_sensor]
+        elapsed = time.monotonic() - earliest_time
+        remaining = (self.open_timeout * 60) - elapsed
+
+        self._pending_open_sensor = earliest_sensor
+        if remaining <= 0:
+            self.hass.async_create_task(self._async_open_timeout_expired())
+        else:
+            self._open_timer = self.hass.loop.call_later(
+                remaining,
+                lambda: self.hass.async_create_task(self._async_open_timeout_expired()),
+            )
 
     def _cancel_open_timer(self) -> None:
         """Cancel the open timeout timer."""
@@ -954,61 +971,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 earliest_sensor,
             )
 
-    def _check_initial_open_sensors(self) -> None:
-        """Check if any sensors are already open and start timer if needed.
-        
-        This is called on startup, reload, and when resuming the integration
-        to handle sensors that are already open (not just reacting to changes).
-        """
-        # Don't start timers if integration is paused
-        if self.integration_paused:
-            _LOGGER.debug("Skipping initial sensor check - integration paused")
-            return
-            
-        # Update the open sensors dict with current state
-        self._update_open_sensors()
-        
-        # If any sensors are open and we're not already paused, start the timer
-        if self._open_sensor_times and not self.is_paused and self._open_timer is None:
-            # Find the sensor that has been open the longest
-            earliest_sensor = min(
-                self._open_sensor_times.keys(),
-                key=lambda s: self._open_sensor_times[s]
-            )
-            earliest_time = self._open_sensor_times[earliest_sensor]
-            
-            # Calculate remaining time until timeout
-            current_time = time.monotonic()
-            elapsed = current_time - earliest_time
-            remaining = (self.open_timeout * 60) - elapsed
-            
-            if remaining <= 0:
-                # Sensor has been open longer than timeout - trigger immediately
-                _LOGGER.info(
-                    "Sensor %s already open for %.1f min (>= timeout), triggering pause",
-                    earliest_sensor,
-                    elapsed / 60,
-                )
-                self._pending_open_sensor = earliest_sensor
-                self.hass.async_create_task(self._async_open_timeout_expired())
-            else:
-                # Start timer for remaining time
-                self._pending_open_sensor = earliest_sensor
-                self._open_timer = self.hass.loop.call_later(
-                    remaining,
-                    lambda: self.hass.async_create_task(self._async_open_timeout_expired()),
-                )
-                _LOGGER.info(
-                    "Sensor %s already open - started timer for %.1f min remaining",
-                    earliest_sensor,
-                    remaining / 60,
-                )
-        elif self._open_sensor_times and self.is_paused:
-            _LOGGER.debug(
-                "Sensors already open but thermostat is paused: %s",
-                list(self._open_sensor_times.keys()),
-            )
-
     @callback
     def _async_thermostat_state_changed(self, event) -> None:
         """Handle thermostat state changes to detect manual overrides."""
@@ -1020,16 +982,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Ignore unavailable/unknown states
         if new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return
-
-        # Ignore state changes while we're in the process of pausing
-        # (we trigger fan mode and hvac mode changes that shouldn't be treated as user overrides)
-        if self._pausing_in_progress:
-            _LOGGER.debug(
-                "Ignoring thermostat state change during pause operation: %s -> %s",
-                old_state.state if old_state else "None",
-                new_state.state,
-            )
             return
 
         _LOGGER.debug(
@@ -1050,11 +1002,13 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Handle manual overrides while paused
         if self.is_paused:
-            # Only detect user override if state actually changed TO non-off
-            # (not just attribute changes where state stays the same)
-            old_hvac_state = old_state.state if old_state else None
-            if new_state.state != HVACMode.OFF and old_hvac_state == HVACMode.OFF:
-                # User manually turned thermostat back on - respect their choice
+            # Only treat an OFF -> ON mode transition as a manual override.
+            # Attribute-only changes (e.g., fan_mode updates) should not clear the paused state.
+            if (
+                old_state
+                and old_state.state == HVACMode.OFF
+                and new_state.state != HVACMode.OFF
+            ):
                 _LOGGER.info(
                     "User manually turned thermostat on to %s while paused. Respecting override.",
                     new_state.state,
@@ -1064,47 +1018,13 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 self.trigger_sensor = None
                 self._cancel_close_timer()
                 self.async_set_updated_data(None)
-            elif old_hvac_state and old_hvac_state != HVACMode.OFF and new_state.state == HVACMode.OFF:
-                # User manually turned thermostat off (it was on from their override)
-                # Update previous_hvac_mode to their last choice so we restore correctly
-                _LOGGER.debug(
-                    "User turned thermostat off while sensors open. Will restore to: %s",
-                    self._last_known_hvac_mode,
-                )
-                if self._last_known_hvac_mode:
-                    self.previous_hvac_mode = self._last_known_hvac_mode
-
-        # Check for hvac_action changes
-        old_hvac_action = old_state.attributes.get("hvac_action") if old_state else None
-        new_hvac_action = new_state.attributes.get("hvac_action")
-        
-        # Update virtual thermostats if hvac_action changed, or if transitioning from unknown/unavailable
-        if (new_hvac_action != old_hvac_action or 
-            new_hvac_action != self._last_hvac_action or
-            (old_state and old_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN))):
-            self._last_hvac_action = new_hvac_action
-            _LOGGER.debug(
-                "Physical thermostat hvac_action changed: %s -> %s, updating virtual thermostats",
-                old_hvac_action,
-                new_hvac_action,
-            )
-            self._update_virtual_thermostat_states()
-
-    @callback
-    def _update_virtual_thermostat_states(self) -> None:
-        """Update all virtual thermostat states when hvac_action changes."""
-        # Update area thermostats
-        if hasattr(self, "area_thermostats"):
-            for area_thermostat in self.area_thermostats.values():
-                area_thermostat.async_write_ha_state()
-        
-        # Update global thermostat
-        if hasattr(self, "global_thermostat") and self.global_thermostat:
-            self.global_thermostat.async_write_ha_state()
 
     @callback
     def _async_sensor_state_changed(self, event) -> None:
         """Handle sensor state changes."""
+        if self.integration_paused:
+            return
+
         entity_id = event.data.get("entity_id")
         new_state: State | None = event.data.get("new_state")
         old_state: State | None = event.data.get("old_state")
@@ -1141,9 +1061,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Handle a sensor being opened."""
         _LOGGER.debug("Sensor opened: %s", entity_id)
 
-        # If integration is completely paused, don't start any timers
         if self.integration_paused:
-            _LOGGER.debug("Ignoring sensor open - integration paused")
             return
 
         # Record the open timestamp for this sensor
@@ -1174,10 +1092,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Handle a sensor being closed."""
         _LOGGER.debug("Sensor closed: %s", entity_id)
 
-        # If integration is completely paused, just track state but don't manage timers
         if self.integration_paused:
-            _LOGGER.debug("Ignoring sensor close - integration paused")
-            self._open_sensor_times.pop(entity_id, None)
             return
 
         # Remove this sensor from the open timestamps
@@ -1209,9 +1124,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_open_timeout_expired(self) -> None:
         """Handle open timeout expiration - pause the thermostat."""
-        # Don't act if integration is completely paused
         if self.integration_paused:
-            _LOGGER.debug("Open timeout expired but integration is paused - ignoring")
+            self._cancel_open_timer()
+            return
+
+        # If already paused, nothing to do.
+        if self.is_paused:
             return
 
         # Save the trigger sensor before cancelling (cancel clears _pending_open_sensor)
@@ -1231,11 +1149,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             len(self.open_sensors),
         )
 
+        # Mark paused immediately to avoid races with other callbacks.
+        self.is_paused = True
+
         # Store the trigger sensor for notifications
         self.trigger_sensor = trigger_sensor
-
-        # Set flag to ignore thermostat state changes during pause operation
-        self._pausing_in_progress = True
 
         # Get current HVAC mode before turning off
         climate_state = self.hass.states.get(self.thermostat)
@@ -1244,29 +1162,31 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         else:
             self.previous_hvac_mode = HVACMode.AUTO
 
-        # Set fan to auto when pausing to save energy (non-fatal if it fails)
-        try:
-            if self.thermostat_controller.supports_fan_mode():
-                fan_off_mode = self.thermostat_controller._get_best_fan_off_mode()
-                if fan_off_mode:
-                    current_fan_mode = self.thermostat_controller.get_fan_mode()
-                    if current_fan_mode and current_fan_mode != fan_off_mode:
-                        _LOGGER.info(
-                            "Setting fan mode to '%s' when pausing (was '%s')",
-                            fan_off_mode,
-                            current_fan_mode,
-                        )
-                        await self.hass.services.async_call(
-                            CLIMATE_DOMAIN,
-                            "set_fan_mode",
-                            {
-                                "entity_id": self.thermostat,
-                                "fan_mode": fan_off_mode,
-                            },
-                            blocking=True,
-                        )
-        except Exception as ex:
-            _LOGGER.warning("Failed to set fan mode when pausing: %s", ex)
+        # If supported, set fan mode to auto (or off fallback) before turning HVAC off.
+        if climate_state:
+            supported = climate_state.attributes.get("supported_features", 0)
+            fan_modes = climate_state.attributes.get("fan_modes")
+            current_fan = climate_state.attributes.get("fan_mode")
+            if (
+                isinstance(fan_modes, list)
+                and (supported & ClimateEntityFeature.FAN_MODE)
+            ):
+                desired_fan = None
+                if "auto" in fan_modes:
+                    desired_fan = "auto"
+                elif "off" in fan_modes:
+                    desired_fan = "off"
+
+                if desired_fan and current_fan != desired_fan:
+                    await self.hass.services.async_call(
+                        CLIMATE_DOMAIN,
+                        "set_fan_mode",
+                        {
+                            "entity_id": self.thermostat,
+                            "fan_mode": desired_fan,
+                        },
+                        blocking=True,
+                    )
 
         # Turn off the thermostat
         await self.hass.services.async_call(
@@ -1279,9 +1199,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             blocking=True,
         )
 
-        self.is_paused = True
-        self._pausing_in_progress = False  # Clear flag after pause complete
-
         # Send notification
         await self._async_send_notification(paused=True)
 
@@ -1292,11 +1209,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     async def _async_close_timeout_expired(self) -> None:
         """Handle close timeout expiration - resume the thermostat."""
-        # Don't act if integration is completely paused
-        if self.integration_paused:
-            _LOGGER.debug("Close timeout expired but integration is paused - ignoring")
-            return
-
         # Cancel timer if still scheduled (e.g., when called manually in tests)
         self._cancel_close_timer()
 
@@ -1312,6 +1224,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         _LOGGER.info(
             "Close timeout expired with all sensors closed. Resuming thermostat."
         )
+
+        # Clear paused state before restoring HVAC mode so our own restore doesn't
+        # get interpreted as a manual override.
+        self.is_paused = False
 
         # Restore previous HVAC mode (unless respecting user's off choice)
         should_restore = True
@@ -1345,7 +1261,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Send notification
         await self._async_send_notification(paused=False)
 
-        self.is_paused = False
         self.trigger_sensor = None
 
         # Immediately evaluate thermostat state to handle satiation
@@ -1367,10 +1282,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             _LOGGER.info("Thermostat already paused")
             return
 
+        if self.integration_paused:
+            _LOGGER.info("Integration paused; ignoring pause request")
+            return
+
         _LOGGER.info("Pausing thermostat via service call")
 
-        # Set flag to ignore thermostat state changes during pause operation
-        self._pausing_in_progress = True
+        # Mark paused immediately to avoid races with other callbacks.
+        self.is_paused = True
 
         # Get current HVAC mode before turning off
         climate_state = self.hass.states.get(self.thermostat)
@@ -1378,30 +1297,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self.previous_hvac_mode = climate_state.state
         else:
             self.previous_hvac_mode = HVACMode.AUTO
-
-        # Set fan to auto when pausing to save energy (non-fatal if it fails)
-        try:
-            if self.thermostat_controller.supports_fan_mode():
-                fan_off_mode = self.thermostat_controller._get_best_fan_off_mode()
-                if fan_off_mode:
-                    current_fan_mode = self.thermostat_controller.get_fan_mode()
-                    if current_fan_mode and current_fan_mode != fan_off_mode:
-                        _LOGGER.info(
-                            "Setting fan mode to '%s' when pausing via service (was '%s')",
-                            fan_off_mode,
-                            current_fan_mode,
-                        )
-                        await self.hass.services.async_call(
-                            CLIMATE_DOMAIN,
-                            "set_fan_mode",
-                            {
-                                "entity_id": self.thermostat,
-                                "fan_mode": fan_off_mode,
-                            },
-                            blocking=True,
-                        )
-        except Exception as ex:
-            _LOGGER.warning("Failed to set fan mode when pausing via service: %s", ex)
 
         # Turn off the thermostat
         await self.hass.services.async_call(
@@ -1413,9 +1308,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             },
             blocking=True,
         )
-
-        self.is_paused = True
-        self._pausing_in_progress = False  # Clear flag after pause complete
 
         # Send notification
         await self._async_send_notification(paused=True)
@@ -1429,6 +1321,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Resume the thermostat via service call (bypasses sensor checks)."""
         if not self.is_paused:
             _LOGGER.info("Thermostat not paused")
+            return
+
+        if self.integration_paused:
+            _LOGGER.info("Integration paused; ignoring resume request")
             return
 
         _LOGGER.info("Resuming thermostat via service call")
@@ -1455,55 +1351,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(None)
 
         _LOGGER.info("Thermostat resumed via service to mode: %s", self.previous_hvac_mode)
-
-    async def async_pause_integration(self) -> None:
-        """Completely pause the integration - no automation actions at all.
-        
-        This stops the integration from:
-        - Controlling the thermostat based on occupancy/temperatures
-        - Responding to contact sensor open/close events
-        - Adjusting vents
-        
-        The thermostat and vents remain in their current state.
-        """
-        if self.integration_paused:
-            _LOGGER.info("Integration already paused")
-            return
-
-        self.integration_paused = True
-        
-        # Notify listeners to update entity states
-        self.async_set_updated_data(None)
-        
-        _LOGGER.info("Integration completely paused - all automation stopped")
-
-    async def async_resume_integration(self) -> None:
-        """Resume the integration - re-enable all automation.
-        
-        This resumes:
-        - Thermostat control based on occupancy/temperatures
-        - Contact sensor monitoring
-        - Vent control
-        
-        After resuming, forces a recalculation of the current state.
-        """
-        if not self.integration_paused:
-            _LOGGER.info("Integration not paused")
-            return
-
-        self.integration_paused = False
-        
-        # Force immediate recalculation
-        await self.async_update_thermostat_state()
-        await self.async_update_vents()
-        
-        # Check for already-open sensors and start timers if needed
-        self._check_initial_open_sensors()
-        
-        # Notify listeners to update entity states
-        self.async_set_updated_data(None)
-        
-        _LOGGER.info("Integration resumed - automation re-enabled")
 
     async def _async_send_notification(self, paused: bool) -> None:
         """Send a notification about thermostat state change."""

@@ -1,6 +1,8 @@
 """Fixtures for Thermostat Contact Sensors tests."""
 from __future__ import annotations
 
+import asyncio
+import sys
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -66,6 +68,21 @@ TEST_NOTIFY_SERVICE = "notify.test_notify"
 # Test area IDs
 TEST_AREA_LIVING_ROOM = "living_room"
 TEST_AREA_BEDROOM = "bedroom"
+
+
+if sys.platform == "win32":
+    @pytest.fixture
+    def event_loop(socket_enabled):  # noqa: ARG001
+        """Create an event loop with sockets enabled.
+
+        pytest-homeassistant-custom-component disables sockets via pytest-socket to
+        prevent network access. On Windows, asyncio's proactor loop creation needs
+        a socketpair(), so we must enable sockets during loop creation.
+        """
+
+        loop = asyncio.get_event_loop_policy().new_event_loop()
+        yield loop
+        loop.close()
 
 
 @pytest.fixture(autouse=True)

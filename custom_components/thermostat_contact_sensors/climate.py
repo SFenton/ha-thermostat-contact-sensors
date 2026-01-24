@@ -1030,7 +1030,7 @@ class EcoAwayVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         coordinator: ThermostatContactSensorsCoordinator = self.coordinator
         if coordinator.eco_mode and coordinator.is_away:
             if coordinator.eco_away_behavior == "use_eco_away_targets":
-                await coordinator.update_thermostat_state("eco_away_target_changed")
+                await coordinator.async_update_thermostat_state()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

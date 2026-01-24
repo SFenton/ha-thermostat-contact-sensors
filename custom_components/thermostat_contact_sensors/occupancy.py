@@ -32,6 +32,7 @@ from .const import (
     CONF_AREA_ENABLED,
     CONF_BINARY_SENSORS,
     CONF_SENSORS,
+    CONF_TEMPERATURE_SENSORS,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
     DOMAIN,
@@ -399,8 +400,12 @@ class RoomOccupancyTracker:
             binary_sensors = area_config.get(CONF_BINARY_SENSORS, [])
             sensors = area_config.get(CONF_SENSORS, [])
 
-            # Only track areas that have occupancy sensors configured
-            if not binary_sensors and not sensors:
+            # Track areas that have occupancy sensors, OR have temperature sensors
+            # configured (so they can participate in critical-temperature logic even
+            # if they have no occupancy sensors).
+            temp_sensors = area_config.get(CONF_TEMPERATURE_SENSORS, [])
+
+            if not binary_sensors and not sensors and not temp_sensors:
                 continue
 
             self._areas[area_id] = AreaOccupancyState(
@@ -446,11 +451,20 @@ class RoomOccupancyTracker:
 
         # Set up periodic timer to update active status as occupancy duration increases
         # This ensures areas transition from occupied to active after min_occupancy_minutes
-        self._unsub_time_interval = async_track_time_interval(
-            self.hass,
-            self._async_periodic_update,
-            timedelta(seconds=30),
-        )
+        try:
+            self._unsub_time_interval = async_track_time_interval(
+                self.hass,
+                self._async_periodic_update,
+                timedelta(seconds=30),
+                cancel_on_shutdown=True,
+            )
+        except TypeError:
+            # Older HA versions may not support cancel_on_shutdown
+            self._unsub_time_interval = async_track_time_interval(
+                self.hass,
+                self._async_periodic_update,
+                timedelta(seconds=30),
+            )
 
         _LOGGER.debug(
             "Occupancy tracker setup complete. Monitoring %d sensors across %d areas",

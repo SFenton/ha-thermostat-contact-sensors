@@ -459,6 +459,20 @@ class VentController:
             for vent in area_state.vents:
                 priority_score = 0.0
 
+                # If a room is newly occupied but still under its open-delay window,
+                # do not use minimum-vents enforcement to open it early.
+                if (area_state.open_reason or "").startswith("Occupied only"):
+                    priority_score -= 5000.0
+
+                # Prefer "neutral" vents (areas with no occupancy/temperature signal)
+                # for back-pressure minimum openings.
+                if (
+                    not area_state.should_open
+                    and area_state.determining_temperature is None
+                    and area_state.distance_from_target is None
+                ):
+                    priority_score += 500.0
+
                 # Critical rooms get highest priority
                 if area_state.should_open and "Critical" in (area_state.open_reason or ""):
                     priority_score += 2000.0

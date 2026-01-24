@@ -1151,20 +1151,20 @@ class ThermostatController:
                 set_average_temperature()
                 return room_state
 
-            # For heating, use the warmest sensor (most favorable)
-            # Only critical if even the warmest spot is too cold
-            warmest_sensor, warmest_temp = max(
+            # For heating critical protection, use the coldest sensor (worst-case)
+            # A room is critical if ANY spot is too cold.
+            coldest_sensor, coldest_temp = min(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp - self._unoccupied_heating_threshold
 
-            room_state.determining_sensor = warmest_sensor
-            room_state.determining_temperature = warmest_temp
+            room_state.determining_sensor = coldest_sensor
+            room_state.determining_temperature = coldest_temp
 
-            if warmest_temp < critical_threshold:
+            if coldest_temp < critical_threshold:
                 room_state.is_critical = True
                 room_state.critical_reason = (
-                    f"Temperature {warmest_temp:.1f}° is {target_temp - warmest_temp:.1f}° "
+                    f"Temperature {coldest_temp:.1f}° is {target_temp - coldest_temp:.1f}° "
                     f"below heat target {target_temp:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
                 )
 
@@ -1173,20 +1173,20 @@ class ThermostatController:
                 set_average_temperature()
                 return room_state
 
-            # For cooling, use the coolest sensor (most favorable)
-            # Only critical if even the coolest spot is too hot
-            coolest_sensor, coolest_temp = min(
+            # For cooling critical protection, use the warmest sensor (worst-case)
+            # A room is critical if ANY spot is too hot.
+            warmest_sensor, warmest_temp = max(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp + self._unoccupied_cooling_threshold
 
-            room_state.determining_sensor = coolest_sensor
-            room_state.determining_temperature = coolest_temp
+            room_state.determining_sensor = warmest_sensor
+            room_state.determining_temperature = warmest_temp
 
-            if coolest_temp > critical_threshold:
+            if warmest_temp > critical_threshold:
                 room_state.is_critical = True
                 room_state.critical_reason = (
-                    f"Temperature {coolest_temp:.1f}° is {coolest_temp - target_temp:.1f}° "
+                    f"Temperature {warmest_temp:.1f}° is {warmest_temp - target_temp:.1f}° "
                     f"above cool target {target_temp:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
                 )
 
@@ -1195,33 +1195,33 @@ class ThermostatController:
                 set_average_temperature()
                 return room_state
 
-            # Use most favorable sensors for each mode
-            warmest_sensor, warmest_temp = max(
+            # Use worst-case sensors for critical protection
+            coldest_sensor, coldest_temp = min(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
-            coolest_sensor, coolest_temp = min(
+            warmest_sensor, warmest_temp = max(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
 
             heat_critical_threshold = target_temp_low - self._unoccupied_heating_threshold
             cool_critical_threshold = target_temp_high + self._unoccupied_cooling_threshold
 
-            # For heating critical: even warmest spot is too cold
-            if warmest_temp < heat_critical_threshold:
+            # For heating critical: any spot is too cold (use coldest)
+            if coldest_temp < heat_critical_threshold:
+                room_state.is_critical = True
+                room_state.determining_sensor = coldest_sensor
+                room_state.determining_temperature = coldest_temp
+                room_state.critical_reason = (
+                    f"Temperature {coldest_temp:.1f}° is {target_temp_low - coldest_temp:.1f}° "
+                    f"below heat target {target_temp_low:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
+                )
+            # For cooling critical: any spot is too hot (use warmest)
+            elif warmest_temp > cool_critical_threshold:
                 room_state.is_critical = True
                 room_state.determining_sensor = warmest_sensor
                 room_state.determining_temperature = warmest_temp
                 room_state.critical_reason = (
-                    f"Temperature {warmest_temp:.1f}° is {target_temp_low - warmest_temp:.1f}° "
-                    f"below heat target {target_temp_low:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
-                )
-            # For cooling critical: even coolest spot is too hot
-            elif coolest_temp > cool_critical_threshold:
-                room_state.is_critical = True
-                room_state.determining_sensor = coolest_sensor
-                room_state.determining_temperature = coolest_temp
-                room_state.critical_reason = (
-                    f"Temperature {coolest_temp:.1f}° is {coolest_temp - target_temp_high:.1f}° "
+                    f"Temperature {warmest_temp:.1f}° is {warmest_temp - target_temp_high:.1f}° "
                     f"above cool target {target_temp_high:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
                 )
 
@@ -1614,19 +1614,12 @@ class ThermostatController:
                 thermostat_state.recommended_action = ThermostatAction.NONE
                 thermostat_state.action_reason = "No rooms configured"
                 return thermostat_state
-            
-            # Rooms are configured but none active - should turn off (idle)
-            if is_on:
-                can_off, reason = self.can_turn_off(now)
-                if can_off:
-                    thermostat_state.recommended_action = ThermostatAction.TURN_OFF
-                    thermostat_state.action_reason = "No active or critical rooms (idle)"
-                else:
-                    thermostat_state.recommended_action = ThermostatAction.WAIT_CYCLE_ON
-                    thermostat_state.action_reason = f"Want to turn off (idle) but {reason}"
-            else:
-                thermostat_state.recommended_action = ThermostatAction.NONE
-                thermostat_state.action_reason = "Already off, no active or critical rooms"
+
+            # Rooms are configured but none are currently active/critical.
+            # In this state, we avoid actively turning the thermostat off; we simply
+            # do nothing and wait for occupancy or critical conditions.
+            thermostat_state.recommended_action = ThermostatAction.NONE
+            thermostat_state.action_reason = "No active or critical rooms (idle)"
             return thermostat_state
 
         if not needs_conditioning:

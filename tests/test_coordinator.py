@@ -1778,3 +1778,220 @@ class TestEcoAwayBehaviorCoordinator:
         
         await coordinator.async_shutdown()
 
+
+class TestForceTrackWhenCriticalOverride:
+    """Tests for the force_track_when_critical per-area override."""
+
+    @pytest.mark.asyncio
+    async def test_force_track_critical_overrides_eco_mode(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test that force_track_when_critical allows critical room to be tracked even in Eco Mode."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_AREAS,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_SELECT,
+        )
+
+        # Configure two areas: one with override, one without
+        areas_config = {
+            "music_room": {
+                CONF_AREA_ID: "music_room",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: ["sensor.music_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,  # Override enabled
+            },
+            "bedroom": {
+                CONF_AREA_ID: "bedroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: ["sensor.bedroom_temp"],
+                # No override - defaults to False
+            },
+        }
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Eco mode behavior depends on the select policy.
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_SELECT
+
+        # Enable Eco Mode (normally ignores all inactive rooms)
+        coordinator.eco_mode = True
+
+        # Both rooms are inactive (no occupancy)
+        # Music room has override, bedroom doesn't
+        inactive_areas = coordinator.occupancy_tracker.inactive_areas
+
+        # Apply the filtering logic from update_thermostat_state
+        if coordinator.eco_mode:
+            filtered_inactive = [
+                area for area in inactive_areas
+                if coordinator._area_has_critical_override(area.area_id)
+            ]
+        else:
+            filtered_inactive = inactive_areas
+
+        # Only music_room should pass through (has override)
+        filtered_area_ids = {area.area_id for area in filtered_inactive}
+        assert "music_room" in filtered_area_ids
+        assert "bedroom" not in filtered_area_ids
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_force_track_critical_overrides_tsr(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test that force_track_when_critical allows room to be tracked even when TSR is on and room not tracked."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_AREAS,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+        )
+
+        areas_config = {
+            "theater": {
+                CONF_AREA_ID: "theater",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: ["sensor.theater_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,  # Override enabled
+            },
+            "guest_room": {
+                CONF_AREA_ID: "guest_room",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: ["sensor.guest_temp"],
+                # No override
+            },
+        }
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Enable Track Selected Rooms (TSR) but don't track any rooms
+        coordinator.only_track_selected_rooms = True
+        coordinator.eco_mode = False  # Eco Mode off
+
+        inactive_areas = coordinator.occupancy_tracker.inactive_areas
+
+        # Apply the filtering logic from update_thermostat_state
+        if coordinator.only_track_selected_rooms:
+            filtered_inactive = [
+                area for area in inactive_areas
+                if coordinator.is_room_tracked(area.area_id) or coordinator._area_has_critical_override(area.area_id)
+            ]
+        else:
+            filtered_inactive = inactive_areas
+
+        # Only theater should pass through (has override)
+        filtered_area_ids = {area.area_id for area in filtered_inactive}
+        assert "theater" in filtered_area_ids
+        assert "guest_room" not in filtered_area_ids
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_force_track_critical_with_eco_and_tsr(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Test that force_track_when_critical works with both Eco Mode and TSR enabled."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_AREAS,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+            ECO_CRITICAL_SELECT,
+        )
+
+        areas_config = {
+            "music_room": {
+                CONF_AREA_ID: "music_room",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: ["sensor.music_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,  # Override
+            },
+            "living_room": {
+                CONF_AREA_ID: "living_room",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: ["sensor.living_temp"],
+                # No override
+            },
+        }
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_SELECT
+
+        # Enable BOTH Eco Mode and TSR, no rooms tracked
+        coordinator.eco_mode = True
+        coordinator.only_track_selected_rooms = True
+
+        inactive_areas = coordinator.occupancy_tracker.inactive_areas
+
+        # Apply the filtering logic from update_thermostat_state
+        # Eco Mode takes precedence
+        if coordinator.eco_mode:
+            filtered_inactive = [
+                area for area in inactive_areas
+                if coordinator._area_has_critical_override(area.area_id)
+            ]
+        else:
+            if coordinator.only_track_selected_rooms:
+                filtered_inactive = [
+                    area for area in inactive_areas
+                    if coordinator.is_room_tracked(area.area_id) or coordinator._area_has_critical_override(area.area_id)
+                ]
+            else:
+                filtered_inactive = inactive_areas
+
+        # Music room should still be checked (has override)
+        filtered_area_ids = {area.area_id for area in filtered_inactive}
+        assert "music_room" in filtered_area_ids
+        assert "living_room" not in filtered_area_ids
+
+        await coordinator.async_shutdown()

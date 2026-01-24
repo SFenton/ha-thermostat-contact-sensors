@@ -45,6 +45,18 @@ CONF_VENT_DEBOUNCE_SECONDS = "vent_debounce_seconds"
 CONF_AREA_MIN_VENTS_OPEN = "area_min_vents_open"
 CONF_AREA_VENT_OPEN_DELAY_SECONDS = "area_vent_open_delay_seconds"
 
+# Per-area critical temperature override
+CONF_AREA_FORCE_TRACK_WHEN_CRITICAL = "force_track_when_critical"
+
+# Eco Mode critical temperature tracking options
+CONF_ECO_MODE_CRITICAL_TRACKING = "eco_mode_critical_tracking"
+ECO_CRITICAL_NONE = "do_not_track_critical"
+ECO_CRITICAL_SELECT = "track_select_critical"
+ECO_CRITICAL_ALL = "track_all_critical"
+# Default should preserve legacy behavior (Eco Mode switch default OFF):
+# track critical temperatures even when rooms are inactive.
+DEFAULT_ECO_MODE_CRITICAL_TRACKING = ECO_CRITICAL_SELECT
+
 # User override behavior
 CONF_RESPECT_USER_OFF = "respect_user_off"
 

@@ -1118,3 +1118,69 @@ class TestDistanceFromTarget:
         
         assert cold_vent.should_be_open is True, "Cold room should get priority in HEAT mode"
         assert warm_vent.should_be_open is False, "Warm room should not get priority over cold room"
+
+    def test_hvac_off_with_target_temps_infers_mode_for_priority(self, controller):
+        """Test that when HVAC is OFF but target temps are provided, mode is inferred for vent priority.
+        
+        This tests the fix for the startup bug where vents didn't open correctly after reboot.
+        When HVAC is OFF (or None), but we have target temperatures and room temperatures,
+        the system should infer whether rooms need heating or cooling and prioritize accordingly.
+        """
+        controller._min_vents_open = 1  # Only keep one vent open
+        
+        self._setup_vents(controller, {
+            "cover.vent_critical_cold": {"is_open": True, "members": 1},
+            "cover.vent_comfortable": {"is_open": True, "members": 1},
+        })
+
+        area_vent_configs = {
+            "area_critical": ["cover.vent_critical_cold"],
+            "area_comfortable": ["cover.vent_comfortable"],
+        }
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        # Critical cold room - needs heat urgently
+        room_critical = RoomTemperatureState(
+            area_id="area_critical",
+            area_name="Critical Cold Room",
+            is_satiated=False,
+            is_critical=True,  # Critical temperature
+            determining_temperature=55.0,  # Very cold
+            target_temperature=70.0,
+        )
+
+        # Comfortable room - at target
+        room_comfortable = RoomTemperatureState(
+            area_id="area_comfortable",
+            area_name="Comfortable Room",
+            is_satiated=True,
+            determining_temperature=70.0,
+            target_temperature=70.0,
+        )
+
+        # HVAC is OFF, but we provide target temperatures - system should infer HEAT mode
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vent_configs,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states={
+                "area_critical": room_critical,
+                "area_comfortable": room_comfortable,
+            },
+            hvac_mode=HVACMode.OFF,  # HVAC is off (e.g., during startup)
+            target_temp_low=68.0,  # But target temps are available
+            target_temp_high=72.0,
+            now=now,
+        )
+
+        # The critical cold room should get priority even though HVAC is OFF
+        # because the system should infer HEAT mode from the temperature data
+        critical_vent = control_state.area_states["area_critical"].vents[0]
+        comfortable_vent = control_state.area_states["area_comfortable"].vents[0]
+        
+        assert critical_vent.should_be_open is True, (
+            "Critical cold room vent should stay open for minimum vents even when HVAC is OFF"
+        )
+        assert comfortable_vent.should_be_open is False, (
+            "Comfortable room vent should close when HVAC is OFF"
+        )
