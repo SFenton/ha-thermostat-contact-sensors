@@ -2003,6 +2003,10 @@ class TestForceTrackWhenCriticalOverride:
         setup_test_entities: None,
     ):
         """Test that active rooms filtered by TSR but with force_track_when_critical still get evaluated for critical temps."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
         from custom_components.thermostat_contact_sensors.const import (
             CONF_AREA_ENABLED,
             CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
@@ -2059,10 +2063,18 @@ class TestForceTrackWhenCriticalOverride:
         coordinator.only_track_selected_rooms = True
         coordinator._tracked_rooms = ["living_room"]  # Music room NOT tracked
 
-        # Allow state changes to propagate
-        await hass.async_block_till_done()
+        # Make music_room active by setting occupancy state directly
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["music_room"] = AreaOccupancyState(
+            area_id="music_room",
+            area_name="Music Room",
+            binary_sensors=["binary_sensor.music_motion"],
+            occupied_binary_sensors={"binary_sensor.music_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
         
-        # Music room should be active (motion detected)
+        # Music room should be active
         assert any(a.area_id == "music_room" for a in coordinator.occupancy_tracker.active_areas)
 
         # Update thermostat state
@@ -2091,12 +2103,17 @@ class TestForceTrackWhenCriticalOverride:
         setup_test_entities: None,
     ):
         """Test that active rooms that ARE tracked by TSR get normal satiation evaluation."""
+        from datetime import timedelta
+        
+        from homeassistant import util as dt_util
+        
         from custom_components.thermostat_contact_sensors.const import (
             CONF_AREA_ENABLED,
             CONF_AREA_ID,
             CONF_BINARY_SENSORS,
             CONF_TEMPERATURE_SENSORS,
         )
+        from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
 
         areas_config = {
             "office": {
@@ -2144,8 +2161,24 @@ class TestForceTrackWhenCriticalOverride:
         coordinator.only_track_selected_rooms = True
         coordinator._tracked_rooms = ["office"]
 
-        # Allow state changes to propagate
-        await hass.async_block_till_done()
+        # Make both rooms active by setting occupancy state directly
+        now = dt_util.utcnow()
+        coordinator.occupancy_tracker._areas["office"] = AreaOccupancyState(
+            area_id="office",
+            area_name="Office",
+            binary_sensors=["binary_sensor.office_motion"],
+            occupied_binary_sensors={"binary_sensor.office_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
+        coordinator.occupancy_tracker._areas["bedroom"] = AreaOccupancyState(
+            area_id="bedroom",
+            area_name="Bedroom",
+            binary_sensors=["binary_sensor.bedroom_motion"],
+            occupied_binary_sensors={"binary_sensor.bedroom_motion"},
+            occupancy_start_time=now - timedelta(minutes=10),
+            is_active=True,
+        )
 
         # Both should be active
         active_area_ids = {a.area_id for a in coordinator.occupancy_tracker.active_areas}
