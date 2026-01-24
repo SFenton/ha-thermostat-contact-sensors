@@ -363,6 +363,9 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
         attrs["target_temp_high"] = state.target_temp_high
         attrs["target_temp_low"] = state.target_temp_low
 
+        # Inferred HVAC mode (calculated trend when thermostat is off)
+        attrs["inferred_hvac_mode"] = state.inferred_hvac_mode.value if state.inferred_hvac_mode else None
+
         # Room counts
         attrs["active_room_count"] = state.active_room_count
         attrs["satiated_room_count"] = state.satiated_room_count

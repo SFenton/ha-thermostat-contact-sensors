@@ -1445,18 +1445,18 @@ class ThermostatController:
                 if temp is not None:
                     all_sensor_readings[sensor_id] = temp
 
+        # Always calculate the inferred mode (temperature trend) regardless of thermostat state
+        # This provides visibility into whether the house is trending cold or hot
+        inferred_mode = infer_effective_hvac_mode(
+            all_sensor_readings, target_temp_low, target_temp_high
+        )
+        thermostat_state.inferred_hvac_mode = inferred_mode
+
         # Determine evaluation HVAC mode
-        # If thermostat is off, infer the mode from global temperature trend
+        # If thermostat is off, use the inferred mode for evaluation
         evaluation_hvac_mode = hvac_mode
-        inferred_mode: HVACMode | None = None
 
         if hvac_mode == HVACMode.OFF:
-            # Infer mode from global temperature trend
-            inferred_mode = infer_effective_hvac_mode(
-                all_sensor_readings, target_temp_low, target_temp_high
-            )
-            thermostat_state.inferred_hvac_mode = inferred_mode
-
             if inferred_mode:
                 evaluation_hvac_mode = inferred_mode
                 _LOGGER.debug(
