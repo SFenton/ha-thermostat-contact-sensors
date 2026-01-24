@@ -2059,9 +2059,9 @@ class TestForceTrackWhenCriticalOverride:
 
         await coordinator.async_setup()
 
-        # Enable TSR but DON'T track music_room (only track living_room, but it's inactive)
+        # Enable TSR but DON'T track either room - this filters both from normal evaluation
         coordinator.only_track_selected_rooms = True
-        coordinator._tracked_rooms = ["living_room"]  # Music room NOT tracked
+        coordinator._tracked_rooms = []  # Neither room tracked
 
         # Make music_room active by setting occupancy state directly
         now = dt_util.utcnow()
@@ -2091,7 +2091,7 @@ class TestForceTrackWhenCriticalOverride:
         assert music_state.is_critical is True
         assert music_state.determining_temperature == 16.0
         
-        # Living room should NOT be in room_states (it's inactive AND not tracked)
+        # Living room should NOT be in room_states (it's inactive AND not tracked by TSR)
         assert "living_room" not in thermostat_state.room_states
 
         await coordinator.async_shutdown()
