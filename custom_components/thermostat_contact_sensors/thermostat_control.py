@@ -1077,28 +1077,31 @@ class ThermostatController:
             room_state.is_satiated = True
             room_state.satiation_reason = SatiationReason.SATIATED
 
-        # Evaluate critical status for active rooms as well
-        # Active rooms can be both active and critical (e.g., occupied but too cold/hot)
+        # Evaluate critical status for active rooms as well.
+        # Active rooms can be both active and critical (e.g., occupied but too cold/hot).
+        # Sensor choice follows the current evaluation trend:
+        # - When trending HEAT: use the hottest sensor
+        # - When trending COOL: use the coldest sensor
         if hvac_mode == HVACMode.HEAT and target_temp is not None:
-            coldest_sensor, coldest_temp = min(
+            hottest_sensor, hottest_temp = max(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp - self._unoccupied_heating_threshold
-            if coldest_temp < critical_threshold:
+            if hottest_temp < critical_threshold:
                 room_state.is_critical = True
                 room_state.critical_reason = (
-                    f"Temperature {coldest_temp:.1f}° is {target_temp - coldest_temp:.1f}° "
+                    f"Temperature {hottest_temp:.1f}° is {target_temp - hottest_temp:.1f}° "
                     f"below heat target {target_temp:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
                 )
         elif hvac_mode == HVACMode.COOL and target_temp is not None:
-            warmest_sensor, warmest_temp = max(
+            coldest_sensor, coldest_temp = min(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp + self._unoccupied_cooling_threshold
-            if warmest_temp > critical_threshold:
+            if coldest_temp > critical_threshold:
                 room_state.is_critical = True
                 room_state.critical_reason = (
-                    f"Temperature {warmest_temp:.1f}° is {warmest_temp - target_temp:.1f}° "
+                    f"Temperature {coldest_temp:.1f}° is {coldest_temp - target_temp:.1f}° "
                     f"above cool target {target_temp:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
                 )
         elif hvac_mode == HVACMode.HEAT_COOL and target_temp_low is not None and target_temp_high is not None:
@@ -1192,26 +1195,42 @@ class ThermostatController:
             room_state.determining_sensor = closest_sensor
             room_state.determining_temperature = avg_temp
 
-        # Use most favorable sensor (closest to target) - only critical if whole room is in trouble
+        # For critical evaluation we use the extreme in the direction of the
+        # inferred/trending mode:
+        # - HEAT: hottest sensor
+        # - COOL: coldest sensor
         if hvac_mode == HVACMode.HEAT:
             if target_temp is None:
                 set_average_temperature()
                 return room_state
 
-            # For heating critical protection, use the warmest sensor (same as satiation logic)
-            warmest_sensor, warmest_temp = max(
+            hottest_sensor, hottest_temp = max(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp - self._unoccupied_heating_threshold
 
-            room_state.determining_sensor = warmest_sensor
-            room_state.determining_temperature = warmest_temp
+            room_state.determining_sensor = hottest_sensor
+            room_state.determining_temperature = hottest_temp
 
-            if warmest_temp < critical_threshold:
+            _LOGGER.debug(
+                "Evaluating critical for %s in HEAT mode: hottest_temp=%.2f, critical_threshold=%.2f (target=%.2f - threshold=%.2f)",
+                area.area_id,
+                hottest_temp,
+                critical_threshold,
+                target_temp,
+                self._unoccupied_heating_threshold,
+            )
+
+            if hottest_temp < critical_threshold:
                 room_state.is_critical = True
                 room_state.critical_reason = (
-                    f"Temperature {warmest_temp:.1f}° is {target_temp - warmest_temp:.1f}° "
+                    f"Temperature {hottest_temp:.1f}° is {target_temp - hottest_temp:.1f}° "
                     f"below heat target {target_temp:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
+                )
+                _LOGGER.info(
+                    "Room %s is CRITICAL: %s",
+                    area.area_id,
+                    room_state.critical_reason,
                 )
 
         elif hvac_mode == HVACMode.COOL:
@@ -1219,19 +1238,18 @@ class ThermostatController:
                 set_average_temperature()
                 return room_state
 
-            # For cooling critical protection, use the coolest sensor (same as satiation logic)
-            coolest_sensor, coolest_temp = min(
+            coldest_sensor, coldest_temp = min(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp + self._unoccupied_cooling_threshold
 
-            room_state.determining_sensor = coolest_sensor
-            room_state.determining_temperature = coolest_temp
+            room_state.determining_sensor = coldest_sensor
+            room_state.determining_temperature = coldest_temp
 
-            if coolest_temp > critical_threshold:
+            if coldest_temp > critical_threshold:
                 room_state.is_critical = True
                 room_state.critical_reason = (
-                    f"Temperature {coolest_temp:.1f}° is {coolest_temp - target_temp:.1f}° "
+                    f"Temperature {coldest_temp:.1f}° is {coldest_temp - target_temp:.1f}° "
                     f"above cool target {target_temp:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
                 )
 
@@ -1539,6 +1557,11 @@ class ThermostatController:
         # We always evaluate for display. For decisions, only count rooms that are
         # either tracked OR force-critical eligible.
         critical_count = 0
+        _LOGGER.debug(
+            "Evaluating %d inactive areas for critical temperatures: %s",
+            len(inactive_areas),
+            [a.area_id for a in inactive_areas],
+        )
         for area in inactive_areas:
             # Skip if this area was already evaluated as active
             if area.area_id in thermostat_state.room_states:

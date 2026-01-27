@@ -558,7 +558,7 @@ class TestEcoModeSwitch:
         config_entry: MockConfigEntry,
         setup_entities: None,
     ):
-        """Test that turning eco mode ON triggers thermostat state re-evaluation."""
+        """Test that turning eco mode ON triggers thermostat + vent re-evaluation."""
         from unittest.mock import AsyncMock, MagicMock
         from custom_components.thermostat_contact_sensors.switch import EcoModeSwitch
 
@@ -567,7 +567,7 @@ class TestEcoModeSwitch:
         # Use a MagicMock coordinator to avoid lingering timers
         coordinator = MagicMock(spec=ThermostatContactSensorsCoordinator)
         coordinator.eco_mode = False
-        coordinator.async_update_thermostat_state = AsyncMock()
+        coordinator.async_update_thermostat_and_vents = AsyncMock()
 
         switch = EcoModeSwitch(coordinator, config_entry)
         switch.hass = hass
@@ -579,7 +579,7 @@ class TestEcoModeSwitch:
         await hass.async_block_till_done()
 
         # Verify the update was triggered
-        coordinator.async_update_thermostat_state.assert_called_once()
+        coordinator.async_update_thermostat_and_vents.assert_called_once()
         assert coordinator.eco_mode is True
 
     @pytest.mark.asyncio
@@ -589,7 +589,7 @@ class TestEcoModeSwitch:
         config_entry: MockConfigEntry,
         setup_entities: None,
     ):
-        """Test that turning eco mode OFF triggers thermostat state re-evaluation."""
+        """Test that turning eco mode OFF triggers thermostat + vent re-evaluation."""
         from unittest.mock import AsyncMock, MagicMock
         from custom_components.thermostat_contact_sensors.switch import EcoModeSwitch
 
@@ -598,7 +598,7 @@ class TestEcoModeSwitch:
         # Use a MagicMock coordinator to avoid lingering timers
         coordinator = MagicMock(spec=ThermostatContactSensorsCoordinator)
         coordinator.eco_mode = True  # Start with eco mode ON
-        coordinator.async_update_thermostat_state = AsyncMock()
+        coordinator.async_update_thermostat_and_vents = AsyncMock()
 
         switch = EcoModeSwitch(coordinator, config_entry)
         switch.hass = hass
@@ -610,7 +610,7 @@ class TestEcoModeSwitch:
         await hass.async_block_till_done()
 
         # Verify the update was triggered
-        coordinator.async_update_thermostat_state.assert_called_once()
+        coordinator.async_update_thermostat_and_vents.assert_called_once()
         assert coordinator.eco_mode is False
 
 
@@ -840,6 +840,36 @@ class TestForceTrackWhenCriticalSwitch:
         assert coordinator.areas_config["living_room"][CONF_AREA_FORCE_TRACK_WHEN_CRITICAL] is True
 
         await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_turn_on_triggers_thermostat_and_vent_reevaluation(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_entities: None,
+    ):
+        """Turning on FTCR triggers thermostat + vent reevaluation."""
+        from unittest.mock import AsyncMock, MagicMock
+        from custom_components.thermostat_contact_sensors.switch import (
+            ForceTrackWhenCriticalSwitch,
+        )
+
+        config_entry.add_to_hass(hass)
+
+        coordinator = MagicMock(spec=ThermostatContactSensorsCoordinator)
+        coordinator.areas_config = {"living_room": {}}
+        coordinator.async_update_thermostat_and_vents = AsyncMock()
+
+        switch = ForceTrackWhenCriticalSwitch(
+            coordinator, config_entry, "living_room", "Living Room"
+        )
+        switch.hass = hass
+        switch.async_write_ha_state = MagicMock()
+
+        await switch.async_turn_on()
+        await hass.async_block_till_done()
+
+        coordinator.async_update_thermostat_and_vents.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_switch_turn_on(

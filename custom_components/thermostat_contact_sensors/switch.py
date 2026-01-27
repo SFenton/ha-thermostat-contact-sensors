@@ -196,8 +196,8 @@ class EcoModeSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         coordinator.eco_mode = True
         _LOGGER.info("Eco mode enabled")
         self.async_write_ha_state()
-        # Trigger coordinator update to re-evaluate thermostat state
-        self.hass.async_create_task(coordinator.async_update_thermostat_state())
+        # Trigger coordinator update to re-evaluate thermostat + vents
+        self.hass.async_create_task(coordinator.async_update_thermostat_and_vents())
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn off eco mode - consider all rooms including critical unoccupied ones."""
@@ -205,8 +205,8 @@ class EcoModeSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         coordinator.eco_mode = False
         _LOGGER.info("Eco mode disabled")
         self.async_write_ha_state()
-        # Trigger coordinator update to re-evaluate thermostat state
-        self.hass.async_create_task(coordinator.async_update_thermostat_state())
+        # Trigger coordinator update to re-evaluate thermostat + vents
+        self.hass.async_create_task(coordinator.async_update_thermostat_and_vents())
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -289,8 +289,8 @@ class OnlyTrackSelectedRoomsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntit
             coordinator.tracked_rooms,
         )
         self.async_write_ha_state()
-        # Trigger coordinator update to re-evaluate thermostat state
-        self.hass.async_create_task(coordinator.async_update_thermostat_state())
+        # Trigger coordinator update to re-evaluate thermostat + vents
+        self.hass.async_create_task(coordinator.async_update_thermostat_and_vents())
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn off - consider all rooms for heating/cooling."""
@@ -298,8 +298,8 @@ class OnlyTrackSelectedRoomsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntit
         coordinator.only_track_selected_rooms = False
         _LOGGER.info("Only track selected rooms disabled - thermostat will consider all rooms")
         self.async_write_ha_state()
-        # Trigger coordinator update to re-evaluate thermostat state
-        self.hass.async_create_task(coordinator.async_update_thermostat_state())
+        # Trigger coordinator update to re-evaluate thermostat + vents
+        self.hass.async_create_task(coordinator.async_update_thermostat_and_vents())
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -388,7 +388,7 @@ class TrackedRoomSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         coordinator.set_room_tracked(self._area_id, True)
         _LOGGER.info("Room %s is now tracked for heating/cooling", self._area_name)
         self.async_write_ha_state()
-        self.hass.async_create_task(coordinator.async_update_thermostat_state())
+        self.hass.async_create_task(coordinator.async_update_thermostat_and_vents())
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn off - remove this room from tracked rooms."""
@@ -396,7 +396,7 @@ class TrackedRoomSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         coordinator.set_room_tracked(self._area_id, False)
         _LOGGER.info("Room %s is no longer tracked for heating/cooling", self._area_name)
         self.async_write_ha_state()
-        self.hass.async_create_task(coordinator.async_update_thermostat_state())
+        self.hass.async_create_task(coordinator.async_update_thermostat_and_vents())
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -493,7 +493,7 @@ class ForceTrackWhenCriticalSwitch(CoordinatorEntity, RestoreEntity, SwitchEntit
             self.async_write_ha_state()
 
         if trigger_update:
-            self.hass.async_create_task(coordinator.async_update_thermostat_state())
+            self.hass.async_create_task(coordinator.async_update_thermostat_and_vents())
 
     @property
     def extra_state_attributes(self) -> dict:

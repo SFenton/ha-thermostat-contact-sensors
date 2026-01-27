@@ -1209,7 +1209,7 @@ class TestCriticalTemperatureLogic:
         assert room_state.is_critical is False
         assert len(room_state.sensor_readings) == 0
 
-    def test_evaluate_room_critical_uses_coldest_sensor_for_heat(self, controller, mock_hass, inactive_area):
+    def test_evaluate_room_critical_uses_warmest_sensor_for_heat(self, controller, mock_hass, inactive_area):
         """Test critical detection uses warmest sensor in heat mode."""
         temp_sensors = [TEST_TEMP_SENSOR_1, "sensor.other_temp"]
 
@@ -1238,8 +1238,8 @@ class TestCriticalTemperatureLogic:
         assert room_state.is_critical is True
         assert room_state.determining_temperature == 18.0
 
-    def test_evaluate_room_critical_uses_warmest_sensor_for_cool(self, controller, mock_hass, inactive_area):
-        """Test critical detection uses coolest sensor in cool mode."""
+    def test_evaluate_room_critical_uses_coldest_sensor_for_cool(self, controller, mock_hass, inactive_area):
+        """Test critical detection uses coldest sensor in cool mode."""
         temp_sensors = [TEST_TEMP_SENSOR_1, "sensor.other_temp"]
 
         def get_state(entity_id):
@@ -1266,6 +1266,72 @@ class TestCriticalTemperatureLogic:
 
         assert room_state.is_critical is True
         assert room_state.determining_temperature == 28.0
+
+    def test_evaluate_room_critical_heat_triggers_if_all_sensors_too_cold(
+        self,
+        controller,
+        mock_hass,
+        inactive_area,
+    ):
+        """HEAT critical should trigger if even the warmest sensor is below the critical threshold."""
+        temp_sensors = [TEST_TEMP_SENSOR_1, "sensor.other_temp"]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "15.0"  # Coldest: critical (below 19.0)
+                return mock_state
+            elif entity_id == "sensor.other_temp":
+                mock_state = MagicMock()
+                mock_state.state = "20.0"  # Warmest: NOT critical by itself
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.HEAT,
+            target_temp=22.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is False
+
+    def test_evaluate_room_critical_cool_triggers_if_all_sensors_too_hot(
+        self,
+        controller,
+        mock_hass,
+        inactive_area,
+    ):
+        """COOL critical should trigger if even the coldest sensor is above the critical threshold."""
+        temp_sensors = [TEST_TEMP_SENSOR_1, "sensor.other_temp"]
+
+        def get_state(entity_id):
+            if entity_id == TEST_TEMP_SENSOR_1:
+                mock_state = MagicMock()
+                mock_state.state = "31.0"  # Warmest: critical (above 27.0)
+                return mock_state
+            elif entity_id == "sensor.other_temp":
+                mock_state = MagicMock()
+                mock_state.state = "26.0"  # Coolest: NOT critical by itself
+                return mock_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        room_state = controller.evaluate_room_critical(
+            inactive_area,
+            temp_sensors,
+            HVACMode.COOL,
+            target_temp=24.0,
+            target_temp_low=None,
+            target_temp_high=None,
+        )
+
+        assert room_state.is_critical is False
 
 
 class TestEvaluateThermostatActionWithCriticalRooms:

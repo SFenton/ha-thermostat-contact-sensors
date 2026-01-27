@@ -2097,6 +2097,149 @@ class TestForceTrackWhenCriticalOverride:
         await coordinator.async_shutdown()
 
     @pytest.mark.asyncio
+    async def test_temp_change_to_critical_opens_vent_with_eco_select_tsr_untracked_ftcr(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Non-critical -> critical temp event should open vents.
+
+        Scenario:
+        - Eco mode ON
+        - Eco critical tracking = Track Select Critical
+        - TSR ON
+        - Room is NOT tracked, but has Force Track When Critical enabled
+
+        Expectation:
+        - When the room temperature changes from non-critical to critical,
+          the temp sensor state-change event triggers vent reevaluation and
+          an open command is queued/executed for that room's vents.
+        """
+        from unittest.mock import AsyncMock
+
+        from homeassistant.components.cover import (
+            DOMAIN as COVER_DOMAIN,
+            SERVICE_CLOSE_COVER_TILT,
+            SERVICE_OPEN_COVER_TILT,
+        )
+        from homeassistant.const import ATTR_ENTITY_ID, STATE_CLOSED
+
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_BINARY_SENSORS,
+            CONF_MIN_VENTS_OPEN,
+            CONF_TEMPERATURE_SENSORS,
+            CONF_VENT_DEBOUNCE_SECONDS,
+            CONF_VENT_OPEN_DELAY_SECONDS,
+            CONF_VENTS,
+            ECO_CRITICAL_SELECT,
+        )
+
+        music_temp = "sensor.music_temp"
+        music_vent = "cover.music_vent"
+
+        areas_config = {
+            "music_room": {
+                CONF_AREA_ID: "music_room",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: [music_temp],
+                CONF_VENTS: [music_vent],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+            },
+            "living_room": {
+                CONF_AREA_ID: "living_room",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: ["sensor.living_temp"],
+                CONF_VENTS: ["cover.living_vent"],
+            },
+        }
+
+        # Initial vent states: closed
+        hass.states.async_set(music_vent, STATE_CLOSED, {"current_tilt_position": 0})
+        hass.states.async_set("cover.living_vent", STATE_CLOSED, {"current_tilt_position": 0})
+
+        # Initial temps: non-critical (target 22, threshold 3 => critical < 19)
+        temp_attrs = {"unit_of_measurement": "°C", "device_class": "temperature"}
+        hass.states.async_set(music_temp, "20.0", temp_attrs)
+        hass.states.async_set("sensor.living_temp", "20.0", temp_attrs)
+
+        open_mock = AsyncMock()
+        close_mock = AsyncMock()
+
+        async def _handle_open_tilt(call):
+            entity_id = call.data.get(ATTR_ENTITY_ID)
+            if isinstance(entity_id, list):
+                entity_ids = entity_id
+            else:
+                entity_ids = [entity_id]
+
+            for eid in entity_ids:
+                hass.states.async_set(eid, "open", {"current_tilt_position": 100})
+            await open_mock(call)
+
+        async def _handle_close_tilt(call):
+            entity_id = call.data.get(ATTR_ENTITY_ID)
+            if isinstance(entity_id, list):
+                entity_ids = entity_id
+            else:
+                entity_ids = [entity_id]
+
+            for eid in entity_ids:
+                hass.states.async_set(eid, STATE_CLOSED, {"current_tilt_position": 0})
+            await close_mock(call)
+
+        hass.services.async_register(COVER_DOMAIN, SERVICE_OPEN_COVER_TILT, _handle_open_tilt)
+        hass.services.async_register(COVER_DOMAIN, SERVICE_CLOSE_COVER_TILT, _handle_close_tilt)
+
+        options = get_test_config_options()
+        options[CONF_MIN_VENTS_OPEN] = 0
+        options[CONF_VENT_OPEN_DELAY_SECONDS] = 0
+        options[CONF_VENT_DEBOUNCE_SECONDS] = 0
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        coordinator.eco_mode = True
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_SELECT
+        coordinator.only_track_selected_rooms = True
+        coordinator._tracked_rooms = set()  # music_room is intentionally untracked
+
+        # Baseline: non-critical should not open the vent
+        await coordinator.async_update_thermostat_state()
+        await coordinator.async_update_vents()
+        assert coordinator.last_vent_control_state is not None
+        assert not any(
+            cmd[0] == music_vent and cmd[1] is True
+            for cmd in coordinator.last_vent_control_state.pending_commands
+        )
+        assert open_mock.await_count == 0
+
+        # Now the temp becomes critical: should trigger the temp sensor listener
+        hass.states.async_set(music_temp, "18.0", temp_attrs)
+        await hass.async_block_till_done()
+
+        assert coordinator.last_vent_control_state is not None
+        assert any(
+            cmd[0] == music_vent and cmd[1] is True
+            for cmd in coordinator.last_vent_control_state.pending_commands
+        )
+        assert open_mock.await_count >= 1
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
     async def test_tsr_tracked_active_room_gets_normal_evaluation(
         self,
         hass: HomeAssistant,

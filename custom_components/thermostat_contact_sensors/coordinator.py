@@ -592,6 +592,19 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         return state
 
+    async def async_update_thermostat_and_vents(self) -> None:
+        """Re-evaluate thermostat state and then vents.
+
+        This is used by UI entities (switch/select) where a config toggle should
+        take effect immediately for both thermostat and vent control.
+        """
+        if self.integration_paused:
+            return
+
+        await self.async_update_thermostat_state()
+        await self.async_update_vents()
+        self.async_set_updated_data(None)
+
     def update_options(self, options: dict[str, Any]) -> None:
         """Update options from config entry."""
         self._options = options

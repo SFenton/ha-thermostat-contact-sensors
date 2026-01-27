@@ -23,6 +23,7 @@ from custom_components.thermostat_contact_sensors.coordinator import (
 from custom_components.thermostat_contact_sensors.select import (
     EcoAwayBehavior,
     EcoAwayBehaviorSelect,
+    EcoModeCriticalTrackingSelect,
     ECO_AWAY_BEHAVIOR_LABELS,
 )
 
@@ -136,12 +137,12 @@ class TestEcoAwayBehaviorSelect:
     async def test_select_option_triggers_thermostat_reevaluation(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ):
-        """Test that selecting an option triggers thermostat state re-evaluation."""
+        """Test that selecting an option triggers thermostat + vent re-evaluation."""
         from unittest.mock import AsyncMock
 
         coordinator = MagicMock(spec=ThermostatContactSensorsCoordinator)
         coordinator.eco_away_behavior = EcoAwayBehavior.DISABLE_ECO
-        coordinator.async_update_thermostat_state = AsyncMock()
+        coordinator.async_update_thermostat_and_vents = AsyncMock()
 
         select = EcoAwayBehaviorSelect(coordinator, config_entry)
         select.hass = hass
@@ -152,8 +153,31 @@ class TestEcoAwayBehaviorSelect:
         await hass.async_block_till_done()
 
         # Verify the coordinator update was triggered
-        coordinator.async_update_thermostat_state.assert_called_once()
+        coordinator.async_update_thermostat_and_vents.assert_called_once()
         assert coordinator.eco_away_behavior == EcoAwayBehavior.USE_ECO_AWAY_TARGETS
+
+
+class TestEcoModeCriticalTrackingSelect:
+    """Test the EcoModeCriticalTrackingSelect entity."""
+
+    async def test_select_option_triggers_update(self, hass: HomeAssistant, config_entry: MockConfigEntry):
+        """Selecting an option triggers thermostat + vent re-evaluation."""
+        from unittest.mock import AsyncMock
+        from custom_components.thermostat_contact_sensors.select import ECO_CRITICAL_TRACKING_LABELS
+        from custom_components.thermostat_contact_sensors.const import ECO_CRITICAL_NONE
+
+        coordinator = MagicMock(spec=ThermostatContactSensorsCoordinator)
+        coordinator.eco_mode_critical_tracking = ECO_CRITICAL_NONE
+        coordinator.async_update_thermostat_and_vents = AsyncMock()
+
+        select = EcoModeCriticalTrackingSelect(coordinator, config_entry)
+        select.hass = hass
+        select.async_write_ha_state = MagicMock()
+
+        await select.async_select_option(ECO_CRITICAL_TRACKING_LABELS[ECO_CRITICAL_NONE])
+        await hass.async_block_till_done()
+
+        coordinator.async_update_thermostat_and_vents.assert_called_once()
 
 
 class TestEcoAwayBehaviorEnum:

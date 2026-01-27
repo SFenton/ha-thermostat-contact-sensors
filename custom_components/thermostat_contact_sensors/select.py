@@ -140,8 +140,8 @@ class EcoAwayBehaviorSelect(CoordinatorEntity, RestoreEntity, SelectEntity):
             self.coordinator.eco_away_behavior = behavior
             _LOGGER.info("Eco away behavior set to: %s", behavior)
             self.async_write_ha_state()
-            # Trigger coordinator update to re-evaluate thermostat state
-            self.hass.async_create_task(self.coordinator.async_update_thermostat_state())
+            # Trigger coordinator update to re-evaluate thermostat + vents
+            self.hass.async_create_task(self.coordinator.async_update_thermostat_and_vents())
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -223,8 +223,8 @@ class EcoModeCriticalTrackingSelect(CoordinatorEntity, RestoreEntity, SelectEnti
             self.coordinator.eco_mode_critical_tracking = value
             _LOGGER.info("Eco mode critical tracking set to: %s", value)
             self.async_write_ha_state()
-            # Trigger coordinator update to re-evaluate thermostat state
-            self.hass.async_create_task(self.coordinator.async_update_thermostat_state())
+            # Trigger coordinator update to re-evaluate thermostat + vents
+            self.hass.async_create_task(self.coordinator.async_update_thermostat_and_vents())
 
     @property
     def extra_state_attributes(self) -> dict:
