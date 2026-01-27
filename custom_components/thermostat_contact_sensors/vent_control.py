@@ -172,6 +172,10 @@ class VentController:
         # Track last command time per vent for debouncing
         self._last_command_times: dict[str, datetime] = {}
 
+        # Track pending commands that haven't been confirmed
+        # Maps entity_id -> (desired_state, command_time, retry_count)
+        self._pending_confirmations: dict[str, tuple[bool, datetime, int]] = {}
+
         # Track vent states
         self._vent_states: dict[str, VentState] = {}
 
@@ -619,24 +623,33 @@ class VentController:
             control_state.open_vents += area_state.open_vent_count
 
         # Now apply minimum vents open logic
-        # First count how many vents should be open based on rules
-        vents_should_open = 0
-        vents_to_close: list[VentState] = []
+        # First count how many vents should be open based on rules (active/critical rooms)
+        vents_needed_by_rules = 0
+        vents_marked_for_closure: list[VentState] = []
+        
+        # Track which vents are unresponsive (pending for >60s with 3+ retries)
+        unresponsive_vents: set[str] = set()
+        if now is None:
+            now = dt_util.utcnow()
+        
+        for entity_id, (desired_state, command_time, retry_count) in self._pending_confirmations.items():
+            elapsed = (now - command_time).total_seconds()
+            current_state = self.get_vent_current_state(entity_id)
+            if current_state != desired_state and elapsed >= 60 and retry_count >= 3:
+                unresponsive_vents.add(entity_id)
 
         for area_state in control_state.area_states.values():
             for vent in area_state.vents:
                 if vent.should_be_open:
-                    vents_should_open += vent.member_count
+                    # Don't count unresponsive vents toward the target
+                    if vent.entity_id not in unresponsive_vents:
+                        vents_needed_by_rules += vent.member_count
                 else:
-                    vents_to_close.append(vent)
+                    vents_marked_for_closure.append(vent)
 
-        control_state.vents_should_be_open = vents_should_open
-
-        # If we need to keep more vents open for back pressure prevention
-        if vents_should_open < self._min_vents_open:
-            needed = self._min_vents_open - vents_should_open
-
-            # Get priority list for vents that would otherwise close
+        # If we need to enforce minimum vents, intelligently select which vents to keep open
+        if vents_needed_by_rules < self._min_vents_open:
+            # Get priority list for ALL vents (to potentially reorder which are open)
             priority_list = self.calculate_minimum_vents_priority(
                 control_state.area_states,
                 hvac_mode=hvac_mode,
@@ -645,23 +658,50 @@ class VentController:
                 target_temp_high=target_temp_high,
             )
 
-            # Keep vents open in priority order until we hit minimum
-            for area_id, vent_entity_id, member_count, _ in priority_list:
+            # Select the best vents to reach minimum count
+            # Priority list is sorted by priority score (higher = better to keep open)
+            # Skip unresponsive vents and select alternates
+            vents_to_keep_for_minimum: set[str] = set()
+            needed = self._min_vents_open - vents_needed_by_rules
+
+            for area_id, vent_entity_id, member_count, priority_score in priority_list:
                 if needed <= 0:
                     break
-
-                # Find this vent and mark it to stay open
+                
+                # Skip unresponsive vents
+                if vent_entity_id in unresponsive_vents:
+                    _LOGGER.debug(
+                        "Skipping unresponsive vent %s for minimum enforcement, selecting next best",
+                        vent_entity_id
+                    )
+                    continue
+                
+                # Find this vent - it might already be marked should_be_open
                 area_state = control_state.area_states.get(area_id)
                 if area_state:
                     for vent in area_state.vents:
-                        if vent.entity_id == vent_entity_id and not vent.should_be_open:
-                            vent.should_be_open = True
-                            vent.open_reason = (
-                                f"Minimum vents (need {self._min_vents_open})"
-                            )
-                            needed -= member_count
-                            control_state.vents_should_be_open += member_count
+                        if vent.entity_id == vent_entity_id:
+                            # Only count vents not already needed by rules
+                            if not vent.should_be_open:
+                                vents_to_keep_for_minimum.add(vent_entity_id)
+                                needed -= member_count
                             break
+
+            # Now apply the minimum vent selections
+            for area_state in control_state.area_states.values():
+                for vent in area_state.vents:
+                    if vent.entity_id in vents_to_keep_for_minimum:
+                        vent.should_be_open = True
+                        vent.open_reason = f"Minimum vents (need {self._min_vents_open})"
+                    # Vents not selected for minimum that are currently open will be closed
+                    # (unless they were already marked should_be_open by rules)
+
+        # Calculate final count
+        control_state.vents_should_be_open = 0
+        for area_state in control_state.area_states.values():
+            for vent in area_state.vents:
+                if vent.should_be_open:
+                    control_state.vents_should_be_open += vent.member_count
 
         # Generate pending commands
         for area_state in control_state.area_states.values():
@@ -690,7 +730,7 @@ class VentController:
         control_state: VentControlState,
         now: datetime | None = None,
     ) -> int:
-        """Execute pending vent commands.
+        """Execute pending vent commands and track confirmation.
 
         Args:
             control_state: The VentControlState with pending commands.
@@ -704,7 +744,41 @@ class VentController:
 
         executed = 0
 
+        # First, check for unconfirmed commands from previous runs
+        # If a vent hasn't changed state after 60 seconds, mark it as unresponsive
+        unresponsive_vents: set[str] = set()
+        for entity_id, (desired_state, command_time, retry_count) in list(self._pending_confirmations.items()):
+            elapsed = (now - command_time).total_seconds()
+            current_state = self.get_vent_current_state(entity_id)
+            
+            if current_state == desired_state:
+                # Command succeeded, remove from pending
+                del self._pending_confirmations[entity_id]
+                _LOGGER.debug("Vent %s confirmed in desired state", entity_id)
+            elif elapsed >= 60:
+                # Vent hasn't responded after 60 seconds
+                if retry_count < 3:
+                    # Retry the command
+                    _LOGGER.warning(
+                        "Vent %s hasn't responded after %.0fs (retry %d/3)",
+                        entity_id, elapsed, retry_count + 1
+                    )
+                    # Will retry below
+                else:
+                    # Give up, mark as unresponsive
+                    unresponsive_vents.add(entity_id)
+                    del self._pending_confirmations[entity_id]
+                    _LOGGER.error(
+                        "Vent %s marked unresponsive after 3 retries",
+                        entity_id
+                    )
+
         for entity_id, should_open, reason in control_state.pending_commands:
+            # Skip unresponsive vents
+            if entity_id in unresponsive_vents:
+                _LOGGER.debug("Skipping command for unresponsive vent %s", entity_id)
+                continue
+
             service = SERVICE_OPEN_COVER_TILT if should_open else SERVICE_CLOSE_COVER_TILT
 
             _LOGGER.debug(
@@ -722,6 +796,13 @@ class VentController:
                     blocking=True,
                 )
                 self._last_command_times[entity_id] = now
+                
+                # Track this command for confirmation
+                retry_count = 0
+                if entity_id in self._pending_confirmations:
+                    _, _, retry_count = self._pending_confirmations[entity_id]
+                self._pending_confirmations[entity_id] = (should_open, now, retry_count + 1)
+                
                 executed += 1
             except Exception as ex:
                 _LOGGER.error(

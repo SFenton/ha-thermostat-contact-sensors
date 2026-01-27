@@ -1,0 +1,3043 @@
+{
+  "home_assistant": {
+    "installation_type": "Home Assistant OS",
+    "version": "2026.1.3",
+    "dev": false,
+    "hassio": true,
+    "virtualenv": false,
+    "python_version": "3.13.11",
+    "docker": true,
+    "arch": "x86_64",
+    "timezone": "America/Los_Angeles",
+    "os_name": "Linux",
+    "os_version": "6.12.63-haos",
+    "container_arch": "amd64",
+    "supervisor": "2026.01.1",
+    "host_os": "Home Assistant OS 17.0",
+    "docker_version": "29.1.3",
+    "chassis": "vm",
+    "run_as_root": true
+  },
+  "custom_components": {
+    "bhyve": {
+      "documentation": "https://github.com/sebr/bhyve-home-assistant/blob/main/README.md",
+      "version": "3.3.0",
+      "requirements": []
+    },
+    "home_connect_alt": {
+      "documentation": "https://github.com/ekutner/home-connect-hass",
+      "version": "1.3.4",
+      "requirements": [
+        "home-connect-async==0.8.3"
+      ]
+    },
+    "browser_mod": {
+      "documentation": "https://github.com/thomasloven/hass-browser_mod/blob/master/README.md",
+      "version": "2.7.0",
+      "requirements": []
+    },
+    "traeger": {
+      "documentation": "https://github.com/johnvoipguy/hacs-Traeger-WiFire",
+      "version": "1.0.1",
+      "requirements": [
+        "aiomqtt>=2.1.0,<3"
+      ]
+    },
+    "real_last_changed": {
+      "documentation": "https://github.com/HamletDuFromage/ha_real_last_changed",
+      "version": "0.4.1",
+      "requirements": []
+    },
+    "xiaomi_cloud_map_extractor": {
+      "documentation": "https://github.com/PiotrMachowski/Home-Assistant-custom-components-Xiaomi-Cloud-Map-Extractor",
+      "version": "v3.0.0-alpha-10",
+      "requirements": [
+        "Pillow",
+        "pybase64",
+        "python-miio",
+        "pycryptodome",
+        "vacuum-map-parser-base==0.1.5",
+        "vacuum-map-parser-roborock==0.1.4",
+        "vacuum-map-parser-viomi==0.1.3",
+        "vacuum-map-parser-roidmi==0.1.3",
+        "vacuum-map-parser-dreame==0.1.3"
+      ]
+    },
+    "eight_sleep": {
+      "documentation": "https://github.com/lukas-clarke/eight_sleep",
+      "version": "1.0.22",
+      "requirements": [
+        "httpx",
+        "aiohttp"
+      ]
+    },
+    "flair": {
+      "documentation": "https://github.com/RobertD502/home-assistant-flair/blob/main/README.md",
+      "version": "0.2.4",
+      "requirements": [
+        "flairaio==0.2.0"
+      ]
+    },
+    "webrtc": {
+      "documentation": "https://github.com/SFenton/WebRTC",
+      "version": "v3.9.5",
+      "requirements": []
+    },
+    "thermostat_contact_sensors": {
+      "documentation": "https://github.com/sfentress/ha-thermostat-contact-sensors",
+      "version": "2.0.0",
+      "requirements": []
+    },
+    "presence_based_lighting": {
+      "documentation": "https://github.com/sfenton/presence_based_lighting",
+      "version": "1.1.0",
+      "requirements": []
+    },
+    "better_thermostat": {
+      "documentation": "https://github.com/KartoffelToby/better_thermostat",
+      "version": "1.7.0",
+      "requirements": []
+    },
+    "roborock_custom_map": {
+      "documentation": "https://github.com/Lash-L/RoborockCustomMap",
+      "version": "0.1.4",
+      "requirements": []
+    },
+    "dwains_dashboard": {
+      "documentation": "https://dwainscheeren.github.io/dwains-lovelace-dashboard/",
+      "version": "3.8.0",
+      "requirements": []
+    },
+    "valetudo": {
+      "documentation": "https://github.com/Hypfer/hass-valetudo",
+      "version": "2026.01.1",
+      "requirements": []
+    },
+    "sony_projector_adcp": {
+      "documentation": "https://github.com/Bcukier/sony_projector_adcp",
+      "version": "1.0.0",
+      "requirements": []
+    },
+    "music_assistant_jukebox": {
+      "documentation": "https://github.com/DJS91/HAMusicAssistantJukebox",
+      "version": "0.1.0",
+      "requirements": [
+        "aiofiles>=24.1.0",
+        "qrcode>=7.3.1"
+      ]
+    },
+    "mass_queue": {
+      "documentation": "https://www.github.com/droans/mass_queue",
+      "version": "0.10.0",
+      "requirements": [
+        "music-assistant-client"
+      ]
+    },
+    "fordpass": {
+      "documentation": "https://github.com/marq24/ha-fordpass",
+      "version": "2026.1.6",
+      "requirements": []
+    },
+    "pirateweather": {
+      "documentation": "https://github.com/alexander0042/pirate-weather-ha",
+      "version": "1.8.2",
+      "requirements": []
+    },
+    "nodered": {
+      "documentation": "https://zachowj.github.io/node-red-contrib-home-assistant-websocket/guide/custom_integration/",
+      "version": "4.2.2",
+      "requirements": []
+    },
+    "adaptive_lighting": {
+      "documentation": "https://github.com/basnijholt/adaptive-lighting#readme",
+      "version": "1.26.0",
+      "requirements": [
+        "ulid-transform"
+      ]
+    },
+    "hacs": {
+      "documentation": "https://hacs.xyz/docs/use/",
+      "version": "2.0.5",
+      "requirements": [
+        "aiogithubapi>=22.10.1"
+      ]
+    },
+    "frigate": {
+      "documentation": "https://github.com/blakeblackshear/frigate",
+      "version": "5.14.1",
+      "requirements": [
+        "hass-web-proxy-lib==0.0.7",
+        "titlecase==2.4.1"
+      ]
+    },
+    "donetick": {
+      "documentation": "https://github.com/donetick/donetick-hass-integration",
+      "version": "2.0.1",
+      "requirements": []
+    }
+  },
+  "integration_manifest": {
+    "domain": "thermostat_contact_sensors",
+    "name": "Thermostat Contact Sensors",
+    "codeowners": [
+      "sfentress"
+    ],
+    "config_flow": true,
+    "dependencies": [],
+    "documentation": "https://github.com/sfentress/ha-thermostat-contact-sensors",
+    "iot_class": "local_push",
+    "issue_tracker": "https://github.com/sfentress/ha-thermostat-contact-sensors/issues",
+    "requirements": [],
+    "version": "2.0.0",
+    "is_built_in": false,
+    "overwrites_built_in": false
+  },
+  "setup_times": {
+    "null": {
+      "setup": 1.6700010746717453e-05
+    },
+    "01KCTHNAEGGQJST735JQEH6EDV": {
+      "wait_import_platforms": -1.468457473005401,
+      "config_entry_setup": 1.5150809490005486
+    }
+  },
+  "data": {
+    "config_entry": {
+      "entry_id": "01KCTHNAEGGQJST735JQEH6EDV",
+      "version": 3,
+      "title": "Thermostat Contact Sensors",
+      "data": {
+        "areas": {
+          "back_deck": {
+            "area_id": "back_deck",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [],
+            "temperature_sensors": []
+          },
+          "beam": {
+            "area_id": "beam",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [],
+            "temperature_sensors": []
+          },
+          "dining_room": {
+            "area_id": "dining_room",
+            "binary_sensors": [
+              "binary_sensor.dining_room_presence_sensor_presence"
+            ],
+            "contact_sensors": [
+              "binary_sensor.dining_room_door_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.dining_room_presence_sensor_temperature",
+              "sensor.dining_room_temperature"
+            ],
+            "vents": [
+              "cover.dining_room_vent_vent"
+            ]
+          },
+          "downstairs_hallway": {
+            "area_id": "downstairs_hallway",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [
+              "sensor.downstairs_hallway_presence_sensor_occupancy"
+            ],
+            "temperature_sensors": []
+          },
+          "entryway": {
+            "area_id": "entryway",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [
+              "sensor.entryway_presence_sensor_occupancy",
+              "sensor.front_door_presence_sensor_occupancy"
+            ],
+            "temperature_sensors": []
+          },
+          "garage": {
+            "area_id": "garage",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [],
+            "temperature_sensors": []
+          },
+          "guest_bathroom": {
+            "area_id": "guest_bathroom",
+            "binary_sensors": [
+              "binary_sensor.guest_bathroom_entry_presence_sensor_presence",
+              "binary_sensor.guest_bathroom_presence_sensor_presence"
+            ],
+            "contact_sensors": [],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.guest_bathroom_entry_presence_sensor_temperature",
+              "sensor.guest_bathroom_presence_sensor_temperature",
+              "sensor.guest_bathroom_temperature"
+            ],
+            "vents": [
+              "cover.guest_bathroom_vent_vent"
+            ]
+          },
+          "guest_room": {
+            "area_id": "guest_room",
+            "binary_sensors": [
+              "binary_sensor.guest_room_closet_facing_presence_sensor_presence",
+              "binary_sensor.guest_room_presence_sensor_presence"
+            ],
+            "contact_sensors": [
+              "binary_sensor.guest_room_window_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.guest_room_temperature",
+              "sensor.guest_room_closet_facing_presence_sensor_temperature",
+              "sensor.guest_room_presence_sensor_temperature"
+            ],
+            "vents": [
+              "cover.guest_room_vent_vent"
+            ]
+          },
+          "gym": {
+            "area_id": "gym",
+            "binary_sensors": [
+              "binary_sensor.gym_presence_sensor_presence"
+            ],
+            "contact_sensors": [
+              "binary_sensor.gym_window_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.gym_presence_sensor_temperature",
+              "sensor.gym_temperature"
+            ],
+            "vents": [
+              "cover.gym_vent_vent"
+            ]
+          },
+          "hallway": {
+            "area_id": "hallway",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [
+              "sensor.hallway_guest_room_presence_sensor_occupancy",
+              "sensor.hallway_office_bedroom_presence_sensor_occupancy"
+            ],
+            "temperature_sensors": [
+              "sensor.hallway_office_presence_sensor_temperature",
+              "sensor.hallway_guest_room_presence_sensor_temperature",
+              "sensor.entryway_presence_sensor_temperature"
+            ]
+          },
+          "kitchen": {
+            "area_id": "kitchen",
+            "binary_sensors": [
+              "binary_sensor.kitchen_wall_presence_sensor_presence"
+            ],
+            "contact_sensors": [
+              "binary_sensor.kitchen_door_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.kitchen_wall_presence_sensor_temperature",
+              "sensor.kitchen_temperature"
+            ],
+            "vents": [
+              "cover.kitchen_vent_vent"
+            ]
+          },
+          "living_room": {
+            "area_id": "living_room",
+            "binary_sensors": [
+              "binary_sensor.living_room_bar_presence_sensor_presence",
+              "binary_sensor.living_room_fireplace_presence_sensor_presence",
+              "binary_sensor.living_room_kitchen_wall_presence_sensor_presence",
+              "binary_sensor.living_room_back_wall_presence_sensor_presence"
+            ],
+            "contact_sensors": [
+              "binary_sensor.living_room_window_contact_sensor_contact",
+              "binary_sensor.front_door_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.living_room_back_wall_presence_sensor_temperature",
+              "sensor.living_room_bar_presence_sensor_temperature",
+              "sensor.living_room_fireplace_presence_sensor_temperature",
+              "sensor.living_room_kitchen_wall_presence_sensor_temperature",
+              "sensor.living_room_temperature"
+            ],
+            "vents": [
+              "cover.living_room_vents"
+            ]
+          },
+          "master_bathroom": {
+            "area_id": "master_bathroom",
+            "binary_sensors": [
+              "binary_sensor.master_bathroom_presence_sensor_presence"
+            ],
+            "contact_sensors": [],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.master_bathroom_temperature",
+              "sensor.master_bathroom_presence_sensor_temperature"
+            ],
+            "vents": [
+              "cover.master_bathroom_vent_vent"
+            ]
+          },
+          "master_bedroom": {
+            "area_id": "master_bedroom",
+            "binary_sensors": [
+              "binary_sensor.master_bedroom_bathroom_presence_sensor_presence",
+              "binary_sensor.master_bedroom_window_presence_sensor_presence",
+              "binary_sensor.steph_s_eight_sleep_side_bed_presence",
+              "binary_sensor.stephen_s_eight_sleep_side_bed_presence"
+            ],
+            "contact_sensors": [
+              "binary_sensor.master_bedroom_street_window_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.bedroom_temperature",
+              "sensor.master_bedroom_window_presence_sensor_temperature",
+              "sensor.master_bedroom_bathroom_presence_sensor_temperature"
+            ],
+            "vents": [
+              "cover.master_bedroom_vents"
+            ]
+          },
+          "music_room": {
+            "area_id": "music_room",
+            "binary_sensors": [],
+            "contact_sensors": [
+              "binary_sensor.music_room_door_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": true,
+            "sensors": [
+              "sensor.music_room_kitchenette_presence_sensor_occupancy",
+              "sensor.music_room_north_wall_presence_sensor_occupancy",
+              "sensor.music_room_door_presence_sensor_occupancy"
+            ],
+            "temperature_sensors": [
+              "sensor.music_room_kitchenette_presence_sensor_temperature",
+              "sensor.music_room_door_presence_sensor_temperature",
+              "sensor.music_room_temperature",
+              "sensor.music_room_north_wall_presence_sensor_temperature"
+            ],
+            "vents": [
+              "cover.music_room_vent_vent"
+            ]
+          },
+          "office": {
+            "area_id": "office",
+            "binary_sensors": [
+              "binary_sensor.office_presence_sensor_presence"
+            ],
+            "contact_sensors": [
+              "binary_sensor.office_pc_window_sensor_contact",
+              "binary_sensor.office_window_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": false,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.office_presence_sensor_temperature",
+              "sensor.office_temperature"
+            ],
+            "vents": [
+              "cover.office_vent_vent"
+            ]
+          },
+          "port": {
+            "area_id": "port",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [],
+            "temperature_sensors": []
+          },
+          "sonos": {
+            "area_id": "sonos",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [],
+            "temperature_sensors": []
+          },
+          "theater_room": {
+            "area_id": "theater_room",
+            "binary_sensors": [
+              "binary_sensor.theater_room_presence_sensor_presence"
+            ],
+            "contact_sensors": [
+              "binary_sensor.theater_room_door_contact_sensor_contact",
+              "binary_sensor.garage_door_contact_sensor_contact"
+            ],
+            "enabled": true,
+            "force_track_when_critical": true,
+            "sensors": [],
+            "temperature_sensors": [
+              "sensor.theater_room_presence_sensor_temperature",
+              "sensor.theater_room_temperature"
+            ],
+            "vents": [
+              "cover.theater_room_vents"
+            ]
+          },
+          "upper_deck": {
+            "area_id": "upper_deck",
+            "binary_sensors": [],
+            "contact_sensors": [],
+            "enabled": false,
+            "sensors": [],
+            "temperature_sensors": []
+          }
+        },
+        "contact_sensors": [
+          "binary_sensor.dining_room_door_contact_sensor_contact",
+          "binary_sensor.front_door_contact_sensor_contact",
+          "binary_sensor.garage_door_contact_sensor_contact",
+          "binary_sensor.guest_room_window_contact_sensor_contact",
+          "binary_sensor.gym_window_contact_sensor_contact",
+          "binary_sensor.kitchen_door_contact_sensor_contact",
+          "binary_sensor.theater_room_door_contact_sensor_contact",
+          "binary_sensor.music_room_door_contact_sensor_contact",
+          "binary_sensor.living_room_window_contact_sensor_contact",
+          "binary_sensor.master_bedroom_street_window_contact_sensor_contact",
+          "binary_sensor.office_pc_window_sensor_contact",
+          "binary_sensor.office_window_contact_sensor_contact"
+        ],
+        "name": "Thermostat Contact Sensors",
+        "thermostat": "climate.home"
+      },
+      "options": {
+        "away_cool_temp_diff": 3.0,
+        "away_heat_temp_diff": -3.0,
+        "away_presence_entity": "group.household_presence",
+        "close_timeout": 1.0,
+        "cooling_boost_offset": 3.0,
+        "grace_period_minutes": 5.0,
+        "heating_boost_offset": 3.0,
+        "min_cycle_off_minutes": 5.0,
+        "min_cycle_on_minutes": 5.0,
+        "min_occupancy_minutes": 5.0,
+        "min_vents_open": 5.0,
+        "notification_tag": "thermostat_contact_sensors_notification",
+        "notify_message_paused": "{{ trigger_sensor_name }} has been detected as open for a significant period of time. Ecobee will shut down until all doors and windows have been closed.",
+        "notify_message_resumed": "All doors and windows have been closed. Ecobee will resume normal operation.",
+        "notify_service": "**REDACTED**",
+        "notify_title_paused": "Ecobee \u00b7 Paused",
+        "notify_title_resumed": "Ecobee \u00b7 Resuming",
+        "open_timeout": 5.0,
+        "temperature_deadband": 0.5,
+        "unoccupied_cooling_threshold": 3.0,
+        "unoccupied_heating_threshold": 3.0,
+        "vent_debounce_seconds": 30.0,
+        "vent_open_delay_seconds": 30.0
+      }
+    },
+    "coordinator_state": {
+      "is_paused": false,
+      "previous_hvac_mode": null,
+      "open_sensors": [],
+      "open_count": 0,
+      "open_doors_count": 0,
+      "open_windows_count": 0,
+      "trigger_sensor": null,
+      "respect_user_off": false,
+      "open_timeout": 5.0,
+      "close_timeout": 1.0
+    },
+    "thermostat": {
+      "entity_id": "climate.home",
+      "state": "off",
+      "attributes": {
+        "hvac_modes": [
+          "off",
+          "heat",
+          "cool",
+          "heat_cool"
+        ],
+        "current_temperature": 67,
+        "temperature": null,
+        "target_temp_high": null,
+        "target_temp_low": null
+      }
+    },
+    "contact_sensors": [
+      {
+        "entity_id": "binary_sensor.dining_room_door_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Dining Room Door",
+          "device_class": "door"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.guest_room_window_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Guest Room Window",
+          "device_class": "window"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.gym_window_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Gym Window",
+          "device_class": "window"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.kitchen_door_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Kitchen Door",
+          "device_class": "door"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.living_room_window_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Living Room Window",
+          "device_class": "window"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.front_door_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Front Door",
+          "device_class": "door"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.master_bedroom_street_window_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Master Bedroom Street Window",
+          "device_class": "window"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.music_room_door_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Music Room Door",
+          "device_class": "door"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.office_pc_window_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Office PC Window",
+          "device_class": "window"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.office_window_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Office Window",
+          "device_class": "window"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.theater_room_door_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Theater Room Door",
+          "device_class": "door"
+        }
+      },
+      {
+        "entity_id": "binary_sensor.garage_door_contact_sensor_contact",
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Garage Door",
+          "device_class": "door"
+        }
+      }
+    ],
+    "occupancy_state": {
+      "dining_room": {
+        "area_name": "dining_room",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 1,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.dining_room_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "guest_bathroom": {
+        "area_name": "guest_bathroom",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 2,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.guest_bathroom_entry_presence_sensor_presence",
+          "binary_sensor.guest_bathroom_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "guest_room": {
+        "area_name": "guest_room",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 2,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.guest_room_closet_facing_presence_sensor_presence",
+          "binary_sensor.guest_room_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "gym": {
+        "area_name": "gym",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 1,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.gym_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "kitchen": {
+        "area_name": "kitchen",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 1,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.kitchen_wall_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "living_room": {
+        "area_name": "living_room",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 4,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.living_room_bar_presence_sensor_presence",
+          "binary_sensor.living_room_fireplace_presence_sensor_presence",
+          "binary_sensor.living_room_kitchen_wall_presence_sensor_presence",
+          "binary_sensor.living_room_back_wall_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "master_bathroom": {
+        "area_name": "master_bathroom",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 1,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.master_bathroom_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "master_bedroom": {
+        "area_name": "master_bedroom",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 4,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.master_bedroom_bathroom_presence_sensor_presence",
+          "binary_sensor.master_bedroom_window_presence_sensor_presence",
+          "binary_sensor.steph_s_eight_sleep_side_bed_presence",
+          "binary_sensor.stephen_s_eight_sleep_side_bed_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "music_room": {
+        "area_name": "music_room",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 3,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [],
+        "sensors": [
+          "sensor.music_room_kitchenette_presence_sensor_occupancy",
+          "sensor.music_room_north_wall_presence_sensor_occupancy",
+          "sensor.music_room_door_presence_sensor_occupancy"
+        ],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "office": {
+        "area_name": "office",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 1,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.office_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      },
+      "theater_room": {
+        "area_name": "theater_room",
+        "is_occupied": false,
+        "is_active": false,
+        "occupied_sensor_count": 0,
+        "total_sensor_count": 1,
+        "occupancy_minutes": 0.0,
+        "is_in_grace_period": false,
+        "binary_sensors": [
+          "binary_sensor.theater_room_presence_sensor_presence"
+        ],
+        "sensors": [],
+        "occupied_binary_sensors": [],
+        "occupied_sensors": []
+      }
+    },
+    "thermostat_control_state": {
+      "hvac_mode": "off",
+      "is_on": false,
+      "target_temperature": 75.0,
+      "target_temp_low": 69.0,
+      "target_temp_high": 81.0,
+      "active_room_count": 0,
+      "satiated_room_count": 0,
+      "all_active_rooms_satiated": false,
+      "critical_room_count": 0,
+      "recommended_action": "none",
+      "action_reason": "No active or critical rooms (idle)",
+      "room_states": {
+        "living_room": {
+          "area_name": "living_room",
+          "is_active": false,
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_critical": false,
+          "critical_reason": null,
+          "temperature_sensors": [
+            "sensor.living_room_back_wall_presence_sensor_temperature",
+            "sensor.living_room_bar_presence_sensor_temperature",
+            "sensor.living_room_fireplace_presence_sensor_temperature",
+            "sensor.living_room_kitchen_wall_presence_sensor_temperature",
+            "sensor.living_room_temperature"
+          ],
+          "sensor_readings": {
+            "sensor.living_room_back_wall_presence_sensor_temperature": 62.96,
+            "sensor.living_room_bar_presence_sensor_temperature": 66.38,
+            "sensor.living_room_fireplace_presence_sensor_temperature": 67.37,
+            "sensor.living_room_kitchen_wall_presence_sensor_temperature": 68.396,
+            "sensor.living_room_temperature": 66.92
+          },
+          "determining_sensor": "sensor.living_room_kitchen_wall_presence_sensor_temperature",
+          "determining_temperature": 68.396,
+          "target_temperature": null
+        },
+        "master_bedroom": {
+          "area_name": "master_bedroom",
+          "is_active": false,
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_critical": false,
+          "critical_reason": null,
+          "temperature_sensors": [
+            "sensor.bedroom_temperature",
+            "sensor.master_bedroom_window_presence_sensor_temperature",
+            "sensor.master_bedroom_bathroom_presence_sensor_temperature"
+          ],
+          "sensor_readings": {
+            "sensor.bedroom_temperature": 69.62,
+            "sensor.master_bedroom_window_presence_sensor_temperature": 67.928,
+            "sensor.master_bedroom_bathroom_presence_sensor_temperature": 68.522
+          },
+          "determining_sensor": "sensor.bedroom_temperature",
+          "determining_temperature": 69.62,
+          "target_temperature": null
+        },
+        "music_room": {
+          "area_name": "music_room",
+          "is_active": false,
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_critical": false,
+          "critical_reason": null,
+          "temperature_sensors": [
+            "sensor.music_room_kitchenette_presence_sensor_temperature",
+            "sensor.music_room_door_presence_sensor_temperature",
+            "sensor.music_room_temperature",
+            "sensor.music_room_north_wall_presence_sensor_temperature"
+          ],
+          "sensor_readings": {
+            "sensor.music_room_kitchenette_presence_sensor_temperature": 66.668,
+            "sensor.music_room_door_presence_sensor_temperature": 64.688,
+            "sensor.music_room_temperature": 63.68,
+            "sensor.music_room_north_wall_presence_sensor_temperature": 64.4
+          },
+          "determining_sensor": "sensor.music_room_kitchenette_presence_sensor_temperature",
+          "determining_temperature": 66.668,
+          "target_temperature": null
+        },
+        "office": {
+          "area_name": "office",
+          "is_active": false,
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_critical": false,
+          "critical_reason": null,
+          "temperature_sensors": [
+            "sensor.office_presence_sensor_temperature",
+            "sensor.office_temperature"
+          ],
+          "sensor_readings": {
+            "sensor.office_presence_sensor_temperature": 67.91,
+            "sensor.office_temperature": 68.18
+          },
+          "determining_sensor": "sensor.office_temperature",
+          "determining_temperature": 68.18,
+          "target_temperature": null
+        },
+        "theater_room": {
+          "area_name": "theater_room",
+          "is_active": false,
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_critical": false,
+          "critical_reason": null,
+          "temperature_sensors": [
+            "sensor.theater_room_presence_sensor_temperature",
+            "sensor.theater_room_temperature"
+          ],
+          "sensor_readings": {
+            "sensor.theater_room_presence_sensor_temperature": 66.326,
+            "sensor.theater_room_temperature": 63.32
+          },
+          "determining_sensor": "sensor.theater_room_presence_sensor_temperature",
+          "determining_temperature": 66.326,
+          "target_temperature": null
+        }
+      }
+    },
+    "vent_control_state": {
+      "total_vents": 14,
+      "open_vents": 3,
+      "vents_should_be_open": 5,
+      "pending_commands": [
+        {
+          "entity_id": "cover.dining_room_vent_vent",
+          "should_open": true,
+          "reason": "Minimum vents (need 5.0)"
+        },
+        {
+          "entity_id": "cover.guest_room_vent_vent",
+          "should_open": true,
+          "reason": "Minimum vents (need 5.0)"
+        }
+      ],
+      "area_states": {
+        "dining_room": {
+          "area_name": "dining_room",
+          "total_vent_count": 1,
+          "open_vent_count": 0,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": null,
+          "vents": [
+            {
+              "entity_id": "cover.dining_room_vent_vent",
+              "is_group": false,
+              "member_count": 1,
+              "is_open": false,
+              "should_be_open": true,
+              "open_reason": "Minimum vents (need 5.0)"
+            }
+          ]
+        },
+        "guest_bathroom": {
+          "area_name": "guest_bathroom",
+          "total_vent_count": 1,
+          "open_vent_count": 1,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": null,
+          "vents": [
+            {
+              "entity_id": "cover.guest_bathroom_vent_vent",
+              "is_group": false,
+              "member_count": 1,
+              "is_open": true,
+              "should_be_open": true,
+              "open_reason": "Minimum vents (need 5.0)"
+            }
+          ]
+        },
+        "guest_room": {
+          "area_name": "guest_room",
+          "total_vent_count": 1,
+          "open_vent_count": 0,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": null,
+          "vents": [
+            {
+              "entity_id": "cover.guest_room_vent_vent",
+              "is_group": false,
+              "member_count": 1,
+              "is_open": false,
+              "should_be_open": true,
+              "open_reason": "Minimum vents (need 5.0)"
+            }
+          ]
+        },
+        "gym": {
+          "area_name": "gym",
+          "total_vent_count": 1,
+          "open_vent_count": 1,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": null,
+          "vents": [
+            {
+              "entity_id": "cover.gym_vent_vent",
+              "is_group": false,
+              "member_count": 1,
+              "is_open": true,
+              "should_be_open": true,
+              "open_reason": "Minimum vents (need 5.0)"
+            }
+          ]
+        },
+        "kitchen": {
+          "area_name": "kitchen",
+          "total_vent_count": 1,
+          "open_vent_count": 1,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": null,
+          "vents": [
+            {
+              "entity_id": "cover.kitchen_vent_vent",
+              "is_group": false,
+              "member_count": 1,
+              "is_open": true,
+              "should_be_open": true,
+              "open_reason": "Minimum vents (need 5.0)"
+            }
+          ]
+        },
+        "living_room": {
+          "area_name": "living_room",
+          "total_vent_count": 2,
+          "open_vent_count": 0,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": 0.0,
+          "vents": [
+            {
+              "entity_id": "cover.living_room_vents",
+              "is_group": true,
+              "member_count": 2,
+              "is_open": false,
+              "should_be_open": false,
+              "open_reason": null
+            }
+          ]
+        },
+        "master_bathroom": {
+          "area_name": "master_bathroom",
+          "total_vent_count": 1,
+          "open_vent_count": 0,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": null,
+          "vents": [
+            {
+              "entity_id": "cover.master_bathroom_vent_vent",
+              "is_group": false,
+              "member_count": 1,
+              "is_open": false,
+              "should_be_open": false,
+              "open_reason": null
+            }
+          ]
+        },
+        "master_bedroom": {
+          "area_name": "master_bedroom",
+          "total_vent_count": 2,
+          "open_vent_count": 0,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": 0.0,
+          "vents": [
+            {
+              "entity_id": "cover.master_bedroom_vents",
+              "is_group": true,
+              "member_count": 2,
+              "is_open": false,
+              "should_be_open": false,
+              "open_reason": null
+            }
+          ]
+        },
+        "music_room": {
+          "area_name": "music_room",
+          "total_vent_count": 1,
+          "open_vent_count": 0,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": 0.0,
+          "vents": [
+            {
+              "entity_id": "cover.music_room_vent_vent",
+              "is_group": false,
+              "member_count": 1,
+              "is_open": false,
+              "should_be_open": false,
+              "open_reason": null
+            }
+          ]
+        },
+        "office": {
+          "area_name": "office",
+          "total_vent_count": 1,
+          "open_vent_count": 0,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": 0.0,
+          "vents": [
+            {
+              "entity_id": "cover.office_vent_vent",
+              "is_group": false,
+              "member_count": 1,
+              "is_open": false,
+              "should_be_open": false,
+              "open_reason": null
+            }
+          ]
+        },
+        "theater_room": {
+          "area_name": "theater_room",
+          "total_vent_count": 2,
+          "open_vent_count": 0,
+          "should_open": false,
+          "open_reason": "Inactive",
+          "distance_from_target": 0.0,
+          "vents": [
+            {
+              "entity_id": "cover.theater_room_vents",
+              "is_group": true,
+              "member_count": 2,
+              "is_open": false,
+              "should_be_open": false,
+              "open_reason": null
+            }
+          ]
+        }
+      }
+    },
+    "entities": [
+      {
+        "entity_id": "binary_sensor.thermostat_contact_sensors_thermostat_paused",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_paused",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "thermostat": "climate.home",
+          "previous_mode": null,
+          "open_count": 0,
+          "device_class": "running",
+          "icon": "mdi:thermostat",
+          "friendly_name": "Thermostat Contact Sensors Thermostat Paused"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_open_sensors",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_open_count",
+        "disabled": false,
+        "state": "0",
+        "attributes": {
+          "state_class": "measurement",
+          "open_sensors": [],
+          "open_sensor_names": [],
+          "open_doors": 0,
+          "open_windows": 0,
+          "monitored_sensors": [
+            "binary_sensor.dining_room_door_contact_sensor_contact",
+            "binary_sensor.guest_room_window_contact_sensor_contact",
+            "binary_sensor.gym_window_contact_sensor_contact",
+            "binary_sensor.kitchen_door_contact_sensor_contact",
+            "binary_sensor.living_room_window_contact_sensor_contact",
+            "binary_sensor.front_door_contact_sensor_contact",
+            "binary_sensor.master_bedroom_street_window_contact_sensor_contact",
+            "binary_sensor.music_room_door_contact_sensor_contact",
+            "binary_sensor.office_pc_window_sensor_contact",
+            "binary_sensor.office_window_contact_sensor_contact",
+            "binary_sensor.theater_room_door_contact_sensor_contact",
+            "binary_sensor.garage_door_contact_sensor_contact"
+          ],
+          "total_monitored": 12,
+          "unit_of_measurement": "sensors",
+          "icon": "mdi:door-open",
+          "friendly_name": "Thermostat Contact Sensors Open Sensors"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_thermostat_control",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_thermostat_control",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "thermostat_entity_id": "climate.home",
+          "paused_by_contact_sensors": false,
+          "thermostat_name": "Ecobee",
+          "hvac_mode": "off",
+          "is_on": false,
+          "target_temperature": 75.0,
+          "target_temp_high": 81.0,
+          "target_temp_low": 69.0,
+          "inferred_hvac_mode": "heat",
+          "active_room_count": 0,
+          "satiated_room_count": 0,
+          "all_active_rooms_satiated": false,
+          "recommended_action": "none",
+          "action_reason": "No active or critical rooms (idle)",
+          "can_turn_on": true,
+          "can_turn_on_reason": "No previous off time recorded",
+          "can_turn_off": true,
+          "can_turn_off_reason": "No previous on time recorded",
+          "room_summary": {
+            "living_room": {
+              "area_name": "living_room",
+              "is_satiated": false,
+              "satiation_reason": "not_satiated",
+              "has_valid_readings": true,
+              "sensor_readings": {
+                "sensor.living_room_back_wall_presence_sensor_temperature": 62.96,
+                "sensor.living_room_bar_presence_sensor_temperature": 66.38,
+                "sensor.living_room_fireplace_presence_sensor_temperature": 67.37,
+                "sensor.living_room_kitchen_wall_presence_sensor_temperature": 68.396,
+                "sensor.living_room_temperature": 66.92
+              },
+              "determining_sensor": "sensor.living_room_kitchen_wall_presence_sensor_temperature",
+              "determining_temperature": 68.396
+            },
+            "master_bedroom": {
+              "area_name": "master_bedroom",
+              "is_satiated": false,
+              "satiation_reason": "not_satiated",
+              "has_valid_readings": true,
+              "sensor_readings": {
+                "sensor.bedroom_temperature": 69.62,
+                "sensor.master_bedroom_window_presence_sensor_temperature": 67.928,
+                "sensor.master_bedroom_bathroom_presence_sensor_temperature": 68.522
+              },
+              "determining_sensor": "sensor.bedroom_temperature",
+              "determining_temperature": 69.62
+            },
+            "music_room": {
+              "area_name": "music_room",
+              "is_satiated": false,
+              "satiation_reason": "not_satiated",
+              "has_valid_readings": true,
+              "sensor_readings": {
+                "sensor.music_room_kitchenette_presence_sensor_temperature": 66.668,
+                "sensor.music_room_door_presence_sensor_temperature": 64.688,
+                "sensor.music_room_temperature": 63.68,
+                "sensor.music_room_north_wall_presence_sensor_temperature": 64.4
+              },
+              "determining_sensor": "sensor.music_room_kitchenette_presence_sensor_temperature",
+              "determining_temperature": 66.668
+            },
+            "office": {
+              "area_name": "office",
+              "is_satiated": false,
+              "satiation_reason": "not_satiated",
+              "has_valid_readings": true,
+              "sensor_readings": {
+                "sensor.office_presence_sensor_temperature": 67.91,
+                "sensor.office_temperature": 68.18
+              },
+              "determining_sensor": "sensor.office_temperature",
+              "determining_temperature": 68.18
+            },
+            "theater_room": {
+              "area_name": "theater_room",
+              "is_satiated": false,
+              "satiation_reason": "not_satiated",
+              "has_valid_readings": true,
+              "sensor_readings": {
+                "sensor.theater_room_presence_sensor_temperature": 66.326,
+                "sensor.theater_room_temperature": 63.32
+              },
+              "determining_sensor": "sensor.theater_room_presence_sensor_temperature",
+              "determining_temperature": 66.326
+            }
+          },
+          "icon": "mdi:thermostat-off",
+          "friendly_name": "Thermostat Contact Sensors Thermostat Control"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_dining_room_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_dining_room_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "dining_room",
+          "area_name": "Dining Room",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 1,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Dining Room Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_guest_bathroom_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_guest_bathroom_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "guest_bathroom",
+          "area_name": "Guest Bathroom",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 2,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Guest Bathroom Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_guest_room_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_guest_room_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "guest_room",
+          "area_name": "Guest Room",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 2,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Guest Room Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_gym_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_gym_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "gym",
+          "area_name": "Gym",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 1,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Gym Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_kitchen_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_kitchen_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "kitchen",
+          "area_name": "Kitchen",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 1,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Kitchen Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_living_room_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_living_room_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "living_room",
+          "area_name": "Living Room",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 4,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Living Room Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_master_bathroom_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_master_bathroom_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "master_bathroom",
+          "area_name": "Master Bathroom",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 1,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Master Bathroom Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_master_bedroom_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_master_bedroom_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "master_bedroom",
+          "area_name": "Master Bedroom",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 4,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Master Bedroom Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_music_room_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_music_room_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "music_room",
+          "area_name": "Music Room",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 3,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Music Room Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_office_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_office_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "office",
+          "area_name": "Office",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 1,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Office Occupancy"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_theater_room_occupancy",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_theater_room_occupancy",
+        "disabled": false,
+        "state": "inactive",
+        "attributes": {
+          "is_occupied": false,
+          "is_active": false,
+          "area_id": "theater_room",
+          "area_name": "Theater Room",
+          "occupied_sensor_count": 0,
+          "total_sensor_count": 1,
+          "min_occupancy_minutes": 5.0,
+          "grace_period_minutes": 5.0,
+          "occupied_sensors": [],
+          "occupancy_duration_minutes": 0,
+          "occupied_since": null,
+          "time_until_active_minutes": null,
+          "is_in_grace_period": false,
+          "time_until_inactive_minutes": null,
+          "unoccupied_since": null,
+          "icon": "mdi:home-outline",
+          "friendly_name": "Thermostat Contact Sensors Theater Room Occupancy"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_respect_user_off",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_respect_user_off",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "description": "When ON: Respects user's choice to keep thermostat off. When OFF: Always resumes thermostat when windows close.",
+          "icon": "mdi:account-cog",
+          "friendly_name": "Thermostat Contact Sensors Respect User Off"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_dining_room_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_dining_room_temperature",
+        "disabled": false,
+        "state": "66.0",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "dining_room",
+          "area_name": "Dining Room",
+          "temperature_sensors": [
+            "sensor.dining_room_presence_sensor_temperature",
+            "sensor.dining_room_temperature"
+          ],
+          "live_min_temperature": 63.68,
+          "live_max_temperature": 66.002,
+          "live_avg_temperature": 64.841,
+          "overall_temperature": 66.002,
+          "overall_temperature_sensor": "sensor.dining_room_presence_sensor_temperature",
+          "trend_mode": "heat",
+          "is_satiated": null,
+          "satiation_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.dining_room_presence_sensor_temperature": 66.002,
+            "sensor.dining_room_temperature": 63.68
+          },
+          "determining_sensor": "sensor.dining_room_presence_sensor_temperature",
+          "determining_temperature": 66.002,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Dining Room Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_guest_bathroom_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_guest_bathroom_temperature",
+        "disabled": false,
+        "state": "71.3",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "guest_bathroom",
+          "area_name": "Guest Bathroom",
+          "temperature_sensors": [
+            "sensor.guest_bathroom_entry_presence_sensor_temperature",
+            "sensor.guest_bathroom_presence_sensor_temperature",
+            "sensor.guest_bathroom_temperature"
+          ],
+          "live_min_temperature": 70.88,
+          "live_max_temperature": 71.33,
+          "live_avg_temperature": 71.14999999999999,
+          "overall_temperature": 71.33,
+          "overall_temperature_sensor": "sensor.guest_bathroom_presence_sensor_temperature",
+          "trend_mode": "heat",
+          "is_satiated": null,
+          "satiation_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.guest_bathroom_entry_presence_sensor_temperature": 71.24,
+            "sensor.guest_bathroom_presence_sensor_temperature": 71.33,
+            "sensor.guest_bathroom_temperature": 70.88
+          },
+          "determining_sensor": "sensor.guest_bathroom_presence_sensor_temperature",
+          "determining_temperature": 71.33,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Guest Bathroom Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_guest_room_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_guest_room_temperature",
+        "disabled": false,
+        "state": "68.9",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "guest_room",
+          "area_name": "Guest Room",
+          "temperature_sensors": [
+            "sensor.guest_room_temperature",
+            "sensor.guest_room_closet_facing_presence_sensor_temperature",
+            "sensor.guest_room_presence_sensor_temperature"
+          ],
+          "live_min_temperature": 68.0,
+          "live_max_temperature": 68.9,
+          "live_avg_temperature": 68.51,
+          "overall_temperature": 68.9,
+          "overall_temperature_sensor": "sensor.guest_room_temperature",
+          "trend_mode": "heat",
+          "is_satiated": null,
+          "satiation_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.guest_room_temperature": 68.9,
+            "sensor.guest_room_closet_facing_presence_sensor_temperature": 68.0,
+            "sensor.guest_room_presence_sensor_temperature": 68.63
+          },
+          "determining_sensor": "sensor.guest_room_temperature",
+          "determining_temperature": 68.9,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Guest Room Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_gym_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_gym_temperature",
+        "disabled": false,
+        "state": "69.3",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "gym",
+          "area_name": "Gym",
+          "temperature_sensors": [
+            "sensor.gym_presence_sensor_temperature",
+            "sensor.gym_temperature"
+          ],
+          "live_min_temperature": 69.08,
+          "live_max_temperature": 69.314,
+          "live_avg_temperature": 69.197,
+          "overall_temperature": 69.314,
+          "overall_temperature_sensor": "sensor.gym_presence_sensor_temperature",
+          "trend_mode": "heat",
+          "is_satiated": null,
+          "satiation_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.gym_presence_sensor_temperature": 69.314,
+            "sensor.gym_temperature": 69.08
+          },
+          "determining_sensor": "sensor.gym_presence_sensor_temperature",
+          "determining_temperature": 69.314,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Gym Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_kitchen_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_kitchen_temperature",
+        "disabled": false,
+        "state": "67.1",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "kitchen",
+          "area_name": "Kitchen",
+          "temperature_sensors": [
+            "sensor.kitchen_wall_presence_sensor_temperature",
+            "sensor.kitchen_temperature"
+          ],
+          "live_min_temperature": 63.68,
+          "live_max_temperature": 67.136,
+          "live_avg_temperature": 65.408,
+          "overall_temperature": 67.136,
+          "overall_temperature_sensor": "sensor.kitchen_wall_presence_sensor_temperature",
+          "trend_mode": "heat",
+          "is_satiated": null,
+          "satiation_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.kitchen_wall_presence_sensor_temperature": 67.136,
+            "sensor.kitchen_temperature": 63.68
+          },
+          "determining_sensor": "sensor.kitchen_wall_presence_sensor_temperature",
+          "determining_temperature": 67.136,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Kitchen Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_living_room_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_living_room_temperature",
+        "disabled": false,
+        "state": "68.4",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "living_room",
+          "area_name": "Living Room",
+          "temperature_sensors": [
+            "sensor.living_room_back_wall_presence_sensor_temperature",
+            "sensor.living_room_bar_presence_sensor_temperature",
+            "sensor.living_room_fireplace_presence_sensor_temperature",
+            "sensor.living_room_kitchen_wall_presence_sensor_temperature",
+            "sensor.living_room_temperature"
+          ],
+          "live_min_temperature": 62.96,
+          "live_max_temperature": 68.396,
+          "live_avg_temperature": 66.40520000000001,
+          "overall_temperature": 68.396,
+          "overall_temperature_sensor": "sensor.living_room_kitchen_wall_presence_sensor_temperature",
+          "trend_mode": "heat",
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_active": false,
+          "is_critical": false,
+          "critical_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.living_room_back_wall_presence_sensor_temperature": 62.96,
+            "sensor.living_room_bar_presence_sensor_temperature": 66.38,
+            "sensor.living_room_fireplace_presence_sensor_temperature": 67.37,
+            "sensor.living_room_kitchen_wall_presence_sensor_temperature": 68.396,
+            "sensor.living_room_temperature": 66.92
+          },
+          "determining_sensor": "sensor.living_room_kitchen_wall_presence_sensor_temperature",
+          "determining_temperature": 68.396,
+          "target_temperature": null,
+          "distance_from_target": null,
+          "sensor_names": {
+            "sensor.living_room_back_wall_presence_sensor_temperature": "Living Room Back Wall Presence Sensor Temperature",
+            "sensor.living_room_bar_presence_sensor_temperature": "Living Room Bar Presence Sensor Temperature",
+            "sensor.living_room_fireplace_presence_sensor_temperature": "Living Room Fireplace Presence Sensor Temperature",
+            "sensor.living_room_kitchen_wall_presence_sensor_temperature": "Living Room Kitchen Wall Presence Sensor Temperature",
+            "sensor.living_room_temperature": "Living Room Temperature"
+          },
+          "hvac_mode": "off",
+          "thermostat_target": 75.0,
+          "thermostat_target_low": 69.0,
+          "thermostat_target_high": 81.0,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Living Room Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_master_bathroom_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_master_bathroom_temperature",
+        "disabled": false,
+        "state": "68.0",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "master_bathroom",
+          "area_name": "Master Bathroom",
+          "temperature_sensors": [
+            "sensor.master_bathroom_temperature",
+            "sensor.master_bathroom_presence_sensor_temperature"
+          ],
+          "live_min_temperature": 66.92,
+          "live_max_temperature": 68.0,
+          "live_avg_temperature": 67.46000000000001,
+          "overall_temperature": 68.0,
+          "overall_temperature_sensor": "sensor.master_bathroom_presence_sensor_temperature",
+          "trend_mode": "heat",
+          "is_satiated": null,
+          "satiation_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.master_bathroom_temperature": 66.92,
+            "sensor.master_bathroom_presence_sensor_temperature": 68.0
+          },
+          "determining_sensor": "sensor.master_bathroom_presence_sensor_temperature",
+          "determining_temperature": 68.0,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Master Bathroom Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_master_bedroom_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_master_bedroom_temperature",
+        "disabled": false,
+        "state": "69.6",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "master_bedroom",
+          "area_name": "Master Bedroom",
+          "temperature_sensors": [
+            "sensor.bedroom_temperature",
+            "sensor.master_bedroom_window_presence_sensor_temperature",
+            "sensor.master_bedroom_bathroom_presence_sensor_temperature"
+          ],
+          "live_min_temperature": 67.928,
+          "live_max_temperature": 69.62,
+          "live_avg_temperature": 68.69,
+          "overall_temperature": 69.62,
+          "overall_temperature_sensor": "sensor.bedroom_temperature",
+          "trend_mode": "heat",
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_active": false,
+          "is_critical": false,
+          "critical_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.bedroom_temperature": 69.62,
+            "sensor.master_bedroom_window_presence_sensor_temperature": 67.928,
+            "sensor.master_bedroom_bathroom_presence_sensor_temperature": 68.522
+          },
+          "determining_sensor": "sensor.bedroom_temperature",
+          "determining_temperature": 69.62,
+          "target_temperature": null,
+          "distance_from_target": null,
+          "sensor_names": {
+            "sensor.bedroom_temperature": "Bedroom Temperature",
+            "sensor.master_bedroom_window_presence_sensor_temperature": "Master Bedroom Window Presence Sensor Temperature",
+            "sensor.master_bedroom_bathroom_presence_sensor_temperature": "Master Bedroom Bathroom Presence Sensor Temperature"
+          },
+          "hvac_mode": "off",
+          "thermostat_target": 75.0,
+          "thermostat_target_low": 69.0,
+          "thermostat_target_high": 81.0,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Master Bedroom Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_music_room_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_music_room_temperature",
+        "disabled": false,
+        "state": "66.7",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "music_room",
+          "area_name": "Music Room",
+          "temperature_sensors": [
+            "sensor.music_room_kitchenette_presence_sensor_temperature",
+            "sensor.music_room_door_presence_sensor_temperature",
+            "sensor.music_room_temperature",
+            "sensor.music_room_north_wall_presence_sensor_temperature"
+          ],
+          "live_min_temperature": 63.68,
+          "live_max_temperature": 66.668,
+          "live_avg_temperature": 64.85900000000001,
+          "overall_temperature": 66.668,
+          "overall_temperature_sensor": "sensor.music_room_kitchenette_presence_sensor_temperature",
+          "trend_mode": "heat",
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_active": false,
+          "is_critical": false,
+          "critical_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.music_room_kitchenette_presence_sensor_temperature": 66.668,
+            "sensor.music_room_door_presence_sensor_temperature": 64.688,
+            "sensor.music_room_temperature": 63.68,
+            "sensor.music_room_north_wall_presence_sensor_temperature": 64.4
+          },
+          "determining_sensor": "sensor.music_room_kitchenette_presence_sensor_temperature",
+          "determining_temperature": 66.668,
+          "target_temperature": null,
+          "distance_from_target": null,
+          "sensor_names": {
+            "sensor.music_room_kitchenette_presence_sensor_temperature": "Music Room Kitchenette Presence Sensor Temperature",
+            "sensor.music_room_door_presence_sensor_temperature": "Music Room Door Presence Sensor Temperature",
+            "sensor.music_room_temperature": "Music Room Temperature",
+            "sensor.music_room_north_wall_presence_sensor_temperature": "Music Room North Wall Presence Sensor Temperature"
+          },
+          "hvac_mode": "off",
+          "thermostat_target": 75.0,
+          "thermostat_target_low": 69.0,
+          "thermostat_target_high": 81.0,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Music Room Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_office_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_office_temperature",
+        "disabled": false,
+        "state": "68.2",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "office",
+          "area_name": "Office",
+          "temperature_sensors": [
+            "sensor.office_presence_sensor_temperature",
+            "sensor.office_temperature"
+          ],
+          "live_min_temperature": 67.91,
+          "live_max_temperature": 68.18,
+          "live_avg_temperature": 68.045,
+          "overall_temperature": 68.18,
+          "overall_temperature_sensor": "sensor.office_temperature",
+          "trend_mode": "heat",
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_active": false,
+          "is_critical": false,
+          "critical_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.office_presence_sensor_temperature": 67.91,
+            "sensor.office_temperature": 68.18
+          },
+          "determining_sensor": "sensor.office_temperature",
+          "determining_temperature": 68.18,
+          "target_temperature": null,
+          "distance_from_target": null,
+          "sensor_names": {
+            "sensor.office_presence_sensor_temperature": "Office Presence Sensor Temperature",
+            "sensor.office_temperature": "Office Temperature"
+          },
+          "hvac_mode": "off",
+          "thermostat_target": 75.0,
+          "thermostat_target_low": 69.0,
+          "thermostat_target_high": 81.0,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Office Temperature"
+        }
+      },
+      {
+        "entity_id": "sensor.thermostat_contact_sensors_theater_room_temperature",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_theater_room_temperature",
+        "disabled": false,
+        "state": "66.3",
+        "attributes": {
+          "state_class": "measurement",
+          "area_id": "theater_room",
+          "area_name": "Theater Room",
+          "temperature_sensors": [
+            "sensor.theater_room_presence_sensor_temperature",
+            "sensor.theater_room_temperature"
+          ],
+          "live_min_temperature": 63.32,
+          "live_max_temperature": 66.326,
+          "live_avg_temperature": 64.823,
+          "overall_temperature": 66.326,
+          "overall_temperature_sensor": "sensor.theater_room_presence_sensor_temperature",
+          "trend_mode": "heat",
+          "is_satiated": false,
+          "satiation_reason": "not_satiated",
+          "is_active": false,
+          "is_critical": false,
+          "critical_reason": null,
+          "has_valid_readings": true,
+          "sensor_readings": {
+            "sensor.theater_room_presence_sensor_temperature": 66.326,
+            "sensor.theater_room_temperature": 63.32
+          },
+          "determining_sensor": "sensor.theater_room_presence_sensor_temperature",
+          "determining_temperature": 66.326,
+          "target_temperature": null,
+          "distance_from_target": null,
+          "sensor_names": {
+            "sensor.theater_room_presence_sensor_temperature": "Theater Room Presence Sensor Temperature",
+            "sensor.theater_room_temperature": "Theater Room Temperature"
+          },
+          "hvac_mode": "off",
+          "thermostat_target": 75.0,
+          "thermostat_target_low": 69.0,
+          "thermostat_target_high": 81.0,
+          "unit_of_measurement": "\u00b0F",
+          "device_class": "temperature",
+          "icon": "mdi:thermometer",
+          "friendly_name": "Thermostat Contact Sensors Theater Room Temperature"
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_dining_room_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_dining_room_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": null,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "dining_room",
+          "area_name": "Dining Room",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.dining_room_presence_sensor_temperature",
+            "sensor.dining_room_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Dining Room Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_guest_bathroom_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_guest_bathroom_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": null,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "guest_bathroom",
+          "area_name": "Guest Bathroom",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.guest_bathroom_entry_presence_sensor_temperature",
+            "sensor.guest_bathroom_presence_sensor_temperature",
+            "sensor.guest_bathroom_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Guest Bathroom Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_guest_room_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_guest_room_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": null,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "guest_room",
+          "area_name": "Guest Room",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.guest_room_temperature",
+            "sensor.guest_room_closet_facing_presence_sensor_temperature",
+            "sensor.guest_room_presence_sensor_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Guest Room Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_gym_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_gym_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": null,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "gym",
+          "area_name": "Gym",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.gym_presence_sensor_temperature",
+            "sensor.gym_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Gym Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_kitchen_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_kitchen_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": null,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "kitchen",
+          "area_name": "Kitchen",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.kitchen_wall_presence_sensor_temperature",
+            "sensor.kitchen_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Kitchen Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_living_room_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_living_room_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": 68,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "living_room",
+          "area_name": "Living Room",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.living_room_back_wall_presence_sensor_temperature",
+            "sensor.living_room_bar_presence_sensor_temperature",
+            "sensor.living_room_fireplace_presence_sensor_temperature",
+            "sensor.living_room_kitchen_wall_presence_sensor_temperature",
+            "sensor.living_room_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Living Room Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_master_bathroom_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_master_bathroom_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": null,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "master_bathroom",
+          "area_name": "Master Bathroom",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.master_bathroom_temperature",
+            "sensor.master_bathroom_presence_sensor_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Master Bathroom Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_master_bedroom_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_master_bedroom_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": 70,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "master_bedroom",
+          "area_name": "Master Bedroom",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.bedroom_temperature",
+            "sensor.master_bedroom_window_presence_sensor_temperature",
+            "sensor.master_bedroom_bathroom_presence_sensor_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Master Bedroom Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_music_room_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_music_room_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": 67,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "music_room",
+          "area_name": "Music Room",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.music_room_kitchenette_presence_sensor_temperature",
+            "sensor.music_room_door_presence_sensor_temperature",
+            "sensor.music_room_temperature",
+            "sensor.music_room_north_wall_presence_sensor_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 68.5,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Music Room Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_office_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_office_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": 68,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "office",
+          "area_name": "Office",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.office_presence_sensor_temperature",
+            "sensor.office_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Office Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_theater_room_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_theater_room_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": 66,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "area_id": "theater_room",
+          "area_name": "Theater Room",
+          "is_occupied": false,
+          "is_active": false,
+          "temperature_sensors": [
+            "sensor.theater_room_presence_sensor_temperature",
+            "sensor.theater_room_temperature"
+          ],
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "friendly_name": "Thermostat Contact Sensors Theater Room Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_global_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_global_thermostat",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "hvac_modes": [
+            "off",
+            "heat",
+            "cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": 68,
+          "target_temp_high": 78,
+          "target_temp_low": 72,
+          "hvac_action": "idle",
+          "monitored_areas": [
+            "dining_room",
+            "guest_bathroom",
+            "guest_room",
+            "gym",
+            "kitchen",
+            "living_room",
+            "master_bathroom",
+            "master_bedroom",
+            "music_room",
+            "office",
+            "theater_room"
+          ],
+          "area_count": 11,
+          "area_targets": {
+            "dining_room": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "guest_bathroom": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "guest_room": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "gym": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "kitchen": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "living_room": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "master_bathroom": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "master_bedroom": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "music_room": {
+              "heat": 71.5,
+              "cool": 78.0
+            },
+            "office": {
+              "heat": 72.0,
+              "cool": 78.0
+            },
+            "theater_room": {
+              "heat": 72.0,
+              "cool": 78.0
+            }
+          },
+          "away_mode_active": true,
+          "effective_heat_target": 69.0,
+          "effective_cool_target": 81.0,
+          "away_heat_adjustment": -3.0,
+          "away_cool_adjustment": 3.0,
+          "presence_entity": "group.household_presence",
+          "friendly_name": "Thermostat Contact Sensors Global Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "binary_sensor.thermostat_contact_sensors_away_mode_active",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_away_mode_active",
+        "disabled": false,
+        "state": "on",
+        "attributes": {
+          "device_class": "occupancy",
+          "icon": "mdi:home-export-outline",
+          "friendly_name": "Thermostat Contact Sensors Away Mode Active"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_eco_mode",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_eco_mode",
+        "disabled": false,
+        "state": "on",
+        "attributes": {
+          "description": "When ON: Thermostat only activates for active (occupied) rooms. When OFF: Thermostat also activates for unoccupied rooms with critical temperatures. Use 'Eco Mode Critical Tracking' select to control critical-room behavior while eco is ON.",
+          "eco_mode_critical_tracking": "track_select_critical",
+          "icon": "mdi:leaf",
+          "friendly_name": "Thermostat Contact Sensors Eco Mode"
+        }
+      },
+      {
+        "entity_id": "climate.thermostat_contact_sensors_eco_away_virtual_thermostat",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_eco_away_thermostat",
+        "disabled": false,
+        "state": "heat_cool",
+        "attributes": {
+          "hvac_modes": [
+            "heat_cool"
+          ],
+          "min_temp": 45,
+          "max_temp": 95,
+          "target_temp_step": 0.5,
+          "current_temperature": 68,
+          "target_temp_high": 85,
+          "target_temp_low": 62,
+          "is_currently_active": false,
+          "eco_mode": true,
+          "is_away": true,
+          "eco_away_behavior": "keep_eco_active",
+          "description": "Used when eco mode is active AND everyone is away AND 'Use Eco Away Targets' behavior is selected. Set conservative targets here for maximum energy savings while away.",
+          "effective_heat_target": 59.0,
+          "effective_cool_target": 88.0,
+          "icon": "mdi:leaf-circle-outline",
+          "friendly_name": "Thermostat Contact Sensors Eco Away Virtual Thermostat",
+          "supported_features": 2
+        }
+      },
+      {
+        "entity_id": "select.thermostat_contact_sensors_eco_behavior_when_away",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_eco_away_behavior",
+        "disabled": false,
+        "state": "Keep Eco Active",
+        "attributes": {
+          "options": [
+            "Disable Eco When Away",
+            "Use Eco Away Targets",
+            "Keep Eco Active"
+          ],
+          "description": "Configures how eco mode behaves when everyone is away. 'Disable Eco When Away' reverts to normal behavior with critical room protection. 'Use Eco Away Targets' uses the Eco Away thermostat targets. 'Keep Eco Active' will not heat/cool while away (energy savings, but no protection).",
+          "icon": "mdi:leaf-circle",
+          "friendly_name": "Thermostat Contact Sensors Eco Behavior When Away"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_only_track_selected_rooms",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_only_track_selected_rooms",
+        "disabled": false,
+        "state": "on",
+        "attributes": {
+          "tracked_rooms": [
+            "office",
+            "living_room",
+            "master_bedroom"
+          ],
+          "tracked_room_count": 3,
+          "total_room_count": 11,
+          "description": "When ON: Only rooms with 'Track [Room]' enabled will be heated/cooled. When OFF: All rooms are considered for heating/cooling decisions.",
+          "icon": "mdi:home-thermometer-outline",
+          "friendly_name": "Thermostat Contact Sensors Only Track Selected Rooms"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_dining_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_dining_room",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "dining_room",
+          "area_name": "Dining Room",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Dining Room is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Dining Room"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_guest_bathroom",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_guest_bathroom",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "guest_bathroom",
+          "area_name": "Guest Bathroom",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Guest Bathroom is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Guest Bathroom"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_guest_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_guest_room",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "guest_room",
+          "area_name": "Guest Room",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Guest Room is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Guest Room"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_gym",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_gym",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "gym",
+          "area_name": "Gym",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Gym is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Gym"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_kitchen",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_kitchen",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "kitchen",
+          "area_name": "Kitchen",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Kitchen is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Kitchen"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_living_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_living_room",
+        "disabled": false,
+        "state": "on",
+        "attributes": {
+          "area_id": "living_room",
+          "area_name": "Living Room",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Living Room is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Living Room"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_master_bathroom",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_master_bathroom",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "master_bathroom",
+          "area_name": "Master Bathroom",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Master Bathroom is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Master Bathroom"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_master_bedroom",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_master_bedroom",
+        "disabled": false,
+        "state": "on",
+        "attributes": {
+          "area_id": "master_bedroom",
+          "area_name": "Master Bedroom",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Master Bedroom is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Master Bedroom"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_music_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_music_room",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "music_room",
+          "area_name": "Music Room",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Music Room is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Music Room"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_office",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_office",
+        "disabled": false,
+        "state": "on",
+        "attributes": {
+          "area_id": "office",
+          "area_name": "Office",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Office is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Office"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_track_theater_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_track_room_theater_room",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "theater_room",
+          "area_name": "Theater Room",
+          "only_track_selected_rooms_enabled": true,
+          "effective": true,
+          "description": "When ON: Theater Room is included in heating/cooling decisions. This only takes effect when 'Only Track Selected Rooms' is enabled.",
+          "icon": "mdi:thermometer-check",
+          "friendly_name": "Thermostat Contact Sensors Track Theater Room"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_dining_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_dining_room",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_guest_bathroom",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_guest_bathroom",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_guest_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_guest_room",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_gym",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_gym",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_kitchen",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_kitchen",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_living_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_living_room",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_master_bathroom",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_master_bathroom",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_master_bedroom",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_master_bedroom",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_music_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_music_room",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_office",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_office",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_force_track_critical_state_theater_room",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_force_critical_theater_room",
+        "disabled": true,
+        "state": null,
+        "attributes": null
+      },
+      {
+        "entity_id": "select.thermostat_contact_sensors_eco_mode_critical_tracking",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_eco_mode_critical_tracking",
+        "disabled": false,
+        "state": "Track Select Critical",
+        "attributes": {
+          "options": [
+            "Do Not Track Critical",
+            "Track Select Critical",
+            "Track All Critical"
+          ],
+          "description": "Controls which critical temperature rooms are tracked when Eco Mode is active. 'Do Not Track Critical' ignores all inactive rooms. 'Track Select Critical' only tracks rooms with 'Force Track When Critical' enabled. 'Track All Critical' tracks all inactive critical rooms (eco savings only for non-critical).",
+          "icon": "mdi:leaf-circle",
+          "friendly_name": "Thermostat Contact Sensors Eco Mode Critical Tracking"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_dining_room_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_dining_room_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "dining_room",
+          "area_name": "Dining Room",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Dining Room Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_guest_bathroom_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_guest_bathroom_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "guest_bathroom",
+          "area_name": "Guest Bathroom",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Guest Bathroom Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_guest_room_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_guest_room_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "guest_room",
+          "area_name": "Guest Room",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Guest Room Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_gym_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_gym_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "gym",
+          "area_name": "Gym",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Gym Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_kitchen_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_kitchen_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "kitchen",
+          "area_name": "Kitchen",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Kitchen Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_living_room_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_living_room_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "living_room",
+          "area_name": "Living Room",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Living Room Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_master_bathroom_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_master_bathroom_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "master_bathroom",
+          "area_name": "Master Bathroom",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Master Bathroom Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_master_bedroom_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_master_bedroom_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "master_bedroom",
+          "area_name": "Master Bedroom",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Master Bedroom Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_music_room_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_music_room_force_track_when_critical",
+        "disabled": false,
+        "state": "on",
+        "attributes": {
+          "area_id": "music_room",
+          "area_name": "Music Room",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Music Room Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_office_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_office_force_track_when_critical",
+        "disabled": false,
+        "state": "off",
+        "attributes": {
+          "area_id": "office",
+          "area_name": "Office",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Office Force Track When Critical"
+        }
+      },
+      {
+        "entity_id": "switch.thermostat_contact_sensors_theater_room_force_track_when_critical",
+        "unique_id": "01KCTHNAEGGQJST735JQEH6EDV_theater_room_force_track_when_critical",
+        "disabled": false,
+        "state": "on",
+        "attributes": {
+          "area_id": "theater_room",
+          "area_name": "Theater Room",
+          "description": "When ON: This room is always included for critical-temperature tracking when applicable. Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'.",
+          "icon": "mdi:alert-decagram",
+          "friendly_name": "Thermostat Contact Sensors Theater Room Force Track When Critical"
+        }
+      }
+    ]
+  },
+  "issues": []
+}

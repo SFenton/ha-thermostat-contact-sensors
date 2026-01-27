@@ -513,6 +513,7 @@ class ThermostatController:
         self.hass = hass
         self.thermostat_entity_id = thermostat_entity_id
         self.occupancy_tracker = occupancy_tracker
+        self._entry_id = entry_id
         self._area_thermostats_getter = area_thermostats_getter
         self._global_thermostat_getter = global_thermostat_getter
 
@@ -934,6 +935,39 @@ class ThermostatController:
                     hvac_mode,
                 )
                 return target_temp, target_temp_low, target_temp_high
+
+        # Fallback: Try to get targets from the entity state (in case registration hasn't completed)
+        entry_id = getattr(self, "_entry_id", None)
+        if entry_id:
+            vtherm_entity_id = f"climate.thermostat_contact_sensors_{area_id}_virtual_thermostat"
+            state = self.hass.states.get(vtherm_entity_id)
+            if state and state.attributes:
+                target_temp_low = state.attributes.get("effective_heat_target")
+                target_temp_high = state.attributes.get("effective_cool_target")
+                
+                if target_temp_low is not None and target_temp_high is not None:
+                    # Determine which target to use
+                    if hvac_mode_override is not None:
+                        hvac_mode = hvac_mode_override
+                    else:
+                        hvac_mode, _ = self.get_thermostat_state()
+                    
+                    if hvac_mode == HVACMode.HEAT:
+                        target_temp = target_temp_low
+                    elif hvac_mode == HVACMode.COOL:
+                        target_temp = target_temp_high
+                    else:
+                        target_temp = (target_temp_low + target_temp_high) / 2
+                    
+                    _LOGGER.debug(
+                        "Using area %s virtual thermostat targets from state: low=%s, high=%s, temp=%s (mode=%s)",
+                        area_id,
+                        target_temp_low,
+                        target_temp_high,
+                        target_temp,
+                        hvac_mode,
+                    )
+                    return target_temp, target_temp_low, target_temp_high
 
         # Fall back to physical thermostat targets
         _LOGGER.debug(

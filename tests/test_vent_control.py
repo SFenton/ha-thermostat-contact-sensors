@@ -1184,3 +1184,470 @@ class TestDistanceFromTarget:
         assert comfortable_vent.should_be_open is False, (
             "Comfortable room vent should close when HVAC is OFF"
         )
+
+
+# =============================================================================
+# Tests for Intelligent Minimum Vent Selection
+# =============================================================================
+
+
+class TestIntelligentMinimumVentSelection:
+    """Tests for intelligent selection of which vents stay open for minimum."""
+
+    @pytest.fixture
+    def controller(self):
+        """Create a vent controller with minimum 3 vents."""
+        hass = create_mock_hass()
+        return VentController(hass, min_vents_open=3)
+
+    @pytest.fixture
+    def room_temp_states(self):
+        """Create room temperature states for priority testing."""
+        return {
+            "cold_room": RoomTemperatureState(
+                area_id="cold_room",
+                area_name="Cold Room",
+                temperature_sensors=["sensor.cold_temp"],
+                determining_temperature=65.0,
+            ),
+            "warm_room": RoomTemperatureState(
+                area_id="warm_room",
+                area_name="Warm Room",
+                temperature_sensors=["sensor.warm_temp"],
+                determining_temperature=72.0,
+            ),
+            "medium_room": RoomTemperatureState(
+                area_id="medium_room",
+                area_name="Medium Room",
+                temperature_sensors=["sensor.medium_temp"],
+                determining_temperature=68.0,
+            ),
+        }
+
+    def test_closes_satiated_vent_in_favor_of_cold_vent(self, controller, room_temp_states):
+        """Test that warm satiated vents are closed in favor of cold vents."""
+        now = datetime.now()
+        
+        # Warm room vent is currently open but satiated
+        warm_state = MagicMock()
+        warm_state.state = STATE_OPEN
+        warm_state.attributes = {"current_tilt_position": 100}
+        
+        # Cold room vent is currently closed
+        cold_state = MagicMock()
+        cold_state.state = STATE_CLOSED
+        cold_state.attributes = {"current_tilt_position": 0}
+        
+        # Medium room vent is currently closed
+        medium_state = MagicMock()
+        medium_state.state = STATE_CLOSED
+        medium_state.attributes = {"current_tilt_position": 0}
+        
+        def get_state_side_effect(entity_id):
+            if entity_id == "cover.warm_vent":
+                return warm_state
+            elif entity_id == "cover.cold_vent":
+                return cold_state
+            elif entity_id == "cover.medium_vent":
+                return medium_state
+            return None
+        
+        controller.hass.states.get.side_effect = get_state_side_effect
+        
+        area_vents = {
+            "cold_room": ["cover.cold_vent"],
+            "warm_room": ["cover.warm_vent"],
+            "medium_room": ["cover.medium_vent"],
+        }
+        
+        # No active/occupied areas - relying on minimum enforcement
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            target_temp_high=78.0,
+            now=now,
+        )
+        
+        # With HEAT mode, coldest rooms should be prioritized
+        # Cold room (65°F) should be open
+        # Medium room (68°F) should be open  
+        # Warm room (72°F) should be open (to meet minimum of 3)
+        assert control_state.area_states["cold_room"].vents[0].should_be_open is True
+        assert control_state.area_states["medium_room"].vents[0].should_be_open is True
+        assert control_state.area_states["warm_room"].vents[0].should_be_open is True
+        
+        # All 3 vents must be open to meet minimum requirement
+        assert control_state.vents_should_be_open == 3
+
+    def test_reorders_vents_when_below_minimum(self, controller):
+        """Test that vents are reordered intelligently when below minimum."""
+        now = datetime.now()
+        
+        # Setup: 5 vents, 2 currently open (wrong ones), need min 3
+        room_temp_states = {
+            "room_a": RoomTemperatureState(
+                area_id="room_a", area_name="Room A",
+                determining_temperature=64.0,  # Coldest - highest priority
+            ),
+            "room_b": RoomTemperatureState(
+                area_id="room_b", area_name="Room B",
+                determining_temperature=66.0,  # Second coldest
+            ),
+            "room_c": RoomTemperatureState(
+                area_id="room_c", area_name="Room C",
+                determining_temperature=68.0,  # Third coldest
+            ),
+            "room_d": RoomTemperatureState(
+                area_id="room_d", area_name="Room D",
+                determining_temperature=70.0,  # Fourth - currently open (wrong)
+            ),
+            "room_e": RoomTemperatureState(
+                area_id="room_e", area_name="Room E",
+                determining_temperature=72.0,  # Warmest - currently open (wrong)
+            ),
+        }
+        
+        # Rooms D and E are currently open (but they're warm)
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            if entity_id in ["cover.room_d_vent", "cover.room_e_vent"]:
+                state.state = STATE_OPEN
+                state.attributes = {"current_tilt_position": 100}
+            else:
+                state.state = STATE_CLOSED
+                state.attributes = {"current_tilt_position": 0}
+            return state
+        
+        controller.hass.states.get.side_effect = get_vent_state
+        
+        area_vents = {
+            "room_a": ["cover.room_a_vent"],
+            "room_b": ["cover.room_b_vent"],
+            "room_c": ["cover.room_c_vent"],
+            "room_d": ["cover.room_d_vent"],
+            "room_e": ["cover.room_e_vent"],
+        }
+        
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            target_temp_high=78.0,
+            now=now,
+        )
+        
+        # The 3 coldest rooms should be selected
+        assert control_state.area_states["room_a"].vents[0].should_be_open is True
+        assert control_state.area_states["room_b"].vents[0].should_be_open is True
+        assert control_state.area_states["room_c"].vents[0].should_be_open is True
+        # The 2 warmest should close (even though currently open)
+        assert control_state.area_states["room_d"].vents[0].should_be_open is False
+        assert control_state.area_states["room_e"].vents[0].should_be_open is False
+        
+        assert control_state.vents_should_be_open == 3
+
+    def test_more_than_minimum_vents_when_needed(self, controller):
+        """Test that more than minimum vents can be open when rooms are active."""
+        now = datetime.now()
+        
+        # 5 rooms are active - should all be open even though min is 3
+        active_areas = [
+            AreaOccupancyState(
+                area_id=f"room_{i}",
+                area_name=f"Room {i}",
+                binary_sensors=[],
+                sensors=[],
+                is_active=True,
+                occupancy_start_time=now - timedelta(minutes=10),
+            )
+            for i in range(5)
+        ]
+        
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_CLOSED
+            state.attributes = {"current_tilt_position": 0}
+            return state
+        
+        controller.hass.states.get.side_effect = get_vent_state
+        
+        area_vents = {f"room_{i}": [f"cover.room_{i}_vent"] for i in range(5)}
+        
+        # Create room temp states - all unsatiated
+        room_temp_states = {
+            f"room_{i}": RoomTemperatureState(
+                area_id=f"room_{i}",
+                area_name=f"Room {i}",
+                determining_temperature=65.0,
+                is_satiated=False,
+            )
+            for i in range(5)
+        }
+        
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=active_areas,
+            occupied_areas=active_areas,
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            now=now,
+        )
+        
+        # All 5 should be open (not limited by minimum of 3)
+        assert control_state.vents_should_be_open == 5
+        for i in range(5):
+            assert control_state.area_states[f"room_{i}"].vents[0].should_be_open is True
+
+
+# =============================================================================
+# Tests for Unavailable Vent Retry and Fallback
+# =============================================================================
+
+
+class TestUnavailableVentRetry:
+    """Tests for retry logic when vents don't respond to commands."""
+
+    @pytest.fixture
+    def controller(self):
+        """Create a vent controller for testing."""
+        hass = create_mock_hass()
+        return VentController(hass, min_vents_open=3, vent_debounce_seconds=0)
+
+    @pytest.mark.asyncio
+    async def test_tracks_pending_confirmations(self, controller):
+        """Test that commands are tracked in pending confirmations."""
+        now = datetime.now()
+        
+        # Mock vent state (closed, should be open)
+        vent_state = MagicMock()
+        vent_state.state = STATE_CLOSED
+        vent_state.attributes = {"current_tilt_position": 0}
+        controller.hass.states.get.return_value = vent_state
+        
+        control_state = VentControlState()
+        control_state.pending_commands = [
+            ("cover.test_vent", True, "Test reason")
+        ]
+        
+        # Execute command
+        await controller.async_execute_vent_commands(control_state, now=now)
+        
+        # Should be tracked in pending confirmations
+        assert "cover.test_vent" in controller._pending_confirmations
+        desired_state, command_time, retry_count = controller._pending_confirmations["cover.test_vent"]
+        assert desired_state is True
+        assert command_time == now
+        assert retry_count == 1
+
+    @pytest.mark.asyncio
+    async def test_removes_confirmation_when_vent_responds(self, controller):
+        """Test that confirmation is removed when vent changes state."""
+        now = datetime.now()
+        
+        # Add a pending confirmation from 30 seconds ago
+        controller._pending_confirmations["cover.test_vent"] = (True, now - timedelta(seconds=30), 1)
+        
+        # Mock vent state - NOW OPEN (command succeeded)
+        vent_state = MagicMock()
+        vent_state.state = STATE_OPEN
+        vent_state.attributes = {"current_tilt_position": 100}
+        controller.hass.states.get.return_value = vent_state
+        
+        control_state = VentControlState()
+        control_state.pending_commands = []  # No new commands
+        
+        # Execute (will check pending confirmations)
+        await controller.async_execute_vent_commands(control_state, now=now)
+        
+        # Should be removed from pending (it responded)
+        assert "cover.test_vent" not in controller._pending_confirmations
+
+    @pytest.mark.asyncio
+    async def test_retries_unresponsive_vent(self, controller):
+        """Test that unresponsive vents are retried."""
+        now = datetime.now()
+        
+        # Add a pending confirmation from 61 seconds ago (past retry threshold)
+        controller._pending_confirmations["cover.test_vent"] = (True, now - timedelta(seconds=61), 1)
+        
+        # Mock vent state - STILL CLOSED (hasn't responded)
+        vent_state = MagicMock()
+        vent_state.state = STATE_CLOSED
+        vent_state.attributes = {"current_tilt_position": 0}
+        controller.hass.states.get.return_value = vent_state
+        
+        control_state = VentControlState()
+        control_state.pending_commands = [
+            ("cover.test_vent", True, "Retry command")
+        ]
+        
+        # Execute
+        await controller.async_execute_vent_commands(control_state, now=now)
+        
+        # Should increment retry count
+        assert "cover.test_vent" in controller._pending_confirmations
+        _, _, retry_count = controller._pending_confirmations["cover.test_vent"]
+        assert retry_count == 2  # Incremented from 1
+
+    @pytest.mark.asyncio
+    async def test_marks_vent_unresponsive_after_retries(self, controller):
+        """Test that vents are marked unresponsive after 3 retries."""
+        now = datetime.now()
+        
+        # Add a pending confirmation from 61 seconds ago with 3 retries
+        controller._pending_confirmations["cover.test_vent"] = (True, now - timedelta(seconds=61), 3)
+        
+        # Mock vent state - STILL CLOSED
+        vent_state = MagicMock()
+        vent_state.state = STATE_CLOSED
+        vent_state.attributes = {"current_tilt_position": 0}
+        controller.hass.states.get.return_value = vent_state
+        
+        control_state = VentControlState()
+        control_state.pending_commands = []
+        
+        # Execute
+        await controller.async_execute_vent_commands(control_state, now=now)
+        
+        # Should be removed after 3 retries (marked unresponsive)
+        assert "cover.test_vent" not in controller._pending_confirmations
+
+    def test_skips_unresponsive_vent_in_selection(self, controller):
+        """Test that unresponsive vents are skipped and alternates selected."""
+        now = datetime.now()
+        
+        # Mark vent A as unresponsive (3+ retries, >60s)
+        controller._pending_confirmations["cover.room_a_vent"] = (
+            True, now - timedelta(seconds=65), 3
+        )
+        
+        # Mock vent states
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            if entity_id == "cover.room_a_vent":
+                # Unresponsive - still closed despite commands
+                state.state = STATE_CLOSED
+                state.attributes = {"current_tilt_position": 0}
+            else:
+                state.state = STATE_CLOSED
+                state.attributes = {"current_tilt_position": 0}
+            return state
+        
+        controller.hass.states.get.side_effect = get_vent_state
+        
+        # 3 rooms, need min 3, but room_a is unresponsive
+        room_temp_states = {
+            "room_a": RoomTemperatureState(
+                area_id="room_a",
+                area_name="Room A",
+                determining_temperature=64.0,  # Coldest - but unresponsive
+            ),
+            "room_b": RoomTemperatureState(
+                area_id="room_b",
+                area_name="Room B",
+                determining_temperature=66.0,
+            ),
+            "room_c": RoomTemperatureState(
+                area_id="room_c",
+                area_name="Room C",
+                determining_temperature=68.0,
+            ),
+        }
+        
+        area_vents = {
+            "room_a": ["cover.room_a_vent"],
+            "room_b": ["cover.room_b_vent"],
+            "room_c": ["cover.room_c_vent"],
+        }
+        
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            now=now,
+        )
+        
+        # Room A (unresponsive) should NOT be counted toward minimum
+        # Rooms B and C should be selected instead
+        # Since room_a is unresponsive, we only count rooms b and c = 2 vents
+        # We need 3, so we'd try to add room_a, but it's unresponsive
+        # So we can only get 2 vents total
+        assert control_state.area_states["room_a"].vents[0].should_be_open is False
+        assert control_state.area_states["room_b"].vents[0].should_be_open is True
+        assert control_state.area_states["room_c"].vents[0].should_be_open is True
+        # Can only achieve 2 vents due to unresponsive vent
+        assert control_state.vents_should_be_open == 2
+
+    def test_selects_fourth_vent_when_one_unresponsive(self, controller):
+        """Test that the 4th best vent is selected when #1 is unresponsive."""
+        now = datetime.now()
+        
+        # Mark the coldest room's vent as unresponsive
+        controller._pending_confirmations["cover.room_a_vent"] = (
+            True, now - timedelta(seconds=65), 3
+        )
+        
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            if entity_id == "cover.room_a_vent":
+                state.state = STATE_CLOSED  # Unresponsive
+            else:
+                state.state = STATE_CLOSED
+            state.attributes = {"current_tilt_position": 0}
+            return state
+        
+        controller.hass.states.get.side_effect = get_vent_state
+        
+        # 4 rooms, need min 3
+        room_temp_states = {
+            "room_a": RoomTemperatureState(
+                area_id="room_a",
+                area_name="Room A",
+                determining_temperature=64.0,  # Best but unresponsive
+            ),
+            "room_b": RoomTemperatureState(
+                area_id="room_b",
+                area_name="Room B",
+                determining_temperature=66.0,  # 2nd best
+            ),
+            "room_c": RoomTemperatureState(
+                area_id="room_c",
+                area_name="Room C",
+                determining_temperature=68.0,  # 3rd best
+            ),
+            "room_d": RoomTemperatureState(
+                area_id="room_d",
+                area_name="Room D",
+                determining_temperature=70.0,  # 4th best (fallback)
+            ),
+        }
+        
+        area_vents = {f"room_{c}": [f"cover.room_{c}_vent"] for c in "abcd"}
+        
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            now=now,
+        )
+        
+        # Should skip room_a (unresponsive) and select rooms b, c, d
+        assert control_state.area_states["room_a"].vents[0].should_be_open is False
+        assert control_state.area_states["room_b"].vents[0].should_be_open is True
+        assert control_state.area_states["room_c"].vents[0].should_be_open is True
+        assert control_state.area_states["room_d"].vents[0].should_be_open is True
+        assert control_state.vents_should_be_open == 3
+
