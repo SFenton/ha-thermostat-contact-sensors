@@ -81,6 +81,10 @@ if sys.platform == "win32":
         """
 
         loop = asyncio.get_event_loop_policy().new_event_loop()
+        # pytest-asyncio may try to inspect the fixture source to label the loop.
+        # On some Windows setups this can fail (OSError: could not get source code),
+        # so mark this as an original fixture loop to skip that path.
+        setattr(loop, "__original_fixture_loop", True)
         yield loop
         loop.close()
 

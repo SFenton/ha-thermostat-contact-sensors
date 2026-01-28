@@ -1266,6 +1266,76 @@ class TestHvacAction:
         await hass.config_entries.async_unload(config_entry.entry_id)
 
     @pytest.mark.asyncio
+    async def test_area_thermostat_hvac_action_refreshes_on_physical_change(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test area thermostat updates HA state when physical hvac_action changes."""
+        from homeassistant.components.climate import HVACAction
+        from custom_components.thermostat_contact_sensors.thermostat_control import RoomTemperatureState
+
+        # Physical thermostat starts heating
+        hass.states.async_set(
+            THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "hvac_action": "heating",
+                "current_temperature": 68.0,
+                "temperature": 72.0,
+            },
+        )
+
+        hass.states.async_set("sensor.living_room_temperature", "65.0")
+        await hass.async_block_till_done()
+
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = config_entry.runtime_data
+
+        # Mark room as needing heat so the vTherm should mirror physical hvac_action.
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+
+        coordinator._last_thermostat_state = ThermostatState(thermostat_entity_id=THERMOSTAT)
+        coordinator._last_thermostat_state.room_states["living_room"] = RoomTemperatureState(
+            area_id="living_room",
+            area_name="Living Room",
+            is_active=True,
+            is_satiated=False,
+        )
+
+        area_thermostat = coordinator.area_thermostats["living_room"]
+
+        # Force an initial write so the HA state reflects our injected room_state.
+        coordinator.async_set_updated_data(None)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(area_thermostat.entity_id)
+        assert state is not None
+        assert state.attributes.get("hvac_action") == HVACAction.HEATING
+
+        # Now physical thermostat stops calling for heat (attribute-only change).
+        hass.states.async_set(
+            THERMOSTAT,
+            HVACMode.HEAT,
+            {
+                "hvac_action": "idle",
+                "current_temperature": 70.0,
+                "temperature": 72.0,
+            },
+        )
+        await hass.async_block_till_done()
+
+        state = hass.states.get(area_thermostat.entity_id)
+        assert state is not None
+        assert state.attributes.get("hvac_action") == HVACAction.IDLE
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
     async def test_global_thermostat_hvac_action_matches_areas(
         self,
         hass: HomeAssistant,

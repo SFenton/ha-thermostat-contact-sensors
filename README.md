@@ -255,7 +255,7 @@ This integration supports Home Assistant diagnostics. When reporting issues, dow
 
 ### Running Tests
 
-Tests require Linux or macOS due to `pytest-homeassistant-custom-component` using socket operations that are blocked on Windows.
+Tests can be run locally on Linux/macOS/Windows.
 
 **Using GitHub Actions (recommended):**
 ```bash
@@ -270,6 +270,24 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements_test.txt
 pytest tests/ -v --tb=short
+```
+
+**Using Windows (PowerShell, Python 3.12 recommended):**
+
+Some Home Assistant test dependencies may fail to build on Windows for newer Python versions (e.g., 3.13). If you hit install errors, use Python 3.12.
+
+```powershell
+cd C:\Users\sfent\Repos\ha-thermostat-contact-sensors
+
+# Create/activate a venv (or use your existing one)
+py -3.12 -m venv .venv_py312
+& .\.venv_py312\Scripts\Activate.ps1
+
+python -m pip install -r requirements_test.txt
+python -m pytest -q
+
+# Targeted run example
+python -m pytest -q tests/test_climate.py::TestHvacAction
 ```
 
 **Using Docker:**

@@ -1043,6 +1043,13 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             # (either we turned it on, or user did)
             self.thermostat_controller._we_turned_off = False
 
+        # Keep coordinator entities (including vTherms) fresh when the physical thermostat
+        # changes state or key attributes like hvac_action.
+        old_hvac_action = old_state.attributes.get("hvac_action") if old_state else None
+        new_hvac_action = new_state.attributes.get("hvac_action")
+        if old_state is None or old_state.state != new_state.state or old_hvac_action != new_hvac_action:
+            self.async_set_updated_data(None)
+
         # Handle manual overrides while paused
         if self.is_paused:
             # Only treat an OFF -> ON mode transition as a manual override.
