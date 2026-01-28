@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_socket
 from homeassistant.components.climate import (
     DOMAIN as CLIMATE_DOMAIN,
     ClimateEntityFeature,
@@ -71,6 +72,12 @@ TEST_AREA_BEDROOM = "bedroom"
 
 
 if sys.platform == "win32":
+    # aiodns (used by aiohttp.AsyncResolver in HA test fixtures) requires a
+    # SelectorEventLoop on Windows.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+if sys.platform == "win32":
     @pytest.fixture
     def event_loop(socket_enabled):  # noqa: ARG001
         """Create an event loop with sockets enabled.
@@ -80,13 +87,92 @@ if sys.platform == "win32":
         a socketpair(), so we must enable sockets during loop creation.
         """
 
-        loop = asyncio.get_event_loop_policy().new_event_loop()
+        # On Windows, the proactor loop creation needs a socketpair(), but
+        # pytest-socket blocks all socket creation by default.
+        pytest_socket.enable_socket()
+        try:
+            # aiodns requires a SelectorEventLoop on Windows. Explicitly create
+            # one here so we don't depend on any global policy changes from
+            # other pytest/HA plugins.
+            loop = asyncio.SelectorEventLoop()
+        finally:
+            pytest_socket.disable_socket()
         # pytest-asyncio may try to inspect the fixture source to label the loop.
         # On some Windows setups this can fail (OSError: could not get source code),
         # so mark this as an original fixture loop to skip that path.
         setattr(loop, "__original_fixture_loop", True)
         yield loop
         loop.close()
+
+
+if sys.platform == "win32":
+    def _enter_runner_with_sockets_enabled() -> asyncio.Runner:
+        pytest_socket.enable_socket()
+        try:
+            # aiodns requires a SelectorEventLoop on Windows; force the runner
+            # to create one regardless of the current event loop policy.
+            runner = asyncio.Runner(loop_factory=asyncio.SelectorEventLoop)
+            runner.__enter__()
+            return runner
+        finally:
+            pytest_socket.disable_socket()
+
+
+if sys.platform == "win32":
+    def _exit_runner_with_sockets_enabled(runner: asyncio.Runner) -> None:
+        pytest_socket.enable_socket()
+        try:
+            runner.__exit__(None, None, None)
+        finally:
+            pytest_socket.disable_socket()
+
+
+if sys.platform == "win32":
+    @pytest.fixture(scope="session")
+    def _session_scoped_runner() -> asyncio.Runner:
+        """Provide pytest-asyncio's session runner with sockets enabled on Windows."""
+
+        runner = _enter_runner_with_sockets_enabled()
+        try:
+            yield runner
+        finally:
+            _exit_runner_with_sockets_enabled(runner)
+
+
+if sys.platform == "win32":
+    @pytest.fixture(scope="package")
+    def _package_scoped_runner() -> asyncio.Runner:
+        """Provide pytest-asyncio's package runner with sockets enabled on Windows."""
+
+        runner = _enter_runner_with_sockets_enabled()
+        try:
+            yield runner
+        finally:
+            _exit_runner_with_sockets_enabled(runner)
+
+
+if sys.platform == "win32":
+    @pytest.fixture(scope="module")
+    def _module_scoped_runner() -> asyncio.Runner:
+        """Provide pytest-asyncio's module runner with sockets enabled on Windows."""
+
+        runner = _enter_runner_with_sockets_enabled()
+        try:
+            yield runner
+        finally:
+            _exit_runner_with_sockets_enabled(runner)
+
+
+if sys.platform == "win32":
+    @pytest.fixture(scope="class")
+    def _class_scoped_runner() -> asyncio.Runner:
+        """Provide pytest-asyncio's class runner with sockets enabled on Windows."""
+
+        runner = _enter_runner_with_sockets_enabled()
+        try:
+            yield runner
+        finally:
+            _exit_runner_with_sockets_enabled(runner)
 
 
 if sys.platform == "win32":
@@ -99,11 +185,11 @@ if sys.platform == "win32":
         enable sockets for the duration of runner creation.
         """
 
-        runner = asyncio.Runner()
+        runner = _enter_runner_with_sockets_enabled()
         try:
             yield runner
         finally:
-            runner.close()
+            _exit_runner_with_sockets_enabled(runner)
 
 
 @pytest.fixture(autouse=True)

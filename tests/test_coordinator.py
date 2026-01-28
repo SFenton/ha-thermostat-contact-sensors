@@ -2344,9 +2344,12 @@ class TestForceTrackWhenCriticalOverride:
         office_state = thermostat_state.room_states["office"]
         assert office_state.is_active is True
         assert office_state.is_satiated is False  # Below target
-        
-        # Bedroom (not tracked, no force_track_when_critical) should NOT be in room_states
-        assert "bedroom" not in thermostat_state.room_states
+
+        # Bedroom (untracked) is still evaluated for display, but should not count
+        # toward the tracked active-room decision logic.
+        assert "bedroom" in thermostat_state.room_states
+        assert thermostat_state.active_room_count == 1
+        assert thermostat_state.satiated_room_count == 0
 
         await coordinator.async_shutdown()
 
@@ -2954,9 +2957,10 @@ class TestTSREdgeCases:
         thermostat_state = coordinator.update_thermostat_state()
 
         assert thermostat_state is not None
-        # No rooms should be evaluated (TSR filters them all out)
-        assert "bedroom" not in thermostat_state.room_states
-        assert "office" not in thermostat_state.room_states
+        # Rooms are still evaluated for display, but none are tracked for decisions.
+        assert "bedroom" in thermostat_state.room_states
+        assert "office" in thermostat_state.room_states
+        assert thermostat_state.active_room_count == 0
 
         await coordinator.async_shutdown()
 
@@ -3185,9 +3189,11 @@ class TestComplexCombinedScenarios:
         thermostat_state = coordinator.update_thermostat_state()
 
         assert thermostat_state is not None
-        # Active: only bedroom (tracked)
+        # Active rooms are evaluated for display regardless of TSR, but only tracked
+        # rooms count toward decisions.
         assert "bedroom" in thermostat_state.room_states
-        assert "office" not in thermostat_state.room_states  # Active but not tracked
+        assert "office" in thermostat_state.room_states
+        assert thermostat_state.active_room_count == 1
         
         # Inactive: all should be evaluated (ECO_ALL)
         assert "kitchen" in thermostat_state.room_states
@@ -3270,12 +3276,14 @@ class TestComplexCombinedScenarios:
         thermostat_state = coordinator.update_thermostat_state()
 
         assert thermostat_state is not None
-        # Bedroom: active but not tracked - filtered out
-        assert "bedroom" not in thermostat_state.room_states
+        # Bedroom: active but not tracked - still evaluated for display
+        assert "bedroom" in thermostat_state.room_states
+        assert thermostat_state.active_room_count == 0
         
         # Basement: inactive with FTCR - should appear
         assert "basement" in thermostat_state.room_states
         assert thermostat_state.room_states["basement"].is_critical is True
+        assert thermostat_state.critical_room_count == 1
         
         # Garage: inactive, critical, but no FTCR - filtered out
         assert "garage" not in thermostat_state.room_states
@@ -3373,8 +3381,9 @@ class TestComplexCombinedScenarios:
         assert thermostat_state is not None
         # Active: bedroom tracked
         assert "bedroom" in thermostat_state.room_states
-        # Active: office not tracked
-        assert "office" not in thermostat_state.room_states
+        # Active: office untracked but still evaluated for display
+        assert "office" in thermostat_state.room_states
+        assert thermostat_state.active_room_count == 1
         
         # Inactive: kitchen tracked by eco SELECT
         assert "kitchen" in thermostat_state.room_states
@@ -3517,8 +3526,9 @@ class TestRoomStateCombinations:
         thermostat_state = coordinator.update_thermostat_state()
 
         assert thermostat_state is not None
-        # Active but not tracked - filtered out
-        assert "bedroom" not in thermostat_state.room_states
+        # Active but not tracked - still evaluated for display, but not counted
+        assert "bedroom" in thermostat_state.room_states
+        assert thermostat_state.active_room_count == 0
 
         await coordinator.async_shutdown()
 

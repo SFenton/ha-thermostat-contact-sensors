@@ -446,22 +446,13 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         all_inactive_areas = self.occupancy_tracker.inactive_areas
         area_temp_sensors = self.get_area_temp_sensors()
 
-        # Filter active areas based on Track Selected Rooms setting.
-        # (The thermostat controller's decision logic assumes active_areas reflects
-        # the rooms participating in control decisions.)
-        filtered_out_active_areas: list[AreaOccupancyState] = []
-        if self.only_track_selected_rooms:
-            active_areas = []
-            for area in all_active_areas:
-                if self.is_room_tracked(area.area_id):
-                    active_areas.append(area)
-                else:
-                    # Track filtered-out active areas to check for critical temps
-                    filtered_out_active_areas.append(area)
-            tracked_area_ids: set[str] | None = set(self._tracked_rooms)
-        else:
-            active_areas = all_active_areas
-            tracked_area_ids = None
+        # TSR affects thermostat *decision-making*, not whether we evaluate a room.
+        # We always evaluate all active areas for temperature state (for visibility
+        # and vent control), but we only *count* tracked areas for thermostat actions.
+        active_areas = all_active_areas
+        tracked_area_ids: set[str] | None = (
+            set(self._tracked_rooms) if self.only_track_selected_rooms else None
+        )
 
         force_critical_area_ids = {
             area_id
@@ -502,9 +493,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         #    OR rooms in the tracked rooms list (when TSR is enabled)
         # 3. ECO_CRITICAL_ALL = track all inactive critical rooms (original Eco Mode OFF behavior)
         #
-        # Also include active areas that were filtered out by TSR but have force_track_when_critical.
-        # These need to be evaluated for critical temperatures even though they don't participate
-        # in normal thermostat decisions.
+        # Note: TSR filtering of active rooms is no longer applied here. Per-area
+        # force_track_when_critical is still respected for *inactive* rooms.
 
         if not eco_mode_for_thermostat:
             # When eco mode is off, apply TSR filtering if enabled
@@ -533,11 +523,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         else:  # ECO_CRITICAL_ALL
             inactive_areas = all_inactive_areas
 
-        # Add filtered-out active areas with force_track_when_critical to inactive_areas
-        # so they get evaluated for critical temperatures
-        for area in filtered_out_active_areas:
-            if self._area_has_critical_override(area.area_id):
-                inactive_areas.append(area)
+        # No longer add TSR-filtered active areas to inactive_areas: all active areas
+        # are evaluated directly as active.
 
         # Update pause state on thermostat controller
         self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
@@ -837,24 +824,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if not area_vents:
             return None
 
-        # Get all occupied and active areas from occupancy tracker
-        all_active_areas = self.occupancy_tracker.active_areas
-        all_occupied_areas = self.occupancy_tracker.occupied_areas
-
-        # Filter areas based on Track Selected Rooms setting
-        # Vents follow the same filtering as thermostat control
-        if self.only_track_selected_rooms:
-            active_areas = [
-                area for area in all_active_areas
-                if self.is_room_tracked(area.area_id)
-            ]
-            occupied_areas = [
-                area for area in all_occupied_areas
-                if self.is_room_tracked(area.area_id)
-            ]
-        else:
-            active_areas = all_active_areas
-            occupied_areas = all_occupied_areas
+        # Vent control is intentionally independent of TSR.
+        # TSR controls which rooms can *drive thermostat actions*, but vents should
+        # respond to occupancy/temperature in all rooms to prevent starvation.
+        active_areas = self.occupancy_tracker.active_areas
+        occupied_areas = self.occupancy_tracker.occupied_areas
 
         # Get room temperature states and target temperatures from last thermostat state
         room_temp_states = {}
