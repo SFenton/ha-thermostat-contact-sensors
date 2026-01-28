@@ -1718,11 +1718,10 @@ class ThermostatController:
                 return thermostat_state
 
             # Rooms are configured but none are currently active/critical.
-            # In this state, we avoid actively turning the thermostat off; we simply
-            # do nothing and wait for occupancy or critical conditions.
-            thermostat_state.recommended_action = ThermostatAction.NONE
-            thermostat_state.action_reason = "No active or critical rooms (idle)"
-            return thermostat_state
+            # Treat this the same as "all rooms satiated": recommend turning the
+            # thermostat off (subject to min-cycle timers) so it doesn't keep
+            # running on its own schedule/setpoint.
+            pass
 
         if not needs_conditioning:
             # All active rooms satiated and no critical rooms - should turn off

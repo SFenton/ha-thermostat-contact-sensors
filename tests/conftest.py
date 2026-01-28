@@ -85,6 +85,23 @@ if sys.platform == "win32":
         loop.close()
 
 
+if sys.platform == "win32":
+    @pytest.fixture
+    def _function_scoped_runner(socket_enabled):  # noqa: ARG001
+        """Provide pytest-asyncio's runner with sockets enabled on Windows.
+
+        pytest-homeassistant-custom-component disables sockets via pytest-socket.
+        On Windows, asyncio loop creation requires a socketpair(), so we must
+        enable sockets for the duration of runner creation.
+        """
+
+        runner = asyncio.Runner()
+        try:
+            yield runner
+        finally:
+            runner.close()
+
+
 @pytest.fixture(autouse=True)
 async def auto_enable_custom_integrations(
     hass: HomeAssistant,
@@ -242,9 +259,16 @@ def mock_notify_service(hass: HomeAssistant) -> AsyncMock:
 
 @pytest.fixture
 def mock_climate_service(hass: HomeAssistant) -> AsyncMock:
-    """Mock the climate set_hvac_mode and set_fan_mode services."""
+    """Mock climate services used by the integration.
+
+    Provides handlers for:
+    - climate.set_hvac_mode
+    - climate.set_fan_mode
+    - climate.set_temperature
+    """
     mock_hvac_service = AsyncMock()
     mock_fan_service = AsyncMock()
+    mock_temp_service = AsyncMock()
 
     async def handle_set_hvac_mode(call):
         """Handle the set_hvac_mode service call."""
@@ -267,6 +291,27 @@ def mock_climate_service(hass: HomeAssistant) -> AsyncMock:
             hass.states.async_set(entity_id, state.state, current_attrs)
         await mock_fan_service(call)
 
+    async def handle_set_temperature(call):
+        """Handle the set_temperature service call."""
+        entity_id = call.data.get("entity_id")
+        if entity_id is None:
+            return
+
+        state = hass.states.get(entity_id)
+        current_attrs = dict(state.attributes) if state else {}
+
+        # Support both single temperature and low/high range
+        if "temperature" in call.data and call.data["temperature"] is not None:
+            current_attrs["temperature"] = call.data["temperature"]
+        if "target_temp_low" in call.data and call.data["target_temp_low"] is not None:
+            current_attrs["target_temp_low"] = call.data["target_temp_low"]
+        if "target_temp_high" in call.data and call.data["target_temp_high"] is not None:
+            current_attrs["target_temp_high"] = call.data["target_temp_high"]
+
+        # Preserve existing state string (hvac mode), just update attributes
+        hass.states.async_set(entity_id, state.state if state else "unknown", current_attrs)
+        await mock_temp_service(call)
+
     hass.services.async_register(
         CLIMATE_DOMAIN,
         "set_hvac_mode",
@@ -277,9 +322,16 @@ def mock_climate_service(hass: HomeAssistant) -> AsyncMock:
         "set_fan_mode",
         handle_set_fan_mode,
     )
+
+    hass.services.async_register(
+        CLIMATE_DOMAIN,
+        "set_temperature",
+        handle_set_temperature,
+    )
     
     # Return the hvac mock for backward compatibility, but attach fan mock as attribute
     mock_hvac_service.fan_mode_mock = mock_fan_service
+    mock_hvac_service.temperature_mock = mock_temp_service
     return mock_hvac_service
 
 

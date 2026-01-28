@@ -2101,6 +2101,7 @@ class TestForceTrackWhenCriticalOverride:
         self,
         hass: HomeAssistant,
         setup_test_entities: None,
+        mock_climate_service: AsyncMock,
     ):
         """Non-critical -> critical temp event should open vents.
 
@@ -2129,6 +2130,8 @@ class TestForceTrackWhenCriticalOverride:
             CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
             CONF_AREA_ID,
             CONF_BINARY_SENSORS,
+            CONF_MIN_CYCLE_OFF_MINUTES,
+            CONF_MIN_CYCLE_ON_MINUTES,
             CONF_MIN_VENTS_OPEN,
             CONF_TEMPERATURE_SENSORS,
             CONF_VENT_DEBOUNCE_SECONDS,
@@ -2199,6 +2202,9 @@ class TestForceTrackWhenCriticalOverride:
         options[CONF_MIN_VENTS_OPEN] = 0
         options[CONF_VENT_OPEN_DELAY_SECONDS] = 0
         options[CONF_VENT_DEBOUNCE_SECONDS] = 0
+        # Allow immediate off->on transitions in this test.
+        options[CONF_MIN_CYCLE_ON_MINUTES] = 0
+        options[CONF_MIN_CYCLE_OFF_MINUTES] = 0
 
         coordinator = ThermostatContactSensorsCoordinator(
             hass,
