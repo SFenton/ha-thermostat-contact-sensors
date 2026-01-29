@@ -105,10 +105,21 @@ class VentController:
         if target_temp_low is None or target_temp_high is None:
             return None
 
-        # Collect all temperature readings from all areas
+        # Collect a single representative temperature per area.
+        # Prefer the HVAC-aware determining_temperature (which is what the rest of
+        # the integration uses for decisions), and fall back to raw sensor readings
+        # only when determining_temperature is unavailable.
         all_temps: list[float] = []
         for room_state in room_temp_states.values():
-            all_temps.extend(room_state.sensor_readings.values())
+            temp = getattr(room_state, "determining_temperature", None)
+            if temp is not None:
+                all_temps.append(temp)
+                continue
+
+            sensor_readings = getattr(room_state, "sensor_readings", None)
+            if sensor_readings:
+                readings = list(sensor_readings.values())
+                all_temps.append(sum(readings) / len(readings))
 
         if not all_temps:
             return None
@@ -423,9 +434,12 @@ class VentController:
 
         When we need to keep vents open for back pressure prevention, we prioritize:
         1. Critical rooms (temperature emergency)
-        2. Active rooms (people actively there)
-        3. Temperature-based: coldest rooms for HEAT, hottest for COOL
+        2. Rooms furthest from the relevant target (below heat target / above cool target)
+        3. Active rooms (people actively there)
         4. Occupied rooms (presence but no activity)
+
+        Rooms with no usable temperature signal are treated as the *lowest* priority
+        for minimum-vent selection.
 
         When HVAC mode is OFF or unknown, we infer whether we're closer to
         needing heat or cooling based on all temperature sensor readings,
@@ -468,14 +482,10 @@ class VentController:
                 if (area_state.open_reason or "").startswith("Occupied only"):
                     priority_score -= 5000.0
 
-                # Prefer "neutral" vents (areas with no occupancy/temperature signal)
-                # for back-pressure minimum openings.
-                if (
-                    not area_state.should_open
-                    and area_state.determining_temperature is None
-                    and area_state.distance_from_target is None
-                ):
-                    priority_score += 500.0
+                # If we don't have a usable temperature for this area, it is the last resort
+                # for minimum-vent selection.
+                if area_state.determining_temperature is None:
+                    priority_score -= 5000.0
 
                 # Critical rooms get highest priority
                 if area_state.should_open and "Critical" in (area_state.open_reason or ""):
@@ -489,25 +499,40 @@ class VentController:
                 elif area_state.should_open and "Occupied" in (area_state.open_reason or ""):
                     priority_score += 50.0
 
-                # Temperature-based priority for non-active/occupied/critical rooms
-                # For minimum vent selection, we want rooms that actually need conditioning
+                # Temperature-based priority.
+                # Use the relevant target (heat low / cool high) when available so we
+                # don't prefer rooms that are already over-target in HEAT or under-target in COOL.
                 if area_state.determining_temperature is not None:
-                    if effective_mode == HVACMode.HEAT:
-                        # For heating: coldest rooms get priority (lower temp = higher priority)
-                        # Invert so that colder rooms score higher
-                        # e.g., 60°F -> +200, 70°F -> +100, 80°F -> +0
-                        priority_score += max(0, (80.0 - area_state.determining_temperature) * 10.0)
-                    elif effective_mode == HVACMode.COOL:
-                        # For cooling: hottest rooms get priority (higher temp = higher priority)
-                        # e.g., 80°F -> +200, 70°F -> +100, 60°F -> +0
-                        priority_score += max(0, (area_state.determining_temperature - 60.0) * 10.0)
+                    temp = area_state.determining_temperature
+
+                    # Compute deviation in the direction we care about.
+                    # Positive = needs conditioning for the current effective mode.
+                    need = 0.0
+                    if effective_mode == HVACMode.HEAT and target_temp_low is not None:
+                        need = target_temp_low - temp
+                    elif effective_mode == HVACMode.COOL and target_temp_high is not None:
+                        need = temp - target_temp_high
+                    elif area_state.distance_from_target is not None:
+                        # If we don't have usable targets (or mode), fall back to absolute distance.
+                        need = area_state.distance_from_target
+
+                    # Reward being on the wrong side of the target, penalize being on the
+                    # "already helped" side.
+                    if need > 0:
+                        priority_score += need * 200.0
                     else:
-                        # Fallback for heat_cool or truly unknown: use absolute distance
-                        if area_state.distance_from_target is not None:
-                            priority_score += area_state.distance_from_target * 10.0
+                        priority_score += need * 20.0
+
+                    # Treat large deviations as "critical" for the purposes of minimum-vent selection.
+                    # This is deliberately conservative: it only affects ranking among *minimum* vents.
+                    if need >= 3.0:
+                        priority_score += 3000.0
                 elif area_state.distance_from_target is not None:
-                    # No temperature reading, fall back to distance
                     priority_score += area_state.distance_from_target * 10.0
+
+                # Satiated rooms should generally rank below rooms that still need conditioning.
+                if (area_state.open_reason or "").startswith("Satiated"):
+                    priority_score -= 250.0
 
                 priority_list.append(
                     (area_id, vent.entity_id, vent.member_count, priority_score)

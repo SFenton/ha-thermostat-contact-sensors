@@ -953,6 +953,53 @@ class TestDistanceFromTarget:
         assert control_state.area_states["area_close"].determining_temperature == 21.0
         assert control_state.area_states["area_far"].determining_temperature == 17.0
 
+    def test_infer_effective_hvac_mode_prefers_determining_temperature_over_sensor_readings(
+        self,
+    ):
+        """Prefer determining_temperature, only using readings as fallback."""
+        hass = create_mock_hass()
+        controller = VentController(hass)
+
+        # Room A: determining_temperature indicates it's cold (60), but raw readings
+        # include a high outlier (80) that would skew an "all readings" average.
+        room_a = RoomTemperatureState(area_id="a", area_name="A")
+        room_a.determining_temperature = 60.0
+        room_a.sensor_readings = {"sensor.a1": 60.0, "sensor.a2": 80.0}
+
+        # Room B: normal room.
+        room_b = RoomTemperatureState(area_id="b", area_name="B")
+        room_b.determining_temperature = 70.0
+        room_b.sensor_readings = {"sensor.b1": 70.0}
+
+        mode = controller.infer_effective_hvac_mode(
+            room_temp_states={"a": room_a, "b": room_b},
+            target_temp_low=68.0,
+            target_temp_high=72.0,
+        )
+
+        # Using determining temperatures (60, 70) => avg 65 => below low target => HEAT.
+        assert mode == HVACMode.HEAT
+
+    def test_infer_effective_hvac_mode_falls_back_to_sensor_readings_when_no_determining_temperature(
+        self,
+    ):
+        """When determining_temperature is None, use sensor readings."""
+        hass = create_mock_hass()
+        controller = VentController(hass)
+
+        room = RoomTemperatureState(area_id="a", area_name="A")
+        room.determining_temperature = None
+        room.sensor_readings = {"sensor.a1": 75.0, "sensor.a2": 77.0}
+
+        mode = controller.infer_effective_hvac_mode(
+            room_temp_states={"a": room},
+            target_temp_low=68.0,
+            target_temp_high=72.0,
+        )
+
+        # Average readings (76) => above high target => COOL.
+        assert mode == HVACMode.COOL
+
     def test_heat_mode_prioritizes_coldest_rooms(self, controller):
         """Test that in HEAT mode, coldest rooms get priority for minimum vents."""
         controller._min_vents_open = 1  # Only keep one vent open
