@@ -145,6 +145,7 @@ async def async_get_config_entry_diagnostics(
                 "should_open": area_state.should_open,
                 "open_reason": area_state.open_reason,
                 "distance_from_target": area_state.distance_from_target,
+                "determining_temperature": area_state.determining_temperature,
                 "vents": vents,
             }
 

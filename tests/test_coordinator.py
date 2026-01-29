@@ -335,6 +335,97 @@ class TestVentEffectiveMode:
         await coordinator.async_update_vents()
         assert coordinator.vent_controller.evaluate_all_vents.call_args.kwargs["hvac_mode"] == HVACMode.COOL
 
+
+class TestVentOnlyTemperatureSensors:
+    """Tests for vent-only temperature sensors (vent control only)."""
+
+    async def test_vent_only_temperature_sensors_participate_in_minimum_vents(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ) -> None:
+        """A room not in thermostat room_states can still be used for minimum vents."""
+        from unittest.mock import AsyncMock
+
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_MIN_VENTS_OPEN,
+            CONF_TEMPERATURE_SENSORS,
+            CONF_VENT_DEBOUNCE_SECONDS,
+            CONF_VENT_OPEN_DELAY_SECONDS,
+            CONF_VENTS,
+        )
+
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+
+        kitchen_temp = "sensor.kitchen_temp"
+        kitchen_vent = "cover.kitchen_vent"
+        other_vent = "cover.other_vent"
+
+        hass.states.async_set(kitchen_temp, "60.0", {"unit_of_measurement": "°F"})
+        hass.states.async_set(kitchen_vent, "closed", {"current_tilt_position": 0})
+        hass.states.async_set(other_vent, "closed", {"current_tilt_position": 0})
+        await hass.async_block_till_done()
+
+        areas_config = {
+            "kitchen": {
+                CONF_AREA_ID: "kitchen",
+                CONF_AREA_ENABLED: True,
+                # No explicit vent-only sensors configured: coordinator should
+                # fall back to using the area's standard temperature_sensors for
+                # vent control.
+                CONF_TEMPERATURE_SENSORS: [kitchen_temp],
+                CONF_VENTS: [kitchen_vent],
+            },
+            "other": {
+                CONF_AREA_ID: "other",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: [],
+                CONF_VENTS: [other_vent],
+            },
+        }
+
+        options = get_test_config_options()
+        options[CONF_MIN_VENTS_OPEN] = 1
+        options[CONF_VENT_OPEN_DELAY_SECONDS] = 0
+        options[CONF_VENT_DEBOUNCE_SECONDS] = 0
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry_vent_only_temps",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Force thermostat state to *not* include kitchen (e.g., inactive/untracked).
+        coordinator._last_thermostat_state = ThermostatState(
+            thermostat_entity_id=TEST_THERMOSTAT,
+            hvac_mode=HVACMode.OFF,
+            target_temp_low=68.0,
+            target_temp_high=72.0,
+            room_states={},
+        )
+
+        # Ensure vent-only temps are present in the vent-control merged view.
+        merged = coordinator._get_room_temp_states_for_vent_control()
+        assert "kitchen" in merged
+        assert getattr(merged["kitchen"], "determining_temperature", None) == 60.0
+
+        # Avoid calling HA services in this unit test.
+        coordinator.vent_controller.async_execute_vent_commands = AsyncMock(return_value=0)
+
+        # With minimum vents enforced, kitchen should be selected over areas with
+        # no usable temperature signal.
+        vcs = await coordinator.async_update_vents()
+        assert vcs is not None
+        assert vcs.area_states["kitchen"].vents[0].should_be_open is True
+        assert vcs.area_states["kitchen"].vents[0].open_reason == "Minimum vents (need 1)"
+
     async def test_thermostat_stores_previous_mode(
         self,
         hass: HomeAssistant,

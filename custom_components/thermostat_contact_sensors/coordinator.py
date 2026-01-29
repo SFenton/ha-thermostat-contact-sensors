@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import time
 from typing import Any
@@ -84,6 +85,20 @@ from .thermostat_control import ThermostatController, ThermostatState
 from .vent_control import VentController, VentControlState
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class VentOnlyRoomTemperatureState:
+    """Minimal temperature state used only for vent control.
+
+    This intentionally does NOT participate in thermostat on/off decisions.
+    """
+
+    determining_temperature: float | None
+    sensor_readings: dict[str, float]
+    is_satiated: bool = False
+    is_critical: bool = False
+    target_temperature: float | None = None
 
 
 class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
@@ -403,6 +418,58 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 result[area_id] = list(temp_sensors)
         return result
 
+    def _build_vent_only_room_temp_states(self) -> dict[str, VentOnlyRoomTemperatureState]:
+        """Build temperature states for vent control from configured sensors.
+
+        This is intentionally independent of TSR and thermostat decision-making.
+        It reads the configured per-area temperature sensors directly from HA
+        so *inactive/untracked* rooms can still influence vent prioritization.
+        """
+        result: dict[str, VentOnlyRoomTemperatureState] = {}
+        for area_id, sensors in self.get_area_temp_sensors().items():
+            readings: dict[str, float] = {}
+            for entity_id in sensors:
+                state = self.hass.states.get(entity_id)
+                if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                    continue
+                try:
+                    readings[entity_id] = float(state.state)
+                except (TypeError, ValueError):
+                    continue
+
+            if not readings:
+                result[area_id] = VentOnlyRoomTemperatureState(
+                    determining_temperature=None,
+                    sensor_readings={},
+                )
+                continue
+
+            avg = sum(readings.values()) / len(readings)
+            result[area_id] = VentOnlyRoomTemperatureState(
+                determining_temperature=avg,
+                sensor_readings=readings,
+            )
+
+        return result
+
+    def _get_room_temp_states_for_vent_control(self) -> dict[str, Any]:
+        """Get the merged room temperature states used for vent control.
+
+        This includes thermostat room states AND vent-only temperature states.
+        Thermostat decision-making should only consider thermostat room states.
+        """
+        room_temp_states: dict[str, Any] = {}
+        if self._last_thermostat_state:
+            room_temp_states.update(self._last_thermostat_state.room_states)
+
+        # Only add vent-only states for areas not already represented by the
+        # thermostat controller.
+        for area_id, vent_state in self._build_vent_only_room_temp_states().items():
+            if area_id not in room_temp_states:
+                room_temp_states[area_id] = vent_state
+
+        return room_temp_states
+
     def get_area_vents(self) -> dict[str, list[str]]:
         """Get vents for each area.
 
@@ -567,10 +634,16 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self._last_room_determining_temperatures = {}
             return
 
+        # Use a merged room-state map for vent-control inference.
+        merged_room_states: dict[str, Any] = dict(state.room_states)
+        for area_id, vent_state in self._build_vent_only_room_temp_states().items():
+            if area_id not in merged_room_states:
+                merged_room_states[area_id] = vent_state
+
         new_targets = (state.target_temp_low, state.target_temp_high)
         new_determining: dict[str, float | None] = {
-            area_id: room_state.determining_temperature
-            for area_id, room_state in state.room_states.items()
+            area_id: getattr(room_state, "determining_temperature", None)
+            for area_id, room_state in merged_room_states.items()
         }
 
         if (
@@ -582,7 +655,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._last_vent_infer_targets = new_targets
         self._last_room_determining_temperatures = new_determining
         self._last_vent_effective_mode = VentController.infer_effective_hvac_mode(
-            state.room_states,
+            merged_room_states,
             state.target_temp_low,
             state.target_temp_high,
         )
@@ -871,16 +944,19 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         active_areas = self.occupancy_tracker.active_areas
         occupied_areas = self.occupancy_tracker.occupied_areas
 
-        # Get room temperature states and target temperatures from last thermostat state
-        room_temp_states = {}
+        # Get room temperature states and target temperatures from last thermostat state.
+        # Room temperature states for vent control are merged with vent-only sensors.
+        room_temp_states: dict[str, Any] = {}
         hvac_mode = None
         target_temp_low = None
         target_temp_high = None
         if self._last_thermostat_state:
-            room_temp_states = self._last_thermostat_state.room_states
+            room_temp_states = self._get_room_temp_states_for_vent_control()
             hvac_mode = self._last_thermostat_state.hvac_mode
             target_temp_low = self._last_thermostat_state.target_temp_low
             target_temp_high = self._last_thermostat_state.target_temp_high
+        else:
+            room_temp_states = self._get_room_temp_states_for_vent_control()
 
         # When the thermostat is OFF/unknown, use the cached inferred mode for vent priority.
         # This is recomputed whenever determining_temperature changes in any room.
