@@ -214,6 +214,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Last thermostat state for sensors
         self._last_thermostat_state: ThermostatState | None = None
 
+        # Cached inferred mode used specifically for vent priority when the thermostat
+        # is OFF/unknown. This is recomputed whenever determining_temperature changes.
+        self._last_vent_effective_mode: HVACMode | None = None
+        self._last_vent_infer_targets: tuple[float | None, float | None] = (None, None)
+        self._last_room_determining_temperatures: dict[str, float | None] = {}
+
         # Eco Mode Critical Tracking - will be set by Select entity restore or default
         self.eco_mode_critical_tracking: str = self._options.get(
             CONF_ECO_MODE_CRITICAL_TRACKING,
@@ -544,7 +550,42 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             force_critical_area_ids=force_critical_area_ids,
         )
 
+        self._refresh_vent_effective_mode_if_needed(self._last_thermostat_state)
+
         return self._last_thermostat_state
+
+    def _refresh_vent_effective_mode_if_needed(self, state: ThermostatState | None) -> None:
+        """Recompute vent effective mode when determining_temperature changes.
+
+        Vent control uses an inferred HEAT/COOL mode when the thermostat is OFF/unknown
+        so it can prioritize rooms in the correct direction. We want that inference
+        to update whenever any room's determining_temperature changes.
+        """
+        if state is None:
+            self._last_vent_effective_mode = None
+            self._last_vent_infer_targets = (None, None)
+            self._last_room_determining_temperatures = {}
+            return
+
+        new_targets = (state.target_temp_low, state.target_temp_high)
+        new_determining: dict[str, float | None] = {
+            area_id: room_state.determining_temperature
+            for area_id, room_state in state.room_states.items()
+        }
+
+        if (
+            new_targets == self._last_vent_infer_targets
+            and new_determining == self._last_room_determining_temperatures
+        ):
+            return
+
+        self._last_vent_infer_targets = new_targets
+        self._last_room_determining_temperatures = new_determining
+        self._last_vent_effective_mode = VentController.infer_effective_hvac_mode(
+            state.room_states,
+            state.target_temp_low,
+            state.target_temp_high,
+        )
 
     async def async_update_thermostat_state(self) -> ThermostatState | None:
         """Evaluate, update, and execute thermostat control actions.
@@ -840,6 +881,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             hvac_mode = self._last_thermostat_state.hvac_mode
             target_temp_low = self._last_thermostat_state.target_temp_low
             target_temp_high = self._last_thermostat_state.target_temp_high
+
+        # When the thermostat is OFF/unknown, use the cached inferred mode for vent priority.
+        # This is recomputed whenever determining_temperature changes in any room.
+        if hvac_mode in (None, HVACMode.OFF) and self._last_vent_effective_mode is not None:
+            hvac_mode = self._last_vent_effective_mode
 
         # Get per-area vent delay overrides
         area_vent_delays = self.get_area_vent_delays()

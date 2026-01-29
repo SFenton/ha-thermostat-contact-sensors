@@ -241,6 +241,100 @@ class TestThermostatPausing:
 
         await coordinator.async_shutdown()
 
+
+class TestVentEffectiveMode:
+    """Tests for inferred vent effective mode caching."""
+
+    async def test_recalculates_effective_mode_on_determining_temperature_change(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ) -> None:
+        """When any room's determining_temperature changes, inferred vent mode updates."""
+        from unittest.mock import MagicMock
+
+        from custom_components.thermostat_contact_sensors.thermostat_control import (
+            RoomTemperatureState,
+            ThermostatState,
+        )
+        from custom_components.thermostat_contact_sensors.vent_control import VentControlState
+
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+            CONF_VENTS,
+            CONF_MIN_VENTS_OPEN,
+            CONF_VENT_OPEN_DELAY_SECONDS,
+            CONF_VENT_DEBOUNCE_SECONDS,
+        )
+
+        room_temp = "sensor.room_temp"
+        room_vent = "cover.room_vent"
+        hass.states.async_set(room_vent, "closed", {"current_tilt_position": 0})
+        hass.states.async_set(room_temp, "20.0", {"unit_of_measurement": "°C"})
+        await hass.async_block_till_done()
+
+        areas_config = {
+            "room": {
+                CONF_AREA_ID: "room",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: [room_temp],
+                CONF_VENTS: [room_vent],
+            }
+        }
+
+        options = get_test_config_options()
+        options[CONF_MIN_VENTS_OPEN] = 0
+        options[CONF_VENT_OPEN_DELAY_SECONDS] = 0
+        options[CONF_VENT_DEBOUNCE_SECONDS] = 0
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry_vent_mode",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+            areas_config=areas_config,
+        )
+
+        # Patch vent evaluation so we can inspect the hvac_mode passed in.
+        coordinator.vent_controller.evaluate_all_vents = MagicMock(return_value=VentControlState())
+
+        def _make_state(det_temp: float) -> ThermostatState:
+            room_state = RoomTemperatureState(area_id="room", area_name="Room")
+            room_state.determining_temperature = det_temp
+
+            return ThermostatState(
+                thermostat_entity_id=TEST_THERMOSTAT,
+                hvac_mode=HVACMode.OFF,
+                target_temp_low=68.0,
+                target_temp_high=72.0,
+                room_states={"room": room_state},
+            )
+
+        # First update: cold trend -> inferred HEAT.
+        with patch.object(
+            coordinator.thermostat_controller,
+            "evaluate_thermostat_action",
+            return_value=_make_state(60.0),
+        ):
+            coordinator.update_thermostat_state()
+        await coordinator.async_update_vents()
+        assert coordinator.vent_controller.evaluate_all_vents.call_args.kwargs["hvac_mode"] == HVACMode.HEAT
+
+        coordinator.vent_controller.evaluate_all_vents.reset_mock()
+
+        # Second update: hot trend -> inferred COOL.
+        with patch.object(
+            coordinator.thermostat_controller,
+            "evaluate_thermostat_action",
+            return_value=_make_state(76.0),
+        ):
+            coordinator.update_thermostat_state()
+        await coordinator.async_update_vents()
+        assert coordinator.vent_controller.evaluate_all_vents.call_args.kwargs["hvac_mode"] == HVACMode.COOL
+
     async def test_thermostat_stores_previous_mode(
         self,
         hass: HomeAssistant,
