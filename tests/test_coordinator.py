@@ -426,6 +426,63 @@ class TestVentOnlyTemperatureSensors:
         assert vcs.area_states["kitchen"].vents[0].should_be_open is True
         assert vcs.area_states["kitchen"].vents[0].open_reason == "Minimum vents (need 1)"
 
+    async def test_vent_only_temperature_sensors_use_determining_sensor_selection(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ) -> None:
+        """Vent-only determining_temperature should follow thermostat determining-sensor rules."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_TEMPERATURE_SENSORS,
+            CONF_VENTS,
+        )
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+
+        kitchen_temp_1 = "sensor.kitchen_temp_1"
+        kitchen_temp_2 = "sensor.kitchen_temp_2"
+        kitchen_vent = "cover.kitchen_vent"
+
+        hass.states.async_set(kitchen_temp_1, "60.0", {"unit_of_measurement": "°F"})
+        hass.states.async_set(kitchen_temp_2, "65.0", {"unit_of_measurement": "°F"})
+        hass.states.async_set(kitchen_vent, "closed", {"current_tilt_position": 0})
+        await hass.async_block_till_done()
+
+        areas_config = {
+            "kitchen": {
+                CONF_AREA_ID: "kitchen",
+                CONF_AREA_ENABLED: True,
+                CONF_TEMPERATURE_SENSORS: [kitchen_temp_1, kitchen_temp_2],
+                CONF_VENTS: [kitchen_vent],
+            }
+        }
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry_vent_only_determining_sensor",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        # Force thermostat state to *not* include kitchen (e.g., inactive/untracked),
+        # but provide mode/targets so vent-only logic can pick a determining sensor.
+        coordinator._last_thermostat_state = ThermostatState(
+            thermostat_entity_id=TEST_THERMOSTAT,
+            hvac_mode=HVACMode.OFF,
+            inferred_hvac_mode=HVACMode.HEAT,
+            target_temperature=70.0,
+            room_states={},
+        )
+
+        merged = coordinator._get_room_temp_states_for_vent_control()
+        assert merged["kitchen"].determining_sensor == kitchen_temp_2
+        assert merged["kitchen"].determining_temperature == 65.0
+
     async def test_thermostat_stores_previous_mode(
         self,
         hass: HomeAssistant,

@@ -81,7 +81,14 @@ from .const import (
     ECO_CRITICAL_SELECT,
 )
 from .occupancy import RoomOccupancyTracker
-from .thermostat_control import ThermostatController, ThermostatState
+from .thermostat_control import (
+    ThermostatController,
+    ThermostatState,
+    get_temperature_from_state,
+    is_room_satiated_for_cool,
+    is_room_satiated_for_heat,
+    is_room_satiated_for_heat_cool,
+)
 from .vent_control import VentController, VentControlState
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,8 +101,9 @@ class VentOnlyRoomTemperatureState:
     This intentionally does NOT participate in thermostat on/off decisions.
     """
 
-    determining_temperature: float | None
     sensor_readings: dict[str, float]
+    determining_temperature: float | None
+    determining_sensor: str | None = None
     is_satiated: bool = False
     is_critical: bool = False
     target_temperature: float | None = None
@@ -418,36 +426,114 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 result[area_id] = list(temp_sensors)
         return result
 
-    def _build_vent_only_room_temp_states(self) -> dict[str, VentOnlyRoomTemperatureState]:
+    def _build_vent_only_room_temp_states(
+        self, state: ThermostatState | None = None
+    ) -> dict[str, VentOnlyRoomTemperatureState]:
         """Build temperature states for vent control from configured sensors.
 
         This is intentionally independent of TSR and thermostat decision-making.
         It reads the configured per-area temperature sensors directly from HA
         so *inactive/untracked* rooms can still influence vent prioritization.
         """
+        state_for_mode = state or self._last_thermostat_state
+        mode_for_eval = None
+        if state_for_mode is not None:
+            if state_for_mode.hvac_mode in (HVACMode.HEAT, HVACMode.COOL, HVACMode.HEAT_COOL):
+                mode_for_eval = state_for_mode.hvac_mode
+            elif state_for_mode.inferred_hvac_mode in (
+                HVACMode.HEAT,
+                HVACMode.COOL,
+                HVACMode.HEAT_COOL,
+            ):
+                mode_for_eval = state_for_mode.inferred_hvac_mode
+
+        deadband = self._options.get(CONF_TEMPERATURE_DEADBAND, DEFAULT_TEMPERATURE_DEADBAND)
+
         result: dict[str, VentOnlyRoomTemperatureState] = {}
         for area_id, sensors in self.get_area_temp_sensors().items():
             readings: dict[str, float] = {}
             for entity_id in sensors:
                 state = self.hass.states.get(entity_id)
-                if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                temp = get_temperature_from_state(state)
+                if temp is None:
                     continue
-                try:
-                    readings[entity_id] = float(state.state)
-                except (TypeError, ValueError):
-                    continue
+                readings[entity_id] = temp
 
             if not readings:
                 result[area_id] = VentOnlyRoomTemperatureState(
                     determining_temperature=None,
+                    determining_sensor=None,
                     sensor_readings={},
                 )
                 continue
 
-            avg = sum(readings.values()) / len(readings)
+            determining_sensor: str | None
+            determining_temp: float | None
+            is_satiated: bool
+
+            if state_for_mode is not None and mode_for_eval == HVACMode.HEAT:
+                target = state_for_mode.target_temperature
+                if target is None:
+                    target = state_for_mode.target_temp_low
+                if target is not None:
+                    is_satiated, determining_sensor, determining_temp = is_room_satiated_for_heat(
+                        readings, target, deadband
+                    )
+                else:
+                    is_satiated = False
+                    avg = sum(readings.values()) / len(readings)
+                    determining_sensor, determining_temp = min(
+                        readings.items(), key=lambda x: abs(x[1] - avg)
+                    )
+            elif state_for_mode is not None and mode_for_eval == HVACMode.COOL:
+                target = state_for_mode.target_temperature
+                if target is None:
+                    target = state_for_mode.target_temp_high
+                if target is not None:
+                    is_satiated, determining_sensor, determining_temp = is_room_satiated_for_cool(
+                        readings, target, deadband
+                    )
+                else:
+                    is_satiated = False
+                    avg = sum(readings.values()) / len(readings)
+                    determining_sensor, determining_temp = min(
+                        readings.items(), key=lambda x: abs(x[1] - avg)
+                    )
+            elif state_for_mode is not None and mode_for_eval == HVACMode.HEAT_COOL:
+                if (
+                    state_for_mode.target_temp_low is not None
+                    and state_for_mode.target_temp_high is not None
+                ):
+                    (
+                        is_satiated,
+                        determining_sensor,
+                        determining_temp,
+                    ) = is_room_satiated_for_heat_cool(
+                        readings,
+                        state_for_mode.target_temp_low,
+                        state_for_mode.target_temp_high,
+                        deadband,
+                    )
+                else:
+                    is_satiated = False
+                    avg = sum(readings.values()) / len(readings)
+                    determining_sensor, determining_temp = min(
+                        readings.items(), key=lambda x: abs(x[1] - avg)
+                    )
+            else:
+                # No reliable mode/targets. Match thermostat-control fallback:
+                # use average, and pick the sensor closest to that average.
+                is_satiated = False
+                avg = sum(readings.values()) / len(readings)
+                determining_sensor, determining_temp = min(
+                    readings.items(), key=lambda x: abs(x[1] - avg)
+                )
+
             result[area_id] = VentOnlyRoomTemperatureState(
-                determining_temperature=avg,
+                determining_temperature=determining_temp,
+                determining_sensor=determining_sensor,
                 sensor_readings=readings,
+                is_satiated=is_satiated,
             )
 
         return result
@@ -636,7 +722,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Use a merged room-state map for vent-control inference.
         merged_room_states: dict[str, Any] = dict(state.room_states)
-        for area_id, vent_state in self._build_vent_only_room_temp_states().items():
+        for area_id, vent_state in self._build_vent_only_room_temp_states(state).items():
             if area_id not in merged_room_states:
                 merged_room_states[area_id] = vent_state
 
