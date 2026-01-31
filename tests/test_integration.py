@@ -1327,7 +1327,7 @@ class TestFullSystemIntegration:
             area_name="Bedroom",
             binary_sensors=[OCCUPANCY_BEDROOM],
             occupied_binary_sensors={OCCUPANCY_BEDROOM},
-            occupancy_start_time=now - timedelta(seconds=60),  # Past vent delay
+            occupancy_start_time=now - timedelta(seconds=60),
             is_active=False,  # Not active yet (< 5 min)
         )
 
@@ -1336,11 +1336,11 @@ class TestFullSystemIntegration:
         await coordinator.async_update_vents()
         await hass.async_block_till_done()
 
-        # Check bedroom vent should be marked to open (occupied past delay)
+        # Vent control is temperature-driven; occupancy alone should not force vents open.
         vent_state = coordinator.last_vent_control_state
         bedroom_area = vent_state.area_states.get(AREA_BEDROOM)
         assert bedroom_area is not None
-        assert bedroom_area.should_open is True, "Occupied room should have vent open"
+        assert bedroom_area.should_open is False
 
         # Step 2: Person stays in bedroom - becomes active
         coordinator.occupancy_tracker._areas[AREA_BEDROOM].is_active = True

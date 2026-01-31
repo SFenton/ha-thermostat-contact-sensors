@@ -259,8 +259,8 @@ class TestEvaluateAreaVents:
         assert "Critical" in area_state.open_reason
         assert area_state.vents[0].should_be_open is True
 
-    def test_active_unsatiated_vents_open(self, controller):
-        """Test that active unsatiated rooms have vents open."""
+    def test_needs_heat_opens_vents(self, controller):
+        """Test that rooms needing heat have vents open."""
         self._setup_single_vent(controller, is_open=False)
         now = datetime(2024, 1, 1, 12, 0, 0)
 
@@ -268,108 +268,24 @@ class TestEvaluateAreaVents:
             area_id=TEST_AREA_BEDROOM,
             area_name="Bedroom",
             vents=[TEST_VENT_1],
-            is_active=True,
-            is_occupied=True,
-            is_satiated=False,
-            is_critical=False,
-            occupancy_start_time=now - timedelta(minutes=10),
-            distance_from_target=2.0,
-            now=now,
-        )
-
-        # When occupied past delay, the reason will mention "Occupied"
-        # Either "Active" or "Occupied" reason is valid - vents should be open
-        assert area_state.should_open is True
-        assert "Active" in area_state.open_reason or "Occupied" in area_state.open_reason
-
-    def test_active_satiated_but_occupied_past_delay_vents_open(self, controller):
-        """Test that rooms occupied past delay have vents open even if satiated."""
-        self._setup_single_vent(controller, is_open=True)
-        now = datetime(2024, 1, 1, 12, 0, 0)
-
-        # Room is satiated but occupied for 10 minutes - vents stay open for comfort
-        area_state = controller.evaluate_area_vents(
-            area_id=TEST_AREA_BEDROOM,
-            area_name="Bedroom",
-            vents=[TEST_VENT_1],
-            is_active=True,
-            is_occupied=True,
-            is_satiated=True,
-            is_critical=False,
-            occupancy_start_time=now - timedelta(minutes=10),
-            distance_from_target=0.0,
-            now=now,
-        )
-
-        # Vents should be OPEN because room is occupied past delay (comfort)
-        assert area_state.should_open is True
-        assert "Occupied" in area_state.open_reason
-
-    def test_satiated_not_occupied_vents_closed(self, controller):
-        """Test that satiated rooms without occupancy have vents closed."""
-        self._setup_single_vent(controller, is_open=True)
-        now = datetime(2024, 1, 1, 12, 0, 0)
-
-        area_state = controller.evaluate_area_vents(
-            area_id=TEST_AREA_BEDROOM,
-            area_name="Bedroom",
-            vents=[TEST_VENT_1],
-            is_active=True,
+            is_active=False,
             is_occupied=False,
-            is_satiated=True,
+            is_satiated=False,
             is_critical=False,
             occupancy_start_time=None,
-            distance_from_target=0.0,
-            now=now,
-        )
-
-        assert area_state.should_open is False
-        assert "Satiated" in area_state.open_reason
-
-    def test_occupied_past_delay_vents_open(self, controller):
-        """Test that rooms occupied past the delay have vents open."""
-        self._setup_single_vent(controller, is_open=False)
-        now = datetime(2024, 1, 1, 12, 0, 0)
-
-        area_state = controller.evaluate_area_vents(
-            area_id=TEST_AREA_BEDROOM,
-            area_name="Bedroom",
-            vents=[TEST_VENT_1],
-            is_active=False,
-            is_occupied=True,
-            is_satiated=False,
-            is_critical=False,
-            occupancy_start_time=now - timedelta(seconds=45),  # 45 > 30 delay
-            distance_from_target=2.0,
+            distance_from_target=None,
+            determining_temperature=68.0,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=71.0,
+            target_temp_high=None,
             now=now,
         )
 
         assert area_state.should_open is True
-        assert "Occupied" in area_state.open_reason
+        assert "Needs heat" in (area_state.open_reason or "")
 
-    def test_occupied_before_delay_vents_closed(self, controller):
-        """Test that rooms occupied before the delay have vents closed."""
-        self._setup_single_vent(controller, is_open=False)
-        now = datetime(2024, 1, 1, 12, 0, 0)
-
-        area_state = controller.evaluate_area_vents(
-            area_id=TEST_AREA_BEDROOM,
-            area_name="Bedroom",
-            vents=[TEST_VENT_1],
-            is_active=False,
-            is_occupied=True,
-            is_satiated=False,
-            is_critical=False,
-            occupancy_start_time=now - timedelta(seconds=15),  # 15 < 30 delay
-            distance_from_target=2.0,
-            now=now,
-        )
-
-        assert area_state.should_open is False
-        assert "Occupied only" in area_state.open_reason
-
-    def test_inactive_vents_closed(self, controller):
-        """Test that inactive rooms have vents closed."""
+    def test_no_determining_temperature_closes_vents(self, controller):
+        """Test that rooms without a determining temperature stay closed."""
         self._setup_single_vent(controller, is_open=True)
         now = datetime(2024, 1, 1, 12, 0, 0)
 
@@ -383,34 +299,15 @@ class TestEvaluateAreaVents:
             is_critical=False,
             occupancy_start_time=None,
             distance_from_target=None,
+            determining_temperature=None,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=71.0,
+            target_temp_high=None,
             now=now,
         )
 
         assert area_state.should_open is False
-        assert "Inactive" in area_state.open_reason
-
-    def test_per_area_vent_delay_override(self, controller):
-        """Test that per-area vent delay override is respected."""
-        self._setup_single_vent(controller, is_open=False)
-        now = datetime(2024, 1, 1, 12, 0, 0)
-
-        # With default delay of 30s, 20s would be too short
-        # But with override of 15s, 20s is enough
-        area_state = controller.evaluate_area_vents(
-            area_id=TEST_AREA_BEDROOM,
-            area_name="Bedroom",
-            vents=[TEST_VENT_1],
-            is_active=False,
-            is_occupied=True,
-            is_satiated=False,
-            is_critical=False,
-            occupancy_start_time=now - timedelta(seconds=20),
-            distance_from_target=2.0,
-            area_vent_open_delay=15,  # Override: 15 seconds
-            now=now,
-        )
-
-        assert area_state.should_open is True
+        assert "No determining temperature" in (area_state.open_reason or "")
 
     def test_vent_group_member_count(self, controller):
         """Test that vent groups are counted correctly."""
@@ -432,6 +329,10 @@ class TestEvaluateAreaVents:
             is_critical=False,
             occupancy_start_time=now - timedelta(minutes=10),
             distance_from_target=2.0,
+            determining_temperature=68.0,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=71.0,
+            target_temp_high=None,
             now=now,
         )
 
@@ -569,25 +470,23 @@ class TestEvaluateAllVents:
         area_vent_configs = {TEST_AREA_BEDROOM: [TEST_VENT_1]}
         now = datetime(2024, 1, 1, 12, 0, 0)
 
-        # Create an active area that needs the vent open
-        active_area = AreaOccupancyState(
-            area_id=TEST_AREA_BEDROOM,
-            area_name="Bedroom",
-            occupancy_start_time=now - timedelta(minutes=10),
-        )
-
-        # Create a room temp state that's unsatiated
+        # Create a room temp state that needs heat
         room_temp_state = RoomTemperatureState(
             area_id=TEST_AREA_BEDROOM,
             area_name="Bedroom",
             is_satiated=False,
+            determining_temperature=68.0,
+            target_temperature=71.0,
         )
 
         control_state = controller.evaluate_all_vents(
             area_vent_configs=area_vent_configs,
-            active_areas=[active_area],
-            occupied_areas=[active_area],
+            active_areas=[],
+            occupied_areas=[],
             room_temp_states={TEST_AREA_BEDROOM: room_temp_state},
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=71.0,
+            target_temp_high=78.0,
             now=now,
         )
 
@@ -604,24 +503,22 @@ class TestEvaluateAllVents:
         area_vent_configs = {TEST_AREA_BEDROOM: [TEST_VENT_1]}
         now = datetime(2024, 1, 1, 12, 0, 0)
 
-        # Create an active area that needs the vent open
-        active_area = AreaOccupancyState(
-            area_id=TEST_AREA_BEDROOM,
-            area_name="Bedroom",
-            occupancy_start_time=now - timedelta(minutes=10),
-        )
-
         room_temp_state = RoomTemperatureState(
             area_id=TEST_AREA_BEDROOM,
             area_name="Bedroom",
             is_satiated=False,
+            determining_temperature=68.0,
+            target_temperature=71.0,
         )
 
         control_state = controller.evaluate_all_vents(
             area_vent_configs=area_vent_configs,
-            active_areas=[active_area],
-            occupied_areas=[active_area],
+            active_areas=[],
+            occupied_areas=[],
             room_temp_states={TEST_AREA_BEDROOM: room_temp_state},
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=71.0,
+            target_temp_high=78.0,
             now=now,
         )
 
@@ -1444,6 +1341,8 @@ class TestIntelligentMinimumVentSelection:
             occupied_areas=active_areas,
             room_temp_states=room_temp_states,
             hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            target_temp_high=78.0,
             now=now,
         )
         

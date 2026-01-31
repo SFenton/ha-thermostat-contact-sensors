@@ -160,6 +160,38 @@ class VentController:
             # We're above cooling target - need cool
             return HVACMode.COOL
 
+    @staticmethod
+    def _calculate_temperature_need(
+        *,
+        determining_temperature: float | None,
+        effective_mode: HVACMode | None,
+        target_temp_low: float | None,
+        target_temp_high: float | None,
+        distance_from_target: float | None,
+        fallback_to_distance: bool,
+    ) -> float | None:
+        """Compute temperature "need" for vent decisions.
+
+        Positive = needs conditioning in the effective mode.
+        Negative = already on the helped side of the target.
+
+        Returns None when we have no usable determining temperature.
+        """
+        if determining_temperature is None:
+            return None
+
+        temp = determining_temperature
+
+        if effective_mode == HVACMode.HEAT and target_temp_low is not None:
+            return target_temp_low - temp
+        if effective_mode == HVACMode.COOL and target_temp_high is not None:
+            return temp - target_temp_high
+
+        if fallback_to_distance and distance_from_target is not None:
+            return distance_from_target
+
+        return 0.0
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -318,6 +350,10 @@ class VentController:
         distance_from_target: float | None,
         determining_temperature: float | None = None,
         area_vent_open_delay: int | None = None,
+        hvac_mode: HVACMode | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+        unresponsive_vents: set[str] | None = None,
         now: datetime | None = None,
     ) -> AreaVentState:
         """Evaluate vent states for an area.
@@ -326,14 +362,17 @@ class VentController:
             area_id: The area ID.
             area_name: The area name.
             vents: List of vent entity IDs for this area.
-            is_active: Whether the room is active (occupied long enough).
-            is_occupied: Whether the room is currently occupied.
-            is_satiated: Whether the room is at target temperature.
+            is_active: Deprecated for vent decisions (kept for compatibility).
+            is_occupied: Deprecated for vent decisions (kept for compatibility).
+            is_satiated: Deprecated for vent decisions (kept for compatibility).
             is_critical: Whether the room is critically cold/hot.
-            occupancy_start_time: When the room became occupied.
+            occupancy_start_time: Deprecated for vent decisions (kept for compatibility).
             distance_from_target: How far from target temperature (for prioritization).
             determining_temperature: Actual temperature for HVAC-aware priority sorting.
-            area_vent_open_delay: Per-area override for vent open delay.
+            area_vent_open_delay: Deprecated for vent decisions (kept for compatibility).
+            hvac_mode: Effective HVAC mode used for determining temperature need.
+            target_temp_low: Heating target temperature.
+            target_temp_high: Cooling target temperature.
             now: Current time (optional, for testing).
 
         Returns:
@@ -341,12 +380,6 @@ class VentController:
         """
         if now is None:
             now = dt_util.utcnow()
-
-        open_delay = (
-            area_vent_open_delay
-            if area_vent_open_delay is not None
-            else self._vent_open_delay_seconds
-        )
 
         area_state = AreaVentState(
             area_id=area_id,
@@ -356,44 +389,37 @@ class VentController:
             determining_temperature=determining_temperature,
         )
 
-        # Determine if vents should be open for this area
-        # Priority order:
-        # 1. Critical - always open (safety)
-        # 2. Occupied past delay - open (comfort for people in room)
-        # 3. Active and unsatiated - open (needs conditioning)
-        # 4. Satiated or inactive - closed
+        # Determine if vents should be open for this area.
+        # Non-critical vent openings are decided exclusively by the temperature-based
+        # ranking/minimum-vents selection in evaluate_all_vents().
         should_open = False
-        open_reason = None
+        open_reason: str | None = None
 
         if is_critical:
-            # Critical rooms always have vents open
             should_open = True
             open_reason = "Critical temperature"
-        elif is_occupied and occupancy_start_time is not None:
-            # Check if occupied long enough for vents to open
-            occupied_seconds = (now - occupancy_start_time).total_seconds()
-            if occupied_seconds >= open_delay:
+        else:
+            need = self._calculate_temperature_need(
+                determining_temperature=determining_temperature,
+                effective_mode=hvac_mode,
+                target_temp_low=target_temp_low,
+                target_temp_high=target_temp_high,
+                distance_from_target=distance_from_target,
+                fallback_to_distance=False,
+            )
+
+            if need is None:
+                should_open = False
+                open_reason = "No determining temperature"
+            elif need > 0:
                 should_open = True
-                open_reason = f"Occupied for {occupied_seconds:.0f}s (>= {open_delay}s)"
-            elif is_active and not is_satiated:
-                # Not occupied long enough, but active and needs conditioning
-                should_open = True
-                open_reason = "Active, needs conditioning"
+                if hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
+                    open_reason = f"Needs {hvac_mode.value} (need {need:.2f})"
+                else:
+                    open_reason = f"Needs conditioning (need {need:.2f})"
             else:
                 should_open = False
-                open_reason = f"Occupied only {occupied_seconds:.0f}s (< {open_delay}s delay)"
-        elif is_active and not is_satiated:
-            # Active unsatiated rooms need vents open
-            should_open = True
-            open_reason = "Active, needs conditioning"
-        elif is_satiated:
-            # Satiated rooms close vents (temperature reached)
-            should_open = False
-            open_reason = "Satiated - at target temperature"
-        else:
-            # Inactive - close vents
-            should_open = False
-            open_reason = "Inactive"
+                open_reason = "At/over target"
 
         area_state.should_open = should_open
         area_state.open_reason = open_reason
@@ -404,15 +430,22 @@ class VentController:
             member_count = self.get_group_member_count(vent_entity_id)
             is_open = self.get_vent_current_state(vent_entity_id)
 
+            # Unresponsive vents should not be commanded open/closed until recovered.
+            should_be_open = should_open
+            vent_open_reason = open_reason if should_open else None
+            if unresponsive_vents and vent_entity_id in unresponsive_vents:
+                should_be_open = False
+                vent_open_reason = "Unresponsive vent"
+
             vent_state = VentState(
                 entity_id=vent_entity_id,
                 area_id=area_id,
                 is_group=is_group,
                 member_count=member_count,
                 is_open=is_open,
-                should_be_open=should_open,
+                should_be_open=should_be_open,
                 last_command_time=self._last_command_times.get(vent_entity_id),
-                open_reason=open_reason if should_open else None,
+                open_reason=vent_open_reason,
             )
 
             area_state.vents.append(vent_state)
@@ -477,30 +510,9 @@ class VentController:
             for vent in area_state.vents:
                 priority_score = 0.0
 
-                # NOTE: Temporarily disabled occupancy/activity-based adjustments in
-                # minimum-vent selection scoring (keep for easy revert).
-                #
-                # # If a room is newly occupied but still under its open-delay window,
-                # # do not use minimum-vents enforcement to open it early.
-                # if (area_state.open_reason or "").startswith("Occupied only"):
-                #     priority_score -= 5000.0
-                #
-                # # If we don't have a usable temperature for this area, it is the last resort
-                # # for minimum-vent selection.
-                # if area_state.determining_temperature is None:
-                #     priority_score -= 5000.0
-                #
-                # # Critical rooms get highest priority
-                # if area_state.should_open and "Critical" in (area_state.open_reason or ""):
-                #     priority_score += 2000.0
-                #
-                # # Active rooms get second priority
-                # elif area_state.should_open and "Active" in (area_state.open_reason or ""):
-                #     priority_score += 1000.0
-                #
-                # # Occupied rooms get low priority (temperature-based beats this)
-                # elif area_state.should_open and "Occupied" in (area_state.open_reason or ""):
-                #     priority_score += 50.0
+                # Areas with no determining temperature are last-resort for minimum-vent selection.
+                if area_state.determining_temperature is None:
+                    priority_score -= 5000.0
 
                 # Temperature-based priority.
                 # Use the relevant target (heat low / cool high) when available so we
@@ -532,10 +544,6 @@ class VentController:
                         priority_score += 3000.0
                 elif area_state.distance_from_target is not None:
                     priority_score += area_state.distance_from_target * 10.0
-
-                # Satiated rooms should generally rank below rooms that still need conditioning.
-                if (area_state.open_reason or "").startswith("Satiated"):
-                    priority_score -= 250.0
 
                 priority_list.append(
                     (area_id, vent.entity_id, vent.member_count, priority_score)
@@ -584,6 +592,15 @@ class VentController:
 
         control_state = VentControlState()
 
+        # Use a single effective HVAC mode for vent decisions.
+        effective_mode = hvac_mode
+        if hvac_mode in (None, HVACMode.OFF) and room_temp_states:
+            inferred_mode = self.infer_effective_hvac_mode(
+                room_temp_states, target_temp_low, target_temp_high
+            )
+            if inferred_mode is not None:
+                effective_mode = inferred_mode
+
         # Build lookup sets
         active_area_ids = {a.area_id for a in active_areas}
         occupied_area_ids = {a.area_id for a in occupied_areas}
@@ -595,6 +612,14 @@ class VentController:
         for area in active_areas:
             if area.area_id not in occupancy_times:
                 occupancy_times[area.area_id] = area.occupancy_start_time
+
+        # Track which vents are unresponsive (pending for >60s with 3+ retries).
+        unresponsive_vents: set[str] = set()
+        for entity_id, (desired_state, command_time, retry_count) in self._pending_confirmations.items():
+            elapsed = (now - command_time).total_seconds()
+            current_state = self.get_vent_current_state(entity_id)
+            if current_state != desired_state and elapsed >= 60 and retry_count >= 3:
+                unresponsive_vents.add(entity_id)
 
         # Evaluate each area
         for area_id, vents in area_vent_configs.items():
@@ -643,6 +668,10 @@ class VentController:
                 distance_from_target=distance_from_target,
                 determining_temperature=determining_temperature,
                 area_vent_open_delay=area_vent_delays.get(area_id),
+                hvac_mode=effective_mode,
+                target_temp_low=target_temp_low,
+                target_temp_high=target_temp_high,
+                unresponsive_vents=unresponsive_vents,
                 now=now,
             )
 
@@ -654,17 +683,6 @@ class VentController:
         # First count how many vents should be open based on rules (active/critical rooms)
         vents_needed_by_rules = 0
         vents_marked_for_closure: list[VentState] = []
-        
-        # Track which vents are unresponsive (pending for >60s with 3+ retries)
-        unresponsive_vents: set[str] = set()
-        if now is None:
-            now = dt_util.utcnow()
-        
-        for entity_id, (desired_state, command_time, retry_count) in self._pending_confirmations.items():
-            elapsed = (now - command_time).total_seconds()
-            current_state = self.get_vent_current_state(entity_id)
-            if current_state != desired_state and elapsed >= 60 and retry_count >= 3:
-                unresponsive_vents.add(entity_id)
 
         for area_state in control_state.area_states.values():
             for vent in area_state.vents:
@@ -680,7 +698,7 @@ class VentController:
             # Get priority list for ALL vents (to potentially reorder which are open)
             priority_list = self.calculate_minimum_vents_priority(
                 control_state.area_states,
-                hvac_mode=hvac_mode,
+                hvac_mode=effective_mode,
                 room_temp_states=room_temp_states,
                 target_temp_low=target_temp_low,
                 target_temp_high=target_temp_high,
