@@ -537,6 +537,10 @@ class TestOccupancyVentEffects:
         mock_climate_service_integration: dict,
     ):
         """Test that recently occupied rooms don't open vents yet."""
+        # Disable minimum-vents enforcement for this test so we're only
+        # validating the open-delay behavior.
+        options = dict(integration_config_entry.options)
+        options[CONF_MIN_VENTS_OPEN] = 0
         integration_config_entry.add_to_hass(hass)
 
         # Close all vents initially
@@ -549,7 +553,7 @@ class TestOccupancyVentEffects:
             config_entry_id=integration_config_entry.entry_id,
             contact_sensors=get_contact_sensors_from_areas(integration_config_entry.data[CONF_AREAS]),
             thermostat=THERMOSTAT,
-            options=integration_config_entry.options,
+            options=options,
             areas_config=integration_config_entry.data[CONF_AREAS],
         )
         await coordinator.async_setup()

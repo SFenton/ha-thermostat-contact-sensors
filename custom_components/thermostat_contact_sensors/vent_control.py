@@ -477,27 +477,30 @@ class VentController:
             for vent in area_state.vents:
                 priority_score = 0.0
 
-                # If a room is newly occupied but still under its open-delay window,
-                # do not use minimum-vents enforcement to open it early.
-                if (area_state.open_reason or "").startswith("Occupied only"):
-                    priority_score -= 5000.0
-
-                # If we don't have a usable temperature for this area, it is the last resort
-                # for minimum-vent selection.
-                if area_state.determining_temperature is None:
-                    priority_score -= 5000.0
-
-                # Critical rooms get highest priority
-                if area_state.should_open and "Critical" in (area_state.open_reason or ""):
-                    priority_score += 2000.0
-
-                # Active rooms get second priority
-                elif area_state.should_open and "Active" in (area_state.open_reason or ""):
-                    priority_score += 1000.0
-
-                # Occupied rooms get low priority (temperature-based beats this)
-                elif area_state.should_open and "Occupied" in (area_state.open_reason or ""):
-                    priority_score += 50.0
+                # NOTE: Temporarily disabled occupancy/activity-based adjustments in
+                # minimum-vent selection scoring (keep for easy revert).
+                #
+                # # If a room is newly occupied but still under its open-delay window,
+                # # do not use minimum-vents enforcement to open it early.
+                # if (area_state.open_reason or "").startswith("Occupied only"):
+                #     priority_score -= 5000.0
+                #
+                # # If we don't have a usable temperature for this area, it is the last resort
+                # # for minimum-vent selection.
+                # if area_state.determining_temperature is None:
+                #     priority_score -= 5000.0
+                #
+                # # Critical rooms get highest priority
+                # if area_state.should_open and "Critical" in (area_state.open_reason or ""):
+                #     priority_score += 2000.0
+                #
+                # # Active rooms get second priority
+                # elif area_state.should_open and "Active" in (area_state.open_reason or ""):
+                #     priority_score += 1000.0
+                #
+                # # Occupied rooms get low priority (temperature-based beats this)
+                # elif area_state.should_open and "Occupied" in (area_state.open_reason or ""):
+                #     priority_score += 50.0
 
                 # Temperature-based priority.
                 # Use the relevant target (heat low / cool high) when available so we
