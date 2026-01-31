@@ -1052,6 +1052,13 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Get per-area vent delay overrides
         area_vent_delays = self.get_area_vent_delays()
 
+        tracked_area_ids = self.tracked_rooms if self.only_track_selected_rooms else set()
+        force_track_when_critical_area_ids = {
+            area_id
+            for area_id in self._areas_config.keys()
+            if self._area_has_critical_override(area_id)
+        }
+
         # Evaluate all vents
         control_state = self.vent_controller.evaluate_all_vents(
             area_vent_configs=area_vents,
@@ -1062,6 +1069,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             hvac_mode=hvac_mode,
             target_temp_low=target_temp_low,
             target_temp_high=target_temp_high,
+            eco_mode=self.eco_mode,
+            only_track_selected_rooms=self.only_track_selected_rooms,
+            tracked_area_ids=tracked_area_ids,
+            force_track_when_critical_area_ids=force_track_when_critical_area_ids,
         )
 
         # Execute pending commands

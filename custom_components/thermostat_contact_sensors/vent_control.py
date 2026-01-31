@@ -80,6 +80,41 @@ class VentController:
     """Controller for managing HVAC vents based on room state."""
 
     @staticmethod
+    def _pending_is_unresponsive(
+        *,
+        current_state: bool,
+        desired_state: bool,
+        elapsed_seconds: float,
+        retry_count: int,
+        timeout_seconds: float = 60.0,
+        max_retries: int = 3,
+    ) -> bool:
+        return (
+            current_state != desired_state
+            and elapsed_seconds >= timeout_seconds
+            and retry_count >= max_retries
+        )
+
+    def _get_unresponsive_vents(self, *, now: datetime) -> set[str]:
+        """Return vents considered unresponsive based on pending confirmations."""
+        unresponsive_vents: set[str] = set()
+        for entity_id, (
+            desired_state,
+            command_time,
+            retry_count,
+        ) in self._pending_confirmations.items():
+            elapsed = (now - command_time).total_seconds()
+            current_state = self.get_vent_current_state(entity_id)
+            if self._pending_is_unresponsive(
+                current_state=current_state,
+                desired_state=desired_state,
+                elapsed_seconds=elapsed,
+                retry_count=retry_count,
+            ):
+                unresponsive_vents.add(entity_id)
+        return unresponsive_vents
+
+    @staticmethod
     def infer_effective_hvac_mode(
         room_temp_states: dict[str, "RoomTemperatureState"],
         target_temp_low: float | None,
@@ -358,6 +393,10 @@ class VentController:
     ) -> AreaVentState:
         """Evaluate vent states for an area.
 
+        Policy: vents are forced-open only for (eligible) critical rooms.
+        All other openings are decided by minimum-vent selection in
+        `evaluate_all_vents()`.
+
         Args:
             area_id: The area ID.
             area_name: The area name.
@@ -365,14 +404,15 @@ class VentController:
             is_active: Deprecated for vent decisions (kept for compatibility).
             is_occupied: Deprecated for vent decisions (kept for compatibility).
             is_satiated: Deprecated for vent decisions (kept for compatibility).
-            is_critical: Whether the room is critically cold/hot.
+            is_critical: Whether the room should be forced open by policy.
             occupancy_start_time: Deprecated for vent decisions (kept for compatibility).
             distance_from_target: How far from target temperature (for prioritization).
             determining_temperature: Actual temperature for HVAC-aware priority sorting.
             area_vent_open_delay: Deprecated for vent decisions (kept for compatibility).
-            hvac_mode: Effective HVAC mode used for determining temperature need.
-            target_temp_low: Heating target temperature.
-            target_temp_high: Cooling target temperature.
+            hvac_mode: Effective HVAC mode (unused for forced-open decisions).
+            target_temp_low: Heating target temperature (unused for forced-open decisions).
+            target_temp_high: Cooling target temperature (unused for forced-open decisions).
+            unresponsive_vents: Vents to suppress commands for.
             now: Current time (optional, for testing).
 
         Returns:
@@ -389,37 +429,8 @@ class VentController:
             determining_temperature=determining_temperature,
         )
 
-        # Determine if vents should be open for this area.
-        # Non-critical vent openings are decided exclusively by the temperature-based
-        # ranking/minimum-vents selection in evaluate_all_vents().
-        should_open = False
-        open_reason: str | None = None
-
-        if is_critical:
-            should_open = True
-            open_reason = "Critical temperature"
-        else:
-            need = self._calculate_temperature_need(
-                determining_temperature=determining_temperature,
-                effective_mode=hvac_mode,
-                target_temp_low=target_temp_low,
-                target_temp_high=target_temp_high,
-                distance_from_target=distance_from_target,
-                fallback_to_distance=False,
-            )
-
-            if need is None:
-                should_open = False
-                open_reason = "No determining temperature"
-            elif need > 0:
-                should_open = True
-                if hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
-                    open_reason = f"Needs {hvac_mode.value} (need {need:.2f})"
-                else:
-                    open_reason = f"Needs conditioning (need {need:.2f})"
-            else:
-                should_open = False
-                open_reason = "At/over target"
+        should_open = bool(is_critical)
+        open_reason: str | None = "Critical temperature" if should_open else None
 
         area_state.should_open = should_open
         area_state.open_reason = open_reason
@@ -462,14 +473,17 @@ class VentController:
         room_temp_states: dict[str, "RoomTemperatureState"] | None = None,
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
+        eco_mode: bool = False,
+        only_track_selected_rooms: bool = False,
+        tracked_area_ids: set[str] | None = None,
+        force_track_when_critical_area_ids: set[str] | None = None,
     ) -> list[tuple[str, str, int, float]]:
         """Calculate priority order for keeping minimum vents open.
 
         When we need to keep vents open for back pressure prevention, we prioritize:
-        1. Critical rooms (temperature emergency)
-        2. Rooms furthest from the relevant target (below heat target / above cool target)
-        3. Active rooms (people actively there)
-        4. Occupied rooms (presence but no activity)
+        1. (Eco ON + TSR ON) Critical tracked rooms + critical force-track-when-critical rooms
+        2. (Eco ON + TSR ON) Critical untracked rooms
+        3. Highest temperature need for the current effective mode
 
         Rooms with no usable temperature signal are treated as the *lowest* priority
         for minimum-vent selection.
@@ -484,12 +498,20 @@ class VentController:
             room_temp_states: Dict of area_id -> RoomTemperatureState (for inferring mode).
             target_temp_low: Heating target temperature (for inferring mode).
             target_temp_high: Cooling target temperature (for inferring mode).
+            eco_mode: Whether eco mode is enabled.
+            only_track_selected_rooms: Whether TSR is enabled.
+            tracked_area_ids: Set of tracked room area_ids (when TSR enabled).
+            force_track_when_critical_area_ids: Set of rooms with FTCR enabled.
 
         Returns:
             List of (area_id, vent_entity_id, member_count, priority_score).
             Higher score = higher priority for staying open.
         """
+
         priority_list: list[tuple[str, str, int, float]] = []
+
+        tracked_area_ids = tracked_area_ids or set()
+        force_track_when_critical_area_ids = force_track_when_critical_area_ids or set()
 
         # Determine effective HVAC mode for prioritization
         effective_mode = hvac_mode
@@ -509,6 +531,23 @@ class VentController:
         for area_id, area_state in area_states.items():
             for vent in area_state.vents:
                 priority_score = 0.0
+                priority_score: float = 0.0
+
+                # Critical-tracking priority. When Eco+TSR is on, we want critical tracked
+                # and FTCR rooms to win, then critical untracked, then everything else.
+                temp_state = room_temp_states.get(area_id) if room_temp_states else None
+                is_critical = bool(getattr(temp_state, "is_critical", False))
+                if is_critical:
+                    if eco_mode and only_track_selected_rooms:
+                        if (
+                            area_id in tracked_area_ids
+                            or area_id in force_track_when_critical_area_ids
+                        ):
+                            priority_score += 2_000_000.0
+                        else:
+                            priority_score += 1_000_000.0
+                    else:
+                        priority_score += 1_000_000.0
 
                 # Areas with no determining temperature are last-resort for minimum-vent selection.
                 if area_state.determining_temperature is None:
@@ -563,6 +602,10 @@ class VentController:
         hvac_mode: HVACMode | None = None,
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
+        eco_mode: bool = False,
+        only_track_selected_rooms: bool = False,
+        tracked_area_ids: set[str] | None = None,
+        force_track_when_critical_area_ids: set[str] | None = None,
         now: datetime | None = None,
     ) -> VentControlState:
         """Evaluate all vents and determine which should be open.
@@ -605,6 +648,9 @@ class VentController:
         active_area_ids = {a.area_id for a in active_areas}
         occupied_area_ids = {a.area_id for a in occupied_areas}
 
+        tracked_area_ids = tracked_area_ids or set()
+        force_track_when_critical_area_ids = force_track_when_critical_area_ids or set()
+
         # Build occupancy start time lookup
         occupancy_times: dict[str, datetime | None] = {}
         for area in occupied_areas:
@@ -614,12 +660,7 @@ class VentController:
                 occupancy_times[area.area_id] = area.occupancy_start_time
 
         # Track which vents are unresponsive (pending for >60s with 3+ retries).
-        unresponsive_vents: set[str] = set()
-        for entity_id, (desired_state, command_time, retry_count) in self._pending_confirmations.items():
-            elapsed = (now - command_time).total_seconds()
-            current_state = self.get_vent_current_state(entity_id)
-            if current_state != desired_state and elapsed >= 60 and retry_count >= 3:
-                unresponsive_vents.add(entity_id)
+        unresponsive_vents = self._get_unresponsive_vents(now=now)
 
         # Evaluate each area
         for area_id, vents in area_vent_configs.items():
@@ -656,6 +697,20 @@ class VentController:
                     area_name = area.area_name
                     break
 
+            # Decide whether this critical room is eligible to be force-open.
+            # - Eco OFF: force-open all critical rooms.
+            # - Eco ON + TSR OFF: force-open all critical rooms.
+            # - Eco ON + TSR ON: force-open critical tracked rooms + critical FTCR rooms.
+            is_force_open_critical = False
+            if is_critical:
+                if eco_mode and only_track_selected_rooms:
+                    is_force_open_critical = (
+                        area_id in tracked_area_ids
+                        or area_id in force_track_when_critical_area_ids
+                    )
+                else:
+                    is_force_open_critical = True
+
             area_state = self.evaluate_area_vents(
                 area_id=area_id,
                 area_name=area_name,
@@ -663,7 +718,7 @@ class VentController:
                 is_active=is_active,
                 is_occupied=is_occupied,
                 is_satiated=is_satiated,
-                is_critical=is_critical,
+                is_critical=is_force_open_critical,
                 occupancy_start_time=occupancy_times.get(area_id),
                 distance_from_target=distance_from_target,
                 determining_temperature=determining_temperature,
@@ -702,6 +757,10 @@ class VentController:
                 room_temp_states=room_temp_states,
                 target_temp_low=target_temp_low,
                 target_temp_high=target_temp_high,
+                eco_mode=eco_mode,
+                only_track_selected_rooms=only_track_selected_rooms,
+                tracked_area_ids=tracked_area_ids,
+                force_track_when_critical_area_ids=force_track_when_critical_area_ids,
             )
 
             # Select the best vents to reach minimum count
@@ -790,34 +849,45 @@ class VentController:
 
         executed = 0
 
-        # First, check for unconfirmed commands from previous runs
-        # If a vent hasn't changed state after 60 seconds, mark it as unresponsive
+        # First, check for unconfirmed commands from previous runs.
+        # If a vent hasn't changed state after 60 seconds, retry up to 3 times,
+        # then mark it as unresponsive.
         unresponsive_vents: set[str] = set()
-        for entity_id, (desired_state, command_time, retry_count) in list(self._pending_confirmations.items()):
+        for entity_id, (
+            desired_state,
+            command_time,
+            retry_count,
+        ) in list(self._pending_confirmations.items()):
             elapsed = (now - command_time).total_seconds()
             current_state = self.get_vent_current_state(entity_id)
-            
+
             if current_state == desired_state:
-                # Command succeeded, remove from pending
                 del self._pending_confirmations[entity_id]
                 _LOGGER.debug("Vent %s confirmed in desired state", entity_id)
-            elif elapsed >= 60:
-                # Vent hasn't responded after 60 seconds
-                if retry_count < 3:
-                    # Retry the command
-                    _LOGGER.warning(
-                        "Vent %s hasn't responded after %.0fs (retry %d/3)",
-                        entity_id, elapsed, retry_count + 1
-                    )
-                    # Will retry below
-                else:
-                    # Give up, mark as unresponsive
-                    unresponsive_vents.add(entity_id)
-                    del self._pending_confirmations[entity_id]
-                    _LOGGER.error(
-                        "Vent %s marked unresponsive after 3 retries",
-                        entity_id
-                    )
+                continue
+
+            if elapsed < 60:
+                continue
+
+            if self._pending_is_unresponsive(
+                current_state=current_state,
+                desired_state=desired_state,
+                elapsed_seconds=elapsed,
+                retry_count=retry_count,
+            ):
+                unresponsive_vents.add(entity_id)
+                del self._pending_confirmations[entity_id]
+                _LOGGER.error(
+                    "Vent %s marked unresponsive after 3 retries",
+                    entity_id,
+                )
+            elif retry_count < 3:
+                _LOGGER.warning(
+                    "Vent %s hasn't responded after %.0fs (retry %d/3)",
+                    entity_id,
+                    elapsed,
+                    retry_count + 1,
+                )
 
         for entity_id, should_open, reason in control_state.pending_commands:
             # Skip unresponsive vents

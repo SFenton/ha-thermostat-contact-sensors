@@ -259,8 +259,8 @@ class TestEvaluateAreaVents:
         assert "Critical" in area_state.open_reason
         assert area_state.vents[0].should_be_open is True
 
-    def test_needs_heat_opens_vents(self, controller):
-        """Test that rooms needing heat have vents open."""
+    def test_needs_heat_does_not_force_open_vents(self, controller):
+        """Test that non-critical rooms are not forced open by temperature need."""
         self._setup_single_vent(controller, is_open=False)
         now = datetime(2024, 1, 1, 12, 0, 0)
 
@@ -281,8 +281,9 @@ class TestEvaluateAreaVents:
             now=now,
         )
 
-        assert area_state.should_open is True
-        assert "Needs heat" in (area_state.open_reason or "")
+        assert area_state.should_open is False
+        assert area_state.open_reason is None
+        assert area_state.vents[0].should_be_open is False
 
     def test_no_determining_temperature_closes_vents(self, controller):
         """Test that rooms without a determining temperature stay closed."""
@@ -307,7 +308,7 @@ class TestEvaluateAreaVents:
         )
 
         assert area_state.should_open is False
-        assert "No determining temperature" in (area_state.open_reason or "")
+        assert area_state.open_reason is None
 
     def test_vent_group_member_count(self, controller):
         """Test that vent groups are counted correctly."""
@@ -1298,7 +1299,7 @@ class TestIntelligentMinimumVentSelection:
         assert control_state.vents_should_be_open == 3
 
     def test_more_than_minimum_vents_when_needed(self, controller):
-        """Test that more than minimum vents can be open when rooms are active."""
+        """Test that non-critical rooms are opened only to satisfy minimum vents."""
         now = datetime.now()
         
         # 5 rooms are active - should all be open even though min is 3
@@ -1345,11 +1346,78 @@ class TestIntelligentMinimumVentSelection:
             target_temp_high=78.0,
             now=now,
         )
-        
-        # All 5 should be open (not limited by minimum of 3)
-        assert control_state.vents_should_be_open == 5
-        for i in range(5):
-            assert control_state.area_states[f"room_{i}"].vents[0].should_be_open is True
+
+        # Only the minimum number should be open
+        assert control_state.vents_should_be_open == 3
+        open_areas = [
+            area_id
+            for area_id, area_state in control_state.area_states.items()
+            if area_state.vents[0].should_be_open
+        ]
+        assert len(open_areas) == 3
+
+    def test_eco_tsr_prioritizes_critical_tracked_then_critical_untracked(self, controller):
+        """Test Eco+TSR priority: critical tracked/FTCR > critical untracked > others."""
+        # Reduce minimum to make ordering obvious
+        controller.min_vents_open = 2
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_CLOSED
+            state.attributes = {"current_tilt_position": 0}
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {
+            "room_a": ["cover.room_a_vent"],
+            "room_b": ["cover.room_b_vent"],
+            "room_c": ["cover.room_c_vent"],
+        }
+
+        room_temp_states = {
+            # Critical tracked -> forced open by rules
+            "room_a": RoomTemperatureState(
+                area_id="room_a",
+                area_name="Room A",
+                determining_temperature=65.0,
+                is_critical=True,
+            ),
+            # Critical untracked -> should be selected before non-critical, even if non-critical has higher need
+            "room_b": RoomTemperatureState(
+                area_id="room_b",
+                area_name="Room B",
+                determining_temperature=65.0,
+                is_critical=True,
+            ),
+            # Very cold but non-critical -> should lose to critical-untracked under Eco+TSR
+            "room_c": RoomTemperatureState(
+                area_id="room_c",
+                area_name="Room C",
+                determining_temperature=50.0,
+                is_critical=False,
+            ),
+        }
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            target_temp_high=78.0,
+            eco_mode=True,
+            only_track_selected_rooms=True,
+            tracked_area_ids={"room_a"},
+            force_track_when_critical_area_ids=set(),
+            now=now,
+        )
+
+        assert control_state.area_states["room_a"].vents[0].should_be_open is True
+        assert control_state.area_states["room_b"].vents[0].should_be_open is True
+        assert control_state.area_states["room_c"].vents[0].should_be_open is False
 
 
 # =============================================================================
