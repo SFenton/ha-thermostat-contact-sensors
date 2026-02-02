@@ -389,6 +389,7 @@ class VentController:
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
         unresponsive_vents: set[str] | None = None,
+        force_open_reason: str | None = None,
         now: datetime | None = None,
     ) -> AreaVentState:
         """Evaluate vent states for an area.
@@ -413,6 +414,7 @@ class VentController:
             target_temp_low: Heating target temperature (unused for forced-open decisions).
             target_temp_high: Cooling target temperature (unused for forced-open decisions).
             unresponsive_vents: Vents to suppress commands for.
+            force_open_reason: Reason to store when the area is forced open.
             now: Current time (optional, for testing).
 
         Returns:
@@ -430,7 +432,12 @@ class VentController:
         )
 
         should_open = bool(is_critical)
-        open_reason: str | None = "Critical temperature" if should_open else None
+        if should_open:
+            open_reason: str | None = (
+                force_open_reason if force_open_reason is not None else "Critical temperature"
+            )
+        else:
+            open_reason = None
 
         area_state.should_open = should_open
         area_state.open_reason = open_reason
@@ -711,6 +718,32 @@ class VentController:
                 else:
                     is_force_open_critical = True
 
+            # Also force-open active rooms that are unsatiated.
+            # - Eco OFF: any active unsatiated room.
+            # - Eco ON + TSR OFF: any active unsatiated room.
+            # - Eco ON + TSR ON: active unsatiated rooms that are tracked by TSR.
+            is_force_open_active_unsatiated = False
+            if (
+                is_active
+                and temp_state is not None
+                and not temp_state.is_satiated
+                and determining_temperature is not None
+            ):
+                if eco_mode and only_track_selected_rooms:
+                    is_force_open_active_unsatiated = area_id in tracked_area_ids
+                else:
+                    is_force_open_active_unsatiated = True
+
+            force_open = is_force_open_critical or is_force_open_active_unsatiated
+            force_open_reason: str | None = None
+            if force_open:
+                if is_force_open_critical:
+                    force_open_reason = "Critical temperature"
+                elif eco_mode and only_track_selected_rooms:
+                    force_open_reason = "Active (tracked) unsatiated"
+                else:
+                    force_open_reason = "Active unsatiated"
+
             area_state = self.evaluate_area_vents(
                 area_id=area_id,
                 area_name=area_name,
@@ -718,7 +751,7 @@ class VentController:
                 is_active=is_active,
                 is_occupied=is_occupied,
                 is_satiated=is_satiated,
-                is_critical=is_force_open_critical,
+                is_critical=force_open,
                 occupancy_start_time=occupancy_times.get(area_id),
                 distance_from_target=distance_from_target,
                 determining_temperature=determining_temperature,
@@ -727,6 +760,7 @@ class VentController:
                 target_temp_low=target_temp_low,
                 target_temp_high=target_temp_high,
                 unresponsive_vents=unresponsive_vents,
+                force_open_reason=force_open_reason,
                 now=now,
             )
 

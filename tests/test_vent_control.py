@@ -1299,7 +1299,7 @@ class TestIntelligentMinimumVentSelection:
         assert control_state.vents_should_be_open == 3
 
     def test_more_than_minimum_vents_when_needed(self, controller):
-        """Test that non-critical rooms are opened only to satisfy minimum vents."""
+        """Test that active unsatiated rooms are force-opened before minimum vents."""
         now = datetime.now()
         
         # 5 rooms are active - should all be open even though min is 3
@@ -1347,14 +1347,331 @@ class TestIntelligentMinimumVentSelection:
             now=now,
         )
 
-        # Only the minimum number should be open
-        assert control_state.vents_should_be_open == 3
+        # All active unsatiated rooms should be open, even beyond the minimum.
+        assert control_state.vents_should_be_open == 5
         open_areas = [
             area_id
             for area_id, area_state in control_state.area_states.items()
             if area_state.vents[0].should_be_open
         ]
-        assert len(open_areas) == 3
+        assert len(open_areas) == 5
+
+    def test_eco_tsr_opens_tracked_active_unsatiated_only(self, controller):
+        """Eco ON + TSR ON: only tracked active unsatiated rooms are force-opened."""
+        controller.min_vents_open = 1
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_CLOSED
+            state.attributes = {"current_tilt_position": 0}
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {
+            "tracked": ["cover.tracked_vent"],
+            "untracked": ["cover.untracked_vent"],
+        }
+
+        active_areas = [
+            AreaOccupancyState(
+                area_id="tracked",
+                area_name="Tracked",
+                binary_sensors=[],
+                sensors=[],
+                is_active=True,
+                occupancy_start_time=now - timedelta(minutes=10),
+            ),
+            AreaOccupancyState(
+                area_id="untracked",
+                area_name="Untracked",
+                binary_sensors=[],
+                sensors=[],
+                is_active=True,
+                occupancy_start_time=now - timedelta(minutes=10),
+            ),
+        ]
+
+        room_temp_states = {
+            "tracked": RoomTemperatureState(
+                area_id="tracked",
+                area_name="Tracked",
+                determining_temperature=65.0,
+                is_satiated=False,
+                is_critical=False,
+            ),
+            "untracked": RoomTemperatureState(
+                area_id="untracked",
+                area_name="Untracked",
+                determining_temperature=65.0,
+                is_satiated=False,
+                is_critical=False,
+            ),
+        }
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=active_areas,
+            occupied_areas=active_areas,
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            target_temp_high=78.0,
+            eco_mode=True,
+            only_track_selected_rooms=True,
+            tracked_area_ids={"tracked"},
+            now=now,
+        )
+
+        assert control_state.area_states["tracked"].vents[0].should_be_open is True
+        assert control_state.area_states["untracked"].vents[0].should_be_open is False
+        assert control_state.vents_should_be_open == 1
+
+    def test_six_room_scenario_eco_tsr_room_a_tracked(self, controller):
+        """Eco ON + TSR ON with Room A tracked: entering A swaps A in for B."""
+        controller.min_vents_open = 5
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_CLOSED
+            state.attributes = {"current_tilt_position": 0}
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {f"room_{c}": [f"cover.room_{c}_vent"] for c in "abcdef"}
+
+        def build_room_temp_states(room_a_temp: float, room_a_satiated: bool) -> dict[str, RoomTemperatureState]:
+            return {
+                "room_a": RoomTemperatureState(
+                    area_id="room_a",
+                    area_name="Room A",
+                    determining_temperature=room_a_temp,
+                    is_satiated=room_a_satiated,
+                    is_critical=False,
+                ),
+                "room_b": RoomTemperatureState(
+                    area_id="room_b",
+                    area_name="Room B",
+                    determining_temperature=69.0,
+                    is_satiated=False,
+                    is_critical=False,
+                ),
+                "room_c": RoomTemperatureState(
+                    area_id="room_c",
+                    area_name="Room C",
+                    determining_temperature=68.0,
+                    is_satiated=False,
+                    is_critical=True,
+                ),
+                "room_d": RoomTemperatureState(
+                    area_id="room_d",
+                    area_name="Room D",
+                    determining_temperature=67.0,
+                    is_satiated=False,
+                    is_critical=True,
+                ),
+                "room_e": RoomTemperatureState(
+                    area_id="room_e",
+                    area_name="Room E",
+                    determining_temperature=66.0,
+                    is_satiated=False,
+                    is_critical=True,
+                ),
+                "room_f": RoomTemperatureState(
+                    area_id="room_f",
+                    area_name="Room F",
+                    determining_temperature=65.0,
+                    is_satiated=False,
+                    is_critical=True,
+                ),
+            }
+
+        def open_rooms(control_state: VentControlState) -> set[str]:
+            return {
+                area_id
+                for area_id, area_state in control_state.area_states.items()
+                if area_state.vents[0].should_be_open
+            }
+
+        # 1) Nobody home: min vents forces open 5 rooms (critical untracked first, then coldest non-critical).
+        cs1 = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=build_room_temp_states(room_a_temp=70.0, room_a_satiated=False),
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=72.0,
+            eco_mode=True,
+            only_track_selected_rooms=True,
+            tracked_area_ids={"room_a"},
+            now=now,
+        )
+        assert open_rooms(cs1) == {"room_b", "room_c", "room_d", "room_e", "room_f"}
+
+        # 2) Someone enters Room A: tracked + active + unsatiated forces A open, bumping out B.
+        active_a = [
+            AreaOccupancyState(
+                area_id="room_a",
+                area_name="Room A",
+                binary_sensors=[],
+                sensors=[],
+                is_active=True,
+                occupancy_start_time=now - timedelta(minutes=1),
+            )
+        ]
+        cs2 = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=active_a,
+            occupied_areas=active_a,
+            room_temp_states=build_room_temp_states(room_a_temp=70.0, room_a_satiated=False),
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=72.0,
+            eco_mode=True,
+            only_track_selected_rooms=True,
+            tracked_area_ids={"room_a"},
+            now=now,
+        )
+        assert open_rooms(cs2) == {"room_a", "room_c", "room_d", "room_e", "room_f"}
+
+        # 3) Someone leaves Room A: A no longer forced open, so B returns to satisfy min.
+        cs3 = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=build_room_temp_states(room_a_temp=70.0, room_a_satiated=False),
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=72.0,
+            eco_mode=True,
+            only_track_selected_rooms=True,
+            tracked_area_ids={"room_a"},
+            now=now,
+        )
+        assert open_rooms(cs3) == {"room_b", "room_c", "room_d", "room_e", "room_f"}
+
+        # 4) Room A warms to 71 (satiated): even if active, it should not be forced open.
+        cs4_active = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=active_a,
+            occupied_areas=active_a,
+            room_temp_states=build_room_temp_states(room_a_temp=71.0, room_a_satiated=True),
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=72.0,
+            eco_mode=True,
+            only_track_selected_rooms=True,
+            tracked_area_ids={"room_a"},
+            now=now,
+        )
+        assert open_rooms(cs4_active) == {"room_b", "room_c", "room_d", "room_e", "room_f"}
+
+        cs4_inactive = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=build_room_temp_states(room_a_temp=71.0, room_a_satiated=True),
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=72.0,
+            eco_mode=True,
+            only_track_selected_rooms=True,
+            tracked_area_ids={"room_a"},
+            now=now,
+        )
+        assert open_rooms(cs4_inactive) == {"room_b", "room_c", "room_d", "room_e", "room_f"}
+
+    def test_six_room_scenario_eco_tsr_room_a_untracked(self, controller):
+        """Eco ON + TSR ON with Room A untracked: entering A does not open it."""
+        controller.min_vents_open = 5
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_CLOSED
+            state.attributes = {"current_tilt_position": 0}
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {f"room_{c}": [f"cover.room_{c}_vent"] for c in "abcdef"}
+
+        room_temp_states = {
+            "room_a": RoomTemperatureState(
+                area_id="room_a",
+                area_name="Room A",
+                determining_temperature=70.0,
+                is_satiated=False,
+                is_critical=False,
+            ),
+            "room_b": RoomTemperatureState(
+                area_id="room_b",
+                area_name="Room B",
+                determining_temperature=69.0,
+                is_satiated=False,
+                is_critical=False,
+            ),
+            "room_c": RoomTemperatureState(
+                area_id="room_c",
+                area_name="Room C",
+                determining_temperature=68.0,
+                is_satiated=False,
+                is_critical=True,
+            ),
+            "room_d": RoomTemperatureState(
+                area_id="room_d",
+                area_name="Room D",
+                determining_temperature=67.0,
+                is_satiated=False,
+                is_critical=True,
+            ),
+            "room_e": RoomTemperatureState(
+                area_id="room_e",
+                area_name="Room E",
+                determining_temperature=66.0,
+                is_satiated=False,
+                is_critical=True,
+            ),
+            "room_f": RoomTemperatureState(
+                area_id="room_f",
+                area_name="Room F",
+                determining_temperature=65.0,
+                is_satiated=False,
+                is_critical=True,
+            ),
+        }
+
+        active_a = [
+            AreaOccupancyState(
+                area_id="room_a",
+                area_name="Room A",
+                binary_sensors=[],
+                sensors=[],
+                is_active=True,
+                occupancy_start_time=now - timedelta(minutes=1),
+            )
+        ]
+
+        def open_rooms(control_state: VentControlState) -> set[str]:
+            return {
+                area_id
+                for area_id, area_state in control_state.area_states.items()
+                if area_state.vents[0].should_be_open
+            }
+
+        cs = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=active_a,
+            occupied_areas=active_a,
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=72.0,
+            eco_mode=True,
+            only_track_selected_rooms=True,
+            tracked_area_ids=set(),
+            now=now,
+        )
+        # Room A is active but untracked, so it should NOT be forced open.
+        assert open_rooms(cs) == {"room_b", "room_c", "room_d", "room_e", "room_f"}
 
     def test_eco_tsr_prioritizes_critical_tracked_then_critical_untracked(self, controller):
         """Test Eco+TSR priority: critical tracked/FTCR > critical untracked > others."""
