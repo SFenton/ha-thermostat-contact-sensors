@@ -16,6 +16,7 @@ from homeassistant.const import (
     STATE_ON,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -85,6 +86,7 @@ from .thermostat_control import (
     ThermostatController,
     ThermostatState,
     get_temperature_from_state,
+    infer_temperature_unit_from_targets,
     is_room_satiated_for_cool,
     is_room_satiated_for_heat,
     is_room_satiated_for_heat_cool,
@@ -154,6 +156,17 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._open_timer: asyncio.TimerHandle | None = None
         self._close_timer: asyncio.TimerHandle | None = None
         self._pending_open_sensor: str | None = None
+        self._control_lock = asyncio.Lock()
+        self._restoring_hvac_mode = False
+        temperature_unit = UnitOfTemperature.FAHRENHEIT
+        thermostat_state = hass.states.get(thermostat)
+        if thermostat_state is not None:
+            state_unit = thermostat_state.attributes.get("unit_of_measurement")
+            if state_unit in (UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT):
+                temperature_unit = state_unit
+        if temperature_unit not in (UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT):
+            temperature_unit = UnitOfTemperature.FAHRENHEIT
+        self._temperature_unit = temperature_unit
 
         # Track last known non-off HVAC mode for manual override detection
         self._last_known_hvac_mode: str | None = None
@@ -256,6 +269,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Eco Mode enabled/disabled (boolean). The select controls how eco behaves
         # for inactive critical rooms, but does not toggle eco itself.
         self._eco_mode_enabled: bool = False
+
+    @property
+    def temperature_unit(self) -> UnitOfTemperature | str:
+        """Return the temperature unit used for internal comparisons."""
+        return self._temperature_unit
 
     @property
     def eco_mode(self) -> bool:
@@ -448,13 +466,21 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 mode_for_eval = state_for_mode.inferred_hvac_mode
 
         deadband = self._options.get(CONF_TEMPERATURE_DEADBAND, DEFAULT_TEMPERATURE_DEADBAND)
+        target_unit = self.temperature_unit
+        if state_for_mode is not None:
+            target_unit = infer_temperature_unit_from_targets(
+                state_for_mode.target_temperature,
+                state_for_mode.target_temp_low,
+                state_for_mode.target_temp_high,
+                fallback=self.temperature_unit,
+            )
 
         result: dict[str, VentOnlyRoomTemperatureState] = {}
         for area_id, sensors in self.get_area_temp_sensors().items():
             readings: dict[str, float] = {}
             for entity_id in sensors:
                 state = self.hass.states.get(entity_id)
-                temp = get_temperature_from_state(state)
+                temp = get_temperature_from_state(state, target_unit)
                 if temp is None:
                     continue
                 readings[entity_id] = temp
@@ -788,9 +814,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self.integration_paused:
             return
 
-        await self.async_update_thermostat_state()
-        await self.async_update_vents()
-        self.async_set_updated_data(None)
+        async with self._control_lock:
+            await self.async_update_thermostat_state()
+            await self.async_update_vents()
+            self.async_set_updated_data(None)
 
     def update_options(self, options: dict[str, Any]) -> None:
         """Update options from config entry."""
@@ -937,11 +964,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._check_initial_open_sensors()
 
         # Re-evaluate state now that automation is active again
-        await self.async_update_thermostat_state()
-        await self.async_update_vents()
-
-        # Notify listeners
-        self.async_set_updated_data(None)
+        await self.async_update_thermostat_and_vents()
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator."""
@@ -976,9 +999,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Integration paused, ignoring occupancy change")
             return
         _LOGGER.debug("Occupancy changed, updating thermostat state")
-        await self.async_update_thermostat_state()
-        await self.async_update_vents()
-        self.async_set_updated_data(None)
+        await self.async_update_thermostat_and_vents()
 
     @callback
     def _async_temp_sensor_state_changed(self, event) -> None:
@@ -1007,9 +1028,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self.integration_paused:
             _LOGGER.debug("Integration paused, ignoring temperature change")
             return
-        await self.async_update_thermostat_state()
-        await self.async_update_vents()
-        self.async_set_updated_data(None)
+        await self.async_update_thermostat_and_vents()
 
     async def async_update_vents(self) -> VentControlState | None:
         """Evaluate and execute vent control.
@@ -1161,6 +1180,48 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self._close_timer.cancel()
             self._close_timer = None
 
+    def _schedule_close_timer(self) -> None:
+        """Schedule the close timeout if one is not already pending."""
+        if self._close_timer is not None:
+            return
+
+        self._close_timer = self.hass.loop.call_later(
+            self.close_timeout * 60,
+            lambda: self.hass.async_create_task(self._async_close_timeout_expired()),
+        )
+        _LOGGER.debug("Started close timer for %d minutes", self.close_timeout)
+
+    def reconcile_restored_pause_state(self) -> None:
+        """Reconcile restored paused state after entity restore finishes."""
+        if self.integration_paused:
+            return
+
+        self._update_open_sensors()
+        if self.is_paused:
+            if not self._open_sensor_times:
+                self._schedule_close_timer()
+            return
+
+        self._check_initial_open_sensors()
+
+    async def _async_set_hvac_mode(self, hvac_mode: HVACMode | str) -> None:
+        """Set the physical thermostat mode and update cycle tracking on success."""
+        mode_value = hvac_mode.value if hasattr(hvac_mode, "value") else hvac_mode
+        await self.hass.services.async_call(
+            CLIMATE_DOMAIN,
+            "set_hvac_mode",
+            {
+                "entity_id": self.thermostat,
+                "hvac_mode": mode_value,
+            },
+            blocking=True,
+        )
+
+        if mode_value == HVACMode.OFF.value:
+            self.thermostat_controller.record_thermostat_off()
+        else:
+            self.thermostat_controller.record_thermostat_on()
+
     def _recalculate_open_timer(self) -> None:
         """Recalculate the open timer based on the earliest still-open sensor.
         
@@ -1245,6 +1306,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Handle manual overrides while paused
         if self.is_paused:
+            if self._restoring_hvac_mode:
+                return
+
             # Only treat an OFF -> ON mode transition as a manual override.
             # Attribute-only changes (e.g., fan_mode updates) should not clear the paused state.
             if (
@@ -1273,10 +1337,16 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         old_state: State | None = event.data.get("old_state")
 
         if new_state is None:
+            if old_state and old_state.state == STATE_ON:
+                self._handle_sensor_closed(entity_id)
+                self.async_set_updated_data(None)
             return
 
         # Ignore unavailable/unknown states
         if new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            if old_state and old_state.state == STATE_ON:
+                self._handle_sensor_closed(entity_id)
+                self.async_set_updated_data(None)
             return
 
         _LOGGER.debug(
@@ -1355,15 +1425,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # If paused and all sensors are now closed, start close timer
         if self.is_paused and len(self._open_sensor_times) == 0:
-            if self._close_timer is None:
-                self._close_timer = self.hass.loop.call_later(
-                    self.close_timeout * 60,
-                    lambda: self.hass.async_create_task(self._async_close_timeout_expired()),
-                )
-                _LOGGER.debug(
-                    "Started close timer for %d minutes",
-                    self.close_timeout,
-                )
+            self._schedule_close_timer()
 
     async def _async_open_timeout_expired(self) -> None:
         """Handle open timeout expiration - pause the thermostat."""
@@ -1373,6 +1435,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # If already paused, nothing to do.
         if self.is_paused:
+            self._cancel_open_timer()
             return
 
         # Save the trigger sensor before cancelling (cancel clears _pending_open_sensor)
@@ -1392,55 +1455,49 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             len(self.open_sensors),
         )
 
-        # Mark paused immediately to avoid races with other callbacks.
-        self.is_paused = True
-
-        # Store the trigger sensor for notifications
-        self.trigger_sensor = trigger_sensor
-
         # Get current HVAC mode before turning off
         climate_state = self.hass.states.get(self.thermostat)
         if climate_state:
-            self.previous_hvac_mode = climate_state.state
+            previous_hvac_mode = climate_state.state
         else:
-            self.previous_hvac_mode = HVACMode.AUTO
+            previous_hvac_mode = HVACMode.AUTO
 
-        # If supported, set fan mode to auto (or off fallback) before turning HVAC off.
-        if climate_state:
-            supported = climate_state.attributes.get("supported_features", 0)
-            fan_modes = climate_state.attributes.get("fan_modes")
-            current_fan = climate_state.attributes.get("fan_mode")
-            if (
-                isinstance(fan_modes, list)
-                and (supported & ClimateEntityFeature.FAN_MODE)
-            ):
-                desired_fan = None
-                if "auto" in fan_modes:
-                    desired_fan = "auto"
-                elif "off" in fan_modes:
-                    desired_fan = "off"
+        try:
+            # If supported, set fan mode to auto (or off fallback) before turning HVAC off.
+            if climate_state:
+                supported = climate_state.attributes.get("supported_features", 0)
+                fan_modes = climate_state.attributes.get("fan_modes")
+                current_fan = climate_state.attributes.get("fan_mode")
+                if (
+                    isinstance(fan_modes, list)
+                    and (supported & ClimateEntityFeature.FAN_MODE)
+                ):
+                    desired_fan = None
+                    if "auto" in fan_modes:
+                        desired_fan = "auto"
+                    elif "off" in fan_modes:
+                        desired_fan = "off"
 
-                if desired_fan and current_fan != desired_fan:
-                    await self.hass.services.async_call(
-                        CLIMATE_DOMAIN,
-                        "set_fan_mode",
-                        {
-                            "entity_id": self.thermostat,
-                            "fan_mode": desired_fan,
-                        },
-                        blocking=True,
-                    )
+                    if desired_fan and current_fan != desired_fan:
+                        await self.hass.services.async_call(
+                            CLIMATE_DOMAIN,
+                            "set_fan_mode",
+                            {
+                                "entity_id": self.thermostat,
+                                "fan_mode": desired_fan,
+                            },
+                            blocking=True,
+                        )
 
-        # Turn off the thermostat
-        await self.hass.services.async_call(
-            CLIMATE_DOMAIN,
-            "set_hvac_mode",
-            {
-                "entity_id": self.thermostat,
-                "hvac_mode": HVACMode.OFF,
-            },
-            blocking=True,
-        )
+            await self._async_set_hvac_mode(HVACMode.OFF)
+        except Exception:
+            _LOGGER.exception("Failed to pause thermostat")
+            self.async_set_updated_data(None)
+            return
+
+        self.is_paused = True
+        self.previous_hvac_mode = previous_hvac_mode
+        self.trigger_sensor = trigger_sensor
 
         # Send notification
         await self._async_send_notification(paused=True)
@@ -1468,10 +1525,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "Close timeout expired with all sensors closed. Resuming thermostat."
         )
 
-        # Clear paused state before restoring HVAC mode so our own restore doesn't
-        # get interpreted as a manual override.
-        self.is_paused = False
-
         # Restore previous HVAC mode (unless respecting user's off choice)
         should_restore = True
         if self.previous_hvac_mode == HVACMode.OFF:
@@ -1490,32 +1543,27 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 if self._last_known_hvac_mode and self._last_known_hvac_mode != HVACMode.OFF:
                     self.previous_hvac_mode = self._last_known_hvac_mode
 
-        if should_restore and self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
-            await self.hass.services.async_call(
-                CLIMATE_DOMAIN,
-                "set_hvac_mode",
-                {
-                    "entity_id": self.thermostat,
-                    "hvac_mode": self.previous_hvac_mode,
-                },
-                blocking=True,
-            )
+        try:
+            if should_restore and self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
+                self._restoring_hvac_mode = True
+                await self._async_set_hvac_mode(self.previous_hvac_mode)
+        except Exception:
+            _LOGGER.exception("Failed to resume thermostat")
+            self._schedule_close_timer()
+            self.async_set_updated_data(None)
+            return
+        finally:
+            self._restoring_hvac_mode = False
+
+        self.is_paused = False
 
         # Send notification
         await self._async_send_notification(paused=False)
 
         self.trigger_sensor = None
 
-        # Immediately evaluate thermostat state to handle satiation
-        # This ensures we don't blindly turn the thermostat on if rooms are already
-        # at target temperature, or correctly turn it on if rooms need conditioning
-        await self.async_update_thermostat_state()
-
-        # Update vents based on new state
-        await self.async_update_vents()
-
-        # Notify listeners
-        self.async_set_updated_data(None)
+        # Immediately evaluate thermostat and vent state after resume.
+        await self.async_update_thermostat_and_vents()
 
         _LOGGER.info("Thermostat resumed to mode: %s", self.previous_hvac_mode)
 
@@ -1531,26 +1579,24 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info("Pausing thermostat via service call")
 
-        # Mark paused immediately to avoid races with other callbacks.
-        self.is_paused = True
-
         # Get current HVAC mode before turning off
         climate_state = self.hass.states.get(self.thermostat)
         if climate_state:
-            self.previous_hvac_mode = climate_state.state
+            previous_hvac_mode = climate_state.state
         else:
-            self.previous_hvac_mode = HVACMode.AUTO
+            previous_hvac_mode = HVACMode.AUTO
 
-        # Turn off the thermostat
-        await self.hass.services.async_call(
-            CLIMATE_DOMAIN,
-            "set_hvac_mode",
-            {
-                "entity_id": self.thermostat,
-                "hvac_mode": HVACMode.OFF,
-            },
-            blocking=True,
-        )
+        self._cancel_open_timer()
+
+        try:
+            await self._async_set_hvac_mode(HVACMode.OFF)
+        except Exception:
+            _LOGGER.exception("Failed to pause thermostat via service")
+            self.async_set_updated_data(None)
+            return
+
+        self.is_paused = True
+        self.previous_hvac_mode = previous_hvac_mode
 
         # Send notification
         await self._async_send_notification(paused=True)
@@ -1572,17 +1618,16 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info("Resuming thermostat via service call")
 
-        # Restore previous HVAC mode
-        if self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
-            await self.hass.services.async_call(
-                CLIMATE_DOMAIN,
-                "set_hvac_mode",
-                {
-                    "entity_id": self.thermostat,
-                    "hvac_mode": self.previous_hvac_mode,
-                },
-                blocking=True,
-            )
+        try:
+            if self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
+                self._restoring_hvac_mode = True
+                await self._async_set_hvac_mode(self.previous_hvac_mode)
+        except Exception:
+            _LOGGER.exception("Failed to resume thermostat via service")
+            self.async_set_updated_data(None)
+            return
+        finally:
+            self._restoring_hvac_mode = False
 
         # Send notification
         await self._async_send_notification(paused=False)

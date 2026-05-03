@@ -17,6 +17,7 @@ except ImportError:
 from .const import (
     CONF_AREA_ENABLED,
     CONF_AREA_ID,
+    CONF_AREA_MIN_VENTS_OPEN,
     CONF_AREAS,
     CONF_BINARY_SENSORS,
     CONF_CONTACT_SENSORS,
@@ -47,6 +48,41 @@ SERVICE_SCHEMA = vol.Schema(
 
 # Type alias for ConfigEntry with our coordinator (Python 3.9+ compatible)
 ThermostatContactSensorsConfigEntry = ConfigEntry
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant, entry: ThermostatContactSensorsConfigEntry
+) -> bool:
+    """Migrate older config entries to the current schema."""
+    data = dict(entry.data)
+    options = dict(entry.options)
+    changed = False
+
+    if not data.get(CONF_AREAS) and options.get(CONF_AREAS):
+        data[CONF_AREAS] = options[CONF_AREAS]
+        options.pop(CONF_AREAS, None)
+        changed = True
+
+    areas_config = data.get(CONF_AREAS)
+    if isinstance(areas_config, dict):
+        migrated_areas = {}
+        for area_id, area_config in areas_config.items():
+            migrated_area = dict(area_config)
+            if CONF_AREA_MIN_VENTS_OPEN in migrated_area:
+                migrated_area.pop(CONF_AREA_MIN_VENTS_OPEN, None)
+                changed = True
+            migrated_areas[area_id] = migrated_area
+        data[CONF_AREAS] = migrated_areas
+
+    if changed or entry.version < 3:
+        hass.config_entries.async_update_entry(
+            entry,
+            data=data,
+            options=options,
+            version=3,
+        )
+
+    return True
 
 
 async def async_setup_entry(
@@ -162,9 +198,7 @@ async def _async_setup_services(hass: HomeAssistant) -> None:
         coordinator = _get_coordinator_by_entry_id(hass, entry_id)
 
         # Force recalculation and execute any recommended actions
-        await coordinator.async_update_thermostat_state()
-        await coordinator.async_update_vents()
-        coordinator.async_set_updated_data(None)
+        await coordinator.async_update_thermostat_and_vents()
         _LOGGER.info("Thermostat state recalculated via service call")
 
     async def async_handle_pause_integration(call: ServiceCall) -> None:
@@ -251,9 +285,6 @@ async def _async_cleanup_disabled_area_entities(
 
     _LOGGER.info("Cleaning up entities for disabled areas: %s", disabled_area_ids)
 
-    # Entity unique_id suffixes for area-specific entities
-    area_entity_suffixes = ["_thermostat", "_occupancy", "_temperature"]
-
     # Log all entities from our integration for debugging
     our_entities = [
         (e.entity_id, e.unique_id)
@@ -276,14 +307,19 @@ async def _async_cleanup_disabled_area_entities(
 
         # Check if this entity belongs to a disabled area
         for area_id in disabled_area_ids:
-            for suffix in area_entity_suffixes:
-                expected_unique_id = f"{entry.entry_id}_{area_id}{suffix}"
-                if entity_entry.unique_id == expected_unique_id:
-                    entities_to_remove.append(entity_entry.entity_id)
-                    _LOGGER.info(
-                        "Marking entity for removal: %s (unique_id=%s, area %s disabled)",
-                        entity_entry.entity_id, entity_entry.unique_id, area_id
-                    )
+            expected_unique_ids = {
+                f"{entry.entry_id}_{area_id}_thermostat",
+                f"{entry.entry_id}_{area_id}_occupancy",
+                f"{entry.entry_id}_{area_id}_temperature",
+                f"{entry.entry_id}_track_room_{area_id}",
+                f"{entry.entry_id}_{area_id}_force_track_when_critical",
+            }
+            if entity_entry.unique_id in expected_unique_ids:
+                entities_to_remove.append(entity_entry.entity_id)
+                _LOGGER.info(
+                    "Marking entity for removal: %s (unique_id=%s, area %s disabled)",
+                    entity_entry.entity_id, entity_entry.unique_id, area_id
+                )
 
     # Remove the entities
     for entity_id in entities_to_remove:

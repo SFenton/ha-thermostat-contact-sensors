@@ -337,6 +337,31 @@ class TestAreaVirtualThermostat:
         await hass.config_entries.async_unload(config_entry.entry_id)
 
     @pytest.mark.asyncio
+    async def test_area_set_temperature_triggers_control_update(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test area target changes immediately recalculate thermostat/vents."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        coordinator.async_update_thermostat_and_vents = AsyncMock()
+        thermostat = coordinator.area_thermostats["living_room"]
+
+        await thermostat.async_set_temperature(
+            target_temp_low=20.0,
+            target_temp_high=26.0,
+        )
+
+        coordinator.async_update_thermostat_and_vents.assert_awaited_once()
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
     async def test_virtual_thermostat_has_area_attributes(
         self,
         hass: HomeAssistant,
@@ -840,6 +865,28 @@ class TestGlobalVirtualThermostat:
         # Set to OFF
         await global_thermostat.async_set_hvac_mode(HVACMode.OFF)
         assert global_thermostat.hvac_mode == HVACMode.OFF
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
+    async def test_global_set_temperature_triggers_control_update(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test global target changes immediately recalculate thermostat/vents."""
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        global_thermostat = coordinator.global_thermostat
+        coordinator.async_update_thermostat_and_vents = AsyncMock()
+
+        await global_thermostat.async_set_temperature(target_temp_low=70.0)
+
+        coordinator.async_update_thermostat_and_vents.assert_awaited_once()
 
         await hass.config_entries.async_unload(config_entry.entry_id)
 

@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.climate import HVACMode
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import (
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -91,6 +97,14 @@ class TestGetTemperatureFromState:
         state = MagicMock()
         state.state = "-5.5"
         assert get_temperature_from_state(state) == -5.5
+
+    def test_temperature_unit_conversion(self):
+        """Test temperatures convert to the requested target unit."""
+        state = MagicMock()
+        state.state = "20"
+        state.attributes = {"unit_of_measurement": UnitOfTemperature.CELSIUS}
+
+        assert get_temperature_from_state(state, UnitOfTemperature.FAHRENHEIT) == 68.0
 
 
 # =============================================================================
@@ -614,6 +628,44 @@ class TestThermostatController:
         """Test can_turn_on returns False before min off time elapsed."""
         controller._last_off_time = dt_util.utcnow() - timedelta(minutes=3)
 
+        can_on, reason = controller.can_turn_on()
+        assert can_on is False
+
+    async def test_execute_turn_on_updates_cycle_timestamp(self, controller, mock_hass):
+        """Test executing TURN_ON updates the timestamp used by can_turn_off."""
+        mock_hass.services = MagicMock()
+        mock_hass.services.async_call = AsyncMock()
+        controller.supports_fan_mode = MagicMock(return_value=False)
+
+        state = ThermostatState(
+            thermostat_entity_id=TEST_THERMOSTAT,
+            recommended_action=ThermostatAction.TURN_ON,
+            inferred_hvac_mode=HVACMode.HEAT,
+            target_temperature=70.0,
+        )
+
+        assert await controller.async_execute_action(state) is True
+        assert controller._last_on_time is not None
+        can_off, reason = controller.can_turn_off()
+        assert can_off is False
+
+    async def test_execute_turn_off_updates_cycle_timestamp(self, controller, mock_hass):
+        """Test executing TURN_OFF updates the timestamp used by can_turn_on."""
+        current_state = MagicMock()
+        current_state.state = HVACMode.HEAT.value
+        current_state.attributes = {}
+        mock_hass.states.get.return_value = current_state
+        mock_hass.services = MagicMock()
+        mock_hass.services.async_call = AsyncMock()
+        controller.supports_fan_mode = MagicMock(return_value=False)
+
+        state = ThermostatState(
+            thermostat_entity_id=TEST_THERMOSTAT,
+            recommended_action=ThermostatAction.TURN_OFF,
+        )
+
+        assert await controller.async_execute_action(state) is True
+        assert controller._last_off_time is not None
         can_on, reason = controller.can_turn_on()
         assert can_on is False
 

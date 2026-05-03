@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.thermostat_contact_sensors.const import (
     CONF_AREA_ENABLED,
     CONF_AREA_ID,
+    CONF_AREA_MIN_VENTS_OPEN,
     CONF_AREAS,
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
@@ -329,6 +330,16 @@ async def test_disabled_area_entities_are_removed(
     )
     assert climate_entity is not None
 
+    tracked_room_switch = entity_reg.async_get_entity_id(
+        "switch", DOMAIN, f"{config_entry.entry_id}_track_room_living_room"
+    )
+    assert tracked_room_switch is not None
+
+    force_critical_switch = entity_reg.async_get_entity_id(
+        "switch", DOMAIN, f"{config_entry.entry_id}_living_room_force_track_when_critical"
+    )
+    assert force_critical_switch is not None
+
     # Update config to disable the area
     new_data = {**config_entry.data}
     new_data[CONF_AREAS]["living_room"][CONF_AREA_ENABLED] = False
@@ -348,6 +359,16 @@ async def test_disabled_area_entities_are_removed(
         "climate", DOMAIN, f"{config_entry.entry_id}_living_room_thermostat"
     )
     assert climate_entity is None
+
+    tracked_room_switch = entity_reg.async_get_entity_id(
+        "switch", DOMAIN, f"{config_entry.entry_id}_track_room_living_room"
+    )
+    assert tracked_room_switch is None
+
+    force_critical_switch = entity_reg.async_get_entity_id(
+        "switch", DOMAIN, f"{config_entry.entry_id}_living_room_force_track_when_critical"
+    )
+    assert force_critical_switch is None
 
     await hass.config_entries.async_unload(config_entry.entry_id)
 
@@ -517,9 +538,41 @@ async def test_update_listener_triggers_reload(
 # =============================================================================
 
 
-# Migration tests removed - they require complex mocking of Home Assistant's
-# config entry update mechanism. Migration logic is straightforward and 
-# tested through integration usage.
+async def test_migrate_entry_moves_options_areas_and_drops_hidden_area_min_vents(
+    hass: HomeAssistant,
+) -> None:
+    """Test migration moves legacy area config and removes unsupported per-area min vents."""
+    from custom_components.thermostat_contact_sensors import async_migrate_entry
+
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Legacy Thermostat",
+        version=1,
+        data={
+            "name": "Legacy Thermostat",
+            CONF_THERMOSTAT: TEST_THERMOSTAT,
+        },
+        options={
+            CONF_AREAS: {
+                "living_room": {
+                    CONF_AREA_ID: "living_room",
+                    CONF_AREA_ENABLED: True,
+                    CONF_AREA_MIN_VENTS_OPEN: 2,
+                    CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
+                    CONF_BINARY_SENSORS: [],
+                    CONF_TEMPERATURE_SENSORS: [],
+                },
+            }
+        },
+    )
+    config_entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, config_entry) is True
+
+    migrated_area = config_entry.data[CONF_AREAS]["living_room"]
+    assert CONF_AREA_MIN_VENTS_OPEN not in migrated_area
+    assert CONF_AREAS not in config_entry.options
+    assert config_entry.version == 3
 
 
 async def test_service_with_invalid_entry_id(

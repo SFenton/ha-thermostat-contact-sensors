@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -210,6 +211,28 @@ class TestSensorStateChanges:
 
         await coordinator.async_shutdown()
 
+    async def test_open_sensor_unavailable_clears_pause_tracking(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test an open sensor becoming unavailable can release pause tracking."""
+        await coordinator.async_setup()
+
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        coordinator.is_paused = True
+        coordinator._open_sensor_times[TEST_SENSOR_1] = time.monotonic()
+
+        hass.states.async_set(TEST_SENSOR_1, STATE_UNAVAILABLE, {"friendly_name": "Front Door"})
+        await hass.async_block_till_done()
+
+        assert TEST_SENSOR_1 not in coordinator.open_sensors
+        assert coordinator._close_timer is not None
+
+        await coordinator.async_shutdown()
+
 
 class TestThermostatPausing:
     """Tests for thermostat pausing logic."""
@@ -240,6 +263,44 @@ class TestThermostatPausing:
         mock_climate_service.assert_called()
 
         await coordinator.async_shutdown()
+
+    async def test_open_timeout_clears_timer_when_already_paused(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test stale open timer state is cleared if timeout fires while paused."""
+        coordinator.is_paused = True
+        coordinator._pending_open_sensor = TEST_SENSOR_1
+        coordinator._open_timer = hass.loop.call_later(60, lambda: None)
+
+        await coordinator._async_open_timeout_expired()
+
+        assert coordinator._open_timer is None
+        assert coordinator._pending_open_sensor is None
+
+    async def test_pause_service_failure_keeps_unpaused_state(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test failed pause service calls do not publish a paused state."""
+        coordinator._async_set_hvac_mode = AsyncMock(side_effect=RuntimeError("boom"))
+
+        await coordinator.async_pause()
+
+        assert coordinator.is_paused is False
+
+    async def test_restored_pause_with_closed_sensors_schedules_resume(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test restored paused state schedules resume when all contacts are closed."""
+        coordinator.is_paused = True
+        coordinator.previous_hvac_mode = HVACMode.HEAT
+
+        coordinator.reconcile_restored_pause_state()
+
+        assert coordinator._close_timer is not None
 
 
 class TestVentEffectiveMode:

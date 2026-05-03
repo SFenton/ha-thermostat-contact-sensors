@@ -23,7 +23,6 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.util.unit_conversion import TemperatureConverter
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -367,6 +366,7 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         if not _from_global:
             if hasattr(coordinator, "global_thermostat") and coordinator.global_thermostat:
                 coordinator.global_thermostat.async_recalculate_from_areas()
+            await coordinator.async_update_thermostat_and_vents()
 
         _LOGGER.info(
             "Virtual thermostat %s targets updated: heat=%s, cool=%s",
@@ -696,6 +696,8 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         self._hvac_mode = hvac_mode
         _LOGGER.info("Global thermostat mode set to %s", hvac_mode)
         self.async_write_ha_state()
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+        await coordinator.async_update_thermostat_and_vents()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperatures and propagate to area thermostats.
@@ -771,6 +773,7 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
             "Global thermostat targets updated: heat=%s, cool=%s",
             self._target_temp_low, self._target_temp_high
         )
+        await coordinator.async_update_thermostat_and_vents()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -1030,7 +1033,7 @@ class EcoAwayVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         coordinator: ThermostatContactSensorsCoordinator = self.coordinator
         if coordinator.eco_mode and coordinator.is_away:
             if coordinator.eco_away_behavior == "use_eco_away_targets":
-                await coordinator.async_update_thermostat_state()
+                await coordinator.async_update_thermostat_and_vents()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

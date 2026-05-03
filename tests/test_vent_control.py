@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 
 from homeassistant.components.climate import HVACMode
+from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     STATE_OPEN,
@@ -20,6 +21,7 @@ from custom_components.thermostat_contact_sensors.vent_control import (
     VentControlState,
     SERVICE_OPEN_COVER_TILT,
     SERVICE_CLOSE_COVER_TILT,
+    SERVICE_OPEN_COVER,
 )
 from custom_components.thermostat_contact_sensors.occupancy import AreaOccupancyState
 from custom_components.thermostat_contact_sensors.thermostat_control import (
@@ -526,6 +528,59 @@ class TestEvaluateAllVents:
         # No commands needed - vent is already open
         assert len(control_state.pending_commands) == 0
 
+    def test_active_unsatiated_respects_vent_open_delay(self, controller):
+        """Test active unsatiated rooms wait for the configured vent open delay."""
+        controller.min_vents_open = 0
+        self._setup_vents(controller, {TEST_VENT_1: False})
+        now = datetime(2024, 1, 1, 12, 0, 0)
+
+        active_area = AreaOccupancyState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            occupied_sensors={"binary_sensor.motion"},
+            occupancy_start_time=now - timedelta(seconds=10),
+            is_active=True,
+        )
+        room_state = RoomTemperatureState(
+            area_id=TEST_AREA_BEDROOM,
+            area_name="Bedroom",
+            is_active=True,
+            is_satiated=False,
+            determining_temperature=68.0,
+            target_temperature=71.0,
+        )
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs={TEST_AREA_BEDROOM: [TEST_VENT_1]},
+            active_areas=[active_area],
+            occupied_areas=[active_area],
+            room_temp_states={TEST_AREA_BEDROOM: room_state},
+            area_vent_delays={TEST_AREA_BEDROOM: 30},
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=71.0,
+            target_temp_high=78.0,
+            now=now,
+        )
+
+        vent = control_state.area_states[TEST_AREA_BEDROOM].vents[0]
+        assert vent.should_be_open is False
+
+        active_area.occupancy_start_time = now - timedelta(seconds=31)
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs={TEST_AREA_BEDROOM: [TEST_VENT_1]},
+            active_areas=[active_area],
+            occupied_areas=[active_area],
+            room_temp_states={TEST_AREA_BEDROOM: room_state},
+            area_vent_delays={TEST_AREA_BEDROOM: 30},
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=71.0,
+            target_temp_high=78.0,
+            now=now,
+        )
+
+        vent = control_state.area_states[TEST_AREA_BEDROOM].vents[0]
+        assert vent.should_be_open is True
+
 
 class TestExecuteVentCommands:
     """Tests for executing vent commands."""
@@ -603,6 +658,31 @@ class TestExecuteVentCommands:
         executed = await controller.async_execute_vent_commands(control_state, now)
 
         assert executed == 0  # Command failed
+
+    @pytest.mark.asyncio
+    async def test_open_command_falls_back_when_tilt_unsupported(self, controller):
+        """Test non-tilt cover vents use the generic open_cover service."""
+        mock_state = MagicMock()
+        mock_state.state = STATE_CLOSED
+        mock_state.attributes = {
+            "supported_features": CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE,
+        }
+        controller.hass.states.get.return_value = mock_state
+
+        now = datetime(2024, 1, 1, 12, 0, 0)
+        control_state = VentControlState(
+            pending_commands=[(TEST_VENT_1, True, "Test open")]
+        )
+
+        executed = await controller.async_execute_vent_commands(control_state, now)
+
+        assert executed == 1
+        controller.hass.services.async_call.assert_called_once_with(
+            "cover",
+            SERVICE_OPEN_COVER,
+            {ATTR_ENTITY_ID: TEST_VENT_1},
+            blocking=True,
+        )
 
 
 class TestGetSummary:

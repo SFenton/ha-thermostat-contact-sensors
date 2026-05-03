@@ -76,6 +76,7 @@ class ThermostatPausedBinarySensor(CoordinatorEntity, RestoreEntity, BinarySenso
                     "Restored paused state: previous_mode=%s",
                     coordinator.previous_hvac_mode,
                 )
+                coordinator.reconcile_restored_pause_state()
 
     @property
     def device_info(self):

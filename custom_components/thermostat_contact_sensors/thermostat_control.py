@@ -31,10 +31,12 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     DEFAULT_COOLING_BOOST_OFFSET,
@@ -195,7 +197,10 @@ class ThermostatState:
     action_reason: str = ""
 
 
-def get_temperature_from_state(state: State | None) -> float | None:
+def get_temperature_from_state(
+    state: State | None,
+    target_unit: UnitOfTemperature | str | None = None,
+) -> float | None:
     """Extract temperature value from a sensor state.
 
     Args:
@@ -211,9 +216,36 @@ def get_temperature_from_state(state: State | None) -> float | None:
         return None
 
     try:
-        return float(state.state)
+        temperature = float(state.state)
     except (ValueError, TypeError):
         return None
+
+    source_unit = state.attributes.get("unit_of_measurement")
+    if (
+        target_unit is not None
+        and source_unit in (UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT)
+        and source_unit != target_unit
+    ):
+        try:
+            return TemperatureConverter.convert(temperature, source_unit, target_unit)
+        except (ValueError, TypeError):
+            return temperature
+
+    return temperature
+
+
+def infer_temperature_unit_from_targets(
+    *targets: float | None,
+    fallback: UnitOfTemperature | str = UnitOfTemperature.FAHRENHEIT,
+) -> UnitOfTemperature | str:
+    """Infer Fahrenheit/Celsius from configured target values."""
+    usable_targets = [target for target in targets if target is not None]
+    if not usable_targets:
+        return fallback
+
+    if any(target > 45 for target in usable_targets):
+        return UnitOfTemperature.FAHRENHEIT
+    return UnitOfTemperature.CELSIUS
 
 
 def is_room_satiated_for_heat(
@@ -518,6 +550,7 @@ class ThermostatController:
         self._global_thermostat_getter = global_thermostat_getter
 
         self._temperature_deadband = temperature_deadband
+        self._temperature_unit = UnitOfTemperature.FAHRENHEIT
         self._min_cycle_on_minutes = min_cycle_on_minutes
         self._min_cycle_off_minutes = min_cycle_off_minutes
         self._unoccupied_heating_threshold = unoccupied_heating_threshold
@@ -1020,11 +1053,17 @@ class ThermostatController:
             area_name=area.area_name,
             temperature_sensors=temperature_sensors,
         )
+        temperature_unit = infer_temperature_unit_from_targets(
+            target_temp,
+            target_temp_low,
+            target_temp_high,
+            fallback=self._temperature_unit,
+        )
 
         # Collect temperature readings from all sensors
         for sensor_id in temperature_sensors:
             state = self.hass.states.get(sensor_id)
-            temp = get_temperature_from_state(state)
+            temp = get_temperature_from_state(state, temperature_unit)
             if temp is not None:
                 room_state.sensor_readings[sensor_id] = temp
 
@@ -1195,11 +1234,17 @@ class ThermostatController:
             temperature_sensors=temperature_sensors,
             is_active=False,  # This method is for inactive rooms
         )
+        temperature_unit = infer_temperature_unit_from_targets(
+            target_temp,
+            target_temp_low,
+            target_temp_high,
+            fallback=self._temperature_unit,
+        )
 
         # Collect temperature readings from all sensors
         for sensor_id in temperature_sensors:
             state = self.hass.states.get(sensor_id)
-            temp = get_temperature_from_state(state)
+            temp = get_temperature_from_state(state, temperature_unit)
             if temp is not None:
                 room_state.sensor_readings[sensor_id] = temp
 
@@ -1488,12 +1533,18 @@ class ThermostatController:
         # Use all_areas_for_trend if provided (for tracked rooms feature to still detect anomalies)
         # Otherwise, fall back to active + inactive areas
         all_sensor_readings: dict[str, float] = {}
+        trend_temperature_unit = infer_temperature_unit_from_targets(
+            target_temp,
+            target_temp_low,
+            target_temp_high,
+            fallback=self._temperature_unit,
+        )
         areas_for_trend = all_areas_for_trend if all_areas_for_trend is not None else list(active_areas) + list(inactive_areas)
         for area in areas_for_trend:
             temp_sensors = area_temp_sensors.get(area.area_id, [])
             for sensor_id in temp_sensors:
                 state = self.hass.states.get(sensor_id)
-                temp = get_temperature_from_state(state)
+                temp = get_temperature_from_state(state, trend_temperature_unit)
                 if temp is not None:
                     all_sensor_readings[sensor_id] = temp
 
@@ -2087,7 +2138,7 @@ class ThermostatController:
                         self._we_changed_fan_mode = True
 
             # Update cycle tracking and clear our turn-off flag
-            self._last_turn_on_time = dt_util.utcnow()
+            self.record_thermostat_on()
             self._we_turned_off = False
             return True
 
@@ -2145,7 +2196,7 @@ class ThermostatController:
             )
 
             # Update cycle tracking and set our turn-off flag
-            self._last_turn_off_time = dt_util.utcnow()
+            self.record_thermostat_off()
             self._we_turned_off = True
             return True
 
@@ -2172,6 +2223,8 @@ class ThermostatController:
             "stored_target_temp": self._stored_target_temp,
             "stored_target_temp_low": self._stored_target_temp_low,
             "stored_target_temp_high": self._stored_target_temp_high,
+            "last_on_time": self._last_on_time.isoformat() if self._last_on_time else None,
+            "last_off_time": self._last_off_time.isoformat() if self._last_off_time else None,
             "saved_at": dt_util.utcnow().isoformat(),
         }
 
@@ -2216,6 +2269,17 @@ class ThermostatController:
             self._stored_target_temp_low = stored_data["stored_target_temp_low"]
         if stored_data.get("stored_target_temp_high") is not None:
             self._stored_target_temp_high = stored_data["stored_target_temp_high"]
+
+        if stored_data.get("last_on_time"):
+            try:
+                self._last_on_time = datetime.fromisoformat(stored_data["last_on_time"])
+            except (ValueError, TypeError):
+                self._last_on_time = None
+        if stored_data.get("last_off_time"):
+            try:
+                self._last_off_time = datetime.fromisoformat(stored_data["last_off_time"])
+            except (ValueError, TypeError):
+                self._last_off_time = None
 
         _LOGGER.debug(
             "Restored thermostat controller state: we_turned_off=%s, previous_hvac_mode=%s, "

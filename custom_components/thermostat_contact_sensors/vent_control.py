@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.climate import HVACMode
-from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN, CoverEntityFeature
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     STATE_OPEN,
@@ -31,6 +31,8 @@ _LOGGER = logging.getLogger(__name__)
 # Service names for tilt control
 SERVICE_OPEN_COVER_TILT = "open_cover_tilt"
 SERVICE_CLOSE_COVER_TILT = "close_cover_tilt"
+SERVICE_OPEN_COVER = "open_cover"
+SERVICE_CLOSE_COVER = "close_cover"
 
 
 @dataclass
@@ -347,6 +349,25 @@ class VentController:
             return tilt_position > 50
 
         return state.state != STATE_CLOSED
+
+    def get_cover_service(self, entity_id: str, should_open: bool) -> str:
+        """Return the best cover service for a vent entity."""
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return SERVICE_OPEN_COVER_TILT if should_open else SERVICE_CLOSE_COVER_TILT
+
+        if "supported_features" not in state.attributes:
+            return SERVICE_OPEN_COVER_TILT if should_open else SERVICE_CLOSE_COVER_TILT
+
+        supported = state.attributes.get("supported_features", 0)
+
+        tilt_feature = (
+            CoverEntityFeature.OPEN_TILT if should_open else CoverEntityFeature.CLOSE_TILT
+        )
+        if supported & tilt_feature:
+            return SERVICE_OPEN_COVER_TILT if should_open else SERVICE_CLOSE_COVER_TILT
+
+        return SERVICE_OPEN_COVER if should_open else SERVICE_CLOSE_COVER
 
     def can_send_command(self, entity_id: str, now: datetime | None = None) -> tuple[bool, str]:
         """Check if a command can be sent to a vent (debounce check).
@@ -676,6 +697,11 @@ class VentController:
 
             is_active = area_id in active_area_ids
             is_occupied = area_id in occupied_area_ids
+            occupancy_start_time = occupancy_times.get(area_id)
+            area_delay = area_vent_delays.get(area_id, self._vent_open_delay_seconds)
+            vent_open_delay_elapsed = True
+            if area_delay and occupancy_start_time is not None:
+                vent_open_delay_elapsed = (now - occupancy_start_time).total_seconds() >= area_delay
 
             # Get temperature state for this area
             temp_state = room_temp_states.get(area_id)
@@ -728,6 +754,7 @@ class VentController:
                 and temp_state is not None
                 and not temp_state.is_satiated
                 and determining_temperature is not None
+                and vent_open_delay_elapsed
             ):
                 if eco_mode and only_track_selected_rooms:
                     is_force_open_active_unsatiated = area_id in tracked_area_ids
@@ -752,7 +779,7 @@ class VentController:
                 is_occupied=is_occupied,
                 is_satiated=is_satiated,
                 is_critical=force_open,
-                occupancy_start_time=occupancy_times.get(area_id),
+                occupancy_start_time=occupancy_start_time,
                 distance_from_target=distance_from_target,
                 determining_temperature=determining_temperature,
                 area_vent_open_delay=area_vent_delays.get(area_id),
@@ -929,7 +956,7 @@ class VentController:
                 _LOGGER.debug("Skipping command for unresponsive vent %s", entity_id)
                 continue
 
-            service = SERVICE_OPEN_COVER_TILT if should_open else SERVICE_CLOSE_COVER_TILT
+            service = self.get_cover_service(entity_id, should_open)
 
             _LOGGER.debug(
                 "Executing %s on %s: %s",

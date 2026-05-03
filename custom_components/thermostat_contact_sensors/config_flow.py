@@ -21,7 +21,6 @@ from .const import (
     CONF_AREA_ENABLED,
     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
     CONF_AREA_ID,
-    CONF_AREA_MIN_VENTS_OPEN,
     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_AREAS,
     CONF_AWAY_COOL_TEMP_DIFF,
@@ -859,11 +858,6 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 areas_config[area_id][CONF_AREA_VENT_OPEN_DELAY_SECONDS] = user_input[
                     CONF_AREA_VENT_OPEN_DELAY_SECONDS
                 ]
-            if user_input.get(CONF_AREA_MIN_VENTS_OPEN) is not None:
-                areas_config[area_id][CONF_AREA_MIN_VENTS_OPEN] = user_input[
-                    CONF_AREA_MIN_VENTS_OPEN
-                ]
-
             # Update config entry
             new_data = {
                 **self.config_entry.data,

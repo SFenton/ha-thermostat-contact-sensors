@@ -409,7 +409,6 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.TEMPERATURE
-    _attr_native_unit_of_measurement = "°F"
     _attr_suggested_display_precision = 1
     _attr_icon = "mdi:thermometer"
 
@@ -429,6 +428,7 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
         area_config = coordinator.areas_config.get(area_id, {})
         self._area_name = area_config.get("name", area_id.replace("_", " ").title())
         self._attr_name = f"{self._area_name} Temperature"
+        self._attr_native_unit_of_measurement = coordinator.temperature_unit
 
     @property
     def device_info(self):
@@ -463,7 +463,9 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
             return readings
 
         for sensor_id in self._get_configured_temperature_sensors():
-            temp = get_temperature_from_state(self.hass.states.get(sensor_id))
+            temp = get_temperature_from_state(
+                self.hass.states.get(sensor_id), self.coordinator.temperature_unit
+            )
             if temp is not None:
                 readings[sensor_id] = temp
         return readings
