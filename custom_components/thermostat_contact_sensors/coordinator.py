@@ -10,7 +10,6 @@ from typing import Any
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.const import (
-    STATE_HOME,
     STATE_NOT_HOME,
     STATE_OFF,
     STATE_ON,
@@ -415,6 +414,118 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     def open_windows_count(self) -> int:
         """Return count of open window sensors."""
         return len([s for s in self.open_sensors if "window" in s.lower()])
+
+    def _hvac_mode_value(self, hvac_mode: HVACMode | str | None) -> str | None:
+        """Return a usable HVAC mode string, ignoring unavailable states."""
+        if hvac_mode is None:
+            return None
+
+        mode_value = hvac_mode.value if hasattr(hvac_mode, "value") else str(hvac_mode)
+        if mode_value in (STATE_UNAVAILABLE, STATE_UNKNOWN, ""):
+            return None
+
+        return mode_value
+
+    def _supported_hvac_mode_values(self) -> set[str] | None:
+        """Return supported HVAC modes for the physical thermostat if available."""
+        climate_state = self.hass.states.get(self.thermostat)
+        if climate_state is None:
+            return None
+
+        hvac_modes = climate_state.attributes.get("hvac_modes")
+        if not isinstance(hvac_modes, list):
+            return None
+
+        supported_modes: set[str] = set()
+        for hvac_mode in hvac_modes:
+            if mode_value := self._hvac_mode_value(hvac_mode):
+                supported_modes.add(mode_value)
+
+        return supported_modes
+
+    def _valid_hvac_mode(
+        self,
+        hvac_mode: HVACMode | str | None,
+        *,
+        allow_off: bool,
+    ) -> str | None:
+        """Return a restorable HVAC mode if the thermostat can accept it."""
+        mode_value = self._hvac_mode_value(hvac_mode)
+        if mode_value is None:
+            return None
+
+        if mode_value == HVACMode.OFF.value and not allow_off:
+            return None
+
+        supported_modes = self._supported_hvac_mode_values()
+        if supported_modes is not None and mode_value not in supported_modes:
+            _LOGGER.debug(
+                "Ignoring HVAC mode %s because %s only supports %s",
+                mode_value,
+                self.thermostat,
+                sorted(supported_modes),
+            )
+            return None
+
+        return mode_value
+
+    def _capture_previous_hvac_mode(self) -> str | None:
+        """Capture the current or last known HVAC mode before pausing."""
+        climate_state = self.hass.states.get(self.thermostat)
+        if climate_state:
+            current_mode = self._valid_hvac_mode(climate_state.state, allow_off=True)
+            if current_mode is not None:
+                return current_mode
+
+        return self._valid_hvac_mode(self._last_known_hvac_mode, allow_off=False)
+
+    def _resume_hvac_mode(self) -> str | None:
+        """Resolve the HVAC mode to restore when contact sensors are closed."""
+        previous_mode = self._valid_hvac_mode(self.previous_hvac_mode, allow_off=True)
+        if previous_mode == HVACMode.OFF.value:
+            if self.respect_user_off:
+                _LOGGER.info(
+                    "Thermostat was off before pause and respect_user_off is enabled. "
+                    "Keeping thermostat off."
+                )
+                return None
+
+            _LOGGER.info(
+                "Thermostat was off before pause but respect_user_off is disabled. "
+                "Will resume to last known active mode."
+            )
+            previous_mode = None
+
+        if previous_mode is not None:
+            return previous_mode
+
+        fallback_mode = self._valid_hvac_mode(self._last_known_hvac_mode, allow_off=False)
+        if fallback_mode is not None:
+            _LOGGER.info(
+                "Previous HVAC mode %s is not restorable. Resuming to last known mode %s.",
+                self.previous_hvac_mode,
+                fallback_mode,
+            )
+            return fallback_mode
+
+        if self.previous_hvac_mode:
+            _LOGGER.info(
+                "Previous HVAC mode %s is not restorable and no last known mode exists.",
+                self.previous_hvac_mode,
+            )
+        return None
+
+    def _set_previous_hvac_mode_after_resume(self, resume_hvac_mode: str | None) -> None:
+        """Update stored previous mode after a successful resume."""
+        if resume_hvac_mode is not None:
+            self.previous_hvac_mode = resume_hvac_mode
+            return
+
+        if (
+            self.previous_hvac_mode
+            and self._valid_hvac_mode(self.previous_hvac_mode, allow_off=True) is None
+        ):
+            self.previous_hvac_mode = None
 
     @property
     def areas_config(self) -> dict[str, dict[str, Any]]:
@@ -882,8 +993,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Initialize last known HVAC mode from current thermostat state
         climate_state = self.hass.states.get(self.thermostat)
-        if climate_state and climate_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN, HVACMode.OFF):
-            self._last_known_hvac_mode = climate_state.state
+        if climate_state:
+            self._last_known_hvac_mode = self._valid_hvac_mode(
+                climate_state.state,
+                allow_off=False,
+            )
 
         # Set up occupancy tracker
         await self.occupancy_tracker.async_setup()
@@ -1290,8 +1404,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         )
 
         # Track the last non-off HVAC mode
-        if new_state.state != HVACMode.OFF:
-            self._last_known_hvac_mode = new_state.state
+        if last_known_mode := self._valid_hvac_mode(new_state.state, allow_off=False):
+            self._last_known_hvac_mode = last_known_mode
             _LOGGER.debug("Updated last known HVAC mode to: %s", self._last_known_hvac_mode)
             # Clear the "we turned off" flag since thermostat is now on
             # (either we turned it on, or user did)
@@ -1457,10 +1571,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Get current HVAC mode before turning off
         climate_state = self.hass.states.get(self.thermostat)
-        if climate_state:
-            previous_hvac_mode = climate_state.state
-        else:
-            previous_hvac_mode = HVACMode.AUTO
+        previous_hvac_mode = self._capture_previous_hvac_mode()
 
         try:
             # If supported, set fan mode to auto (or off fallback) before turning HVAC off.
@@ -1525,28 +1636,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "Close timeout expired with all sensors closed. Resuming thermostat."
         )
 
-        # Restore previous HVAC mode (unless respecting user's off choice)
-        should_restore = True
-        if self.previous_hvac_mode == HVACMode.OFF:
-            if self.respect_user_off:
-                _LOGGER.info(
-                    "Thermostat was off before pause and respect_user_off is enabled. "
-                    "Keeping thermostat off."
-                )
-                should_restore = False
-            else:
-                _LOGGER.info(
-                    "Thermostat was off before pause but respect_user_off is disabled. "
-                    "Will resume to last known active mode."
-                )
-                # Use the last known non-off mode if available
-                if self._last_known_hvac_mode and self._last_known_hvac_mode != HVACMode.OFF:
-                    self.previous_hvac_mode = self._last_known_hvac_mode
+        # Restore previous HVAC mode when it is usable; invalid restored values like
+        # unavailable should not keep the integration paused forever.
+        resume_hvac_mode = self._resume_hvac_mode()
 
         try:
-            if should_restore and self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
+            if resume_hvac_mode:
                 self._restoring_hvac_mode = True
-                await self._async_set_hvac_mode(self.previous_hvac_mode)
+                await self._async_set_hvac_mode(resume_hvac_mode)
         except Exception:
             _LOGGER.exception("Failed to resume thermostat")
             self._schedule_close_timer()
@@ -1556,6 +1653,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self._restoring_hvac_mode = False
 
         self.is_paused = False
+        self._set_previous_hvac_mode_after_resume(resume_hvac_mode)
 
         # Send notification
         await self._async_send_notification(paused=False)
@@ -1580,11 +1678,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Pausing thermostat via service call")
 
         # Get current HVAC mode before turning off
-        climate_state = self.hass.states.get(self.thermostat)
-        if climate_state:
-            previous_hvac_mode = climate_state.state
-        else:
-            previous_hvac_mode = HVACMode.AUTO
+        previous_hvac_mode = self._capture_previous_hvac_mode()
 
         self._cancel_open_timer()
 
@@ -1618,10 +1712,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info("Resuming thermostat via service call")
 
+        resume_hvac_mode = self._resume_hvac_mode()
+
         try:
-            if self.previous_hvac_mode and self.previous_hvac_mode != HVACMode.OFF:
+            if resume_hvac_mode:
                 self._restoring_hvac_mode = True
-                await self._async_set_hvac_mode(self.previous_hvac_mode)
+                await self._async_set_hvac_mode(resume_hvac_mode)
         except Exception:
             _LOGGER.exception("Failed to resume thermostat via service")
             self.async_set_updated_data(None)
@@ -1633,10 +1729,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         await self._async_send_notification(paused=False)
 
         self.is_paused = False
+        self._set_previous_hvac_mode_after_resume(resume_hvac_mode)
         self.trigger_sensor = None
 
-        # Notify listeners
-        self.async_set_updated_data(None)
+        # Immediately evaluate thermostat and vent state after resume.
+        await self.async_update_thermostat_and_vents()
 
         _LOGGER.info("Thermostat resumed via service to mode: %s", self.previous_hvac_mode)
 

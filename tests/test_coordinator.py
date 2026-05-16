@@ -875,6 +875,131 @@ class TestThermostatResuming:
 
         await coordinator.async_shutdown()
 
+    async def test_close_timeout_clears_stale_pause_with_unavailable_previous_mode(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test closed contacts clear pause when restored previous mode is unavailable."""
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.OFF,
+            {
+                "friendly_name": "Test Thermostat",
+                "hvac_modes": [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO],
+            },
+        )
+        await coordinator.async_setup()
+
+        coordinator.is_paused = True
+        coordinator.previous_hvac_mode = STATE_UNAVAILABLE
+        coordinator._last_known_hvac_mode = None
+        mock_climate_service.reset_mock()
+
+        await coordinator._async_close_timeout_expired()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+        assert coordinator.previous_hvac_mode is None
+        mock_climate_service.assert_not_called()
+
+        await coordinator.async_shutdown()
+
+    async def test_close_timeout_uses_last_known_mode_for_unavailable_previous_mode(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test resume falls back to last known mode when restored mode is unavailable."""
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.OFF,
+            {
+                "friendly_name": "Test Thermostat",
+                "hvac_modes": [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO],
+            },
+        )
+        await coordinator.async_setup()
+
+        coordinator.is_paused = True
+        coordinator.previous_hvac_mode = STATE_UNAVAILABLE
+        coordinator._last_known_hvac_mode = HVACMode.HEAT
+        mock_climate_service.reset_mock()
+
+        await coordinator._async_close_timeout_expired()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+        assert coordinator.previous_hvac_mode == HVACMode.HEAT
+        mock_climate_service.assert_called_once()
+        assert mock_climate_service.call_args[0][0].data["hvac_mode"] == HVACMode.HEAT
+
+        await coordinator.async_shutdown()
+
+    async def test_manual_resume_clears_stale_unavailable_previous_mode(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test resume service can clear a stale pause with unavailable previous mode."""
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            HVACMode.OFF,
+            {
+                "friendly_name": "Test Thermostat",
+                "hvac_modes": [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO],
+            },
+        )
+        await coordinator.async_setup()
+
+        coordinator.is_paused = True
+        coordinator.previous_hvac_mode = STATE_UNAVAILABLE
+        coordinator._last_known_hvac_mode = None
+        mock_climate_service.reset_mock()
+
+        await coordinator.async_resume()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is False
+        assert coordinator.previous_hvac_mode is None
+        mock_climate_service.assert_not_called()
+
+        await coordinator.async_shutdown()
+
+    async def test_pause_captures_last_known_mode_when_thermostat_unavailable(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+        mock_notify_service: AsyncMock,
+    ) -> None:
+        """Test pause does not persist unavailable as previous HVAC mode."""
+        hass.states.async_set(
+            TEST_THERMOSTAT,
+            STATE_UNAVAILABLE,
+            {
+                "friendly_name": "Test Thermostat",
+                "hvac_modes": [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO],
+            },
+        )
+        await coordinator.async_setup()
+
+        coordinator._last_known_hvac_mode = HVACMode.COOL
+
+        await coordinator.async_pause()
+        await hass.async_block_till_done()
+
+        assert coordinator.is_paused is True
+        assert coordinator.previous_hvac_mode == HVACMode.COOL
+
+        await coordinator.async_shutdown()
+
 
 class TestNotifications:
     """Tests for notification sending."""
