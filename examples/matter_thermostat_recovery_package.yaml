@@ -1,0 +1,72 @@
+# Home Assistant package example for recovering a Matter thermostat climate entity.
+#
+# Copy this into a package or split the input_text and automations into your
+# helpers/automations. Update the entity ID and Matter config entry ID if they
+# differ in your Home Assistant instance.
+
+input_text:
+  w200_thermostat_unavailable_since:
+    name: W200 Thermostat Unavailable Since
+    max: 40
+
+automation:
+  - id: track_w200_thermostat_availability
+    alias: Track W200 Thermostat Availability
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: climate.thermostat_hub_w200
+      - platform: time_pattern
+        minutes: "/5"
+    action:
+      - variables:
+          thermostat_state: "{{ states('climate.thermostat_hub_w200') }}"
+          unavailable_since: "{{ states('input_text.w200_thermostat_unavailable_since') }}"
+          helper_empty: >-
+            {{ unavailable_since in ['', 'unknown', 'unavailable', 'none'] }}
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ thermostat_state in ['unknown', 'unavailable'] }}"
+            sequence:
+              - if:
+                  - condition: template
+                    value_template: "{{ helper_empty }}"
+                then:
+                  - action: input_text.set_value
+                    target:
+                      entity_id: input_text.w200_thermostat_unavailable_since
+                    data:
+                      value: "{{ now().isoformat() }}"
+        default:
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.w200_thermostat_unavailable_since
+            data:
+              value: ""
+
+  - id: reload_matter_when_w200_thermostat_missing
+    alias: Reload Matter When W200 Thermostat Missing
+    mode: single
+    trigger:
+      - platform: time_pattern
+        minutes: "0"
+    condition:
+      - condition: template
+        value_template: "{{ states('climate.thermostat_hub_w200') in ['unknown', 'unavailable'] }}"
+      - condition: template
+        value_template: >-
+          {% set unavailable_since = states('input_text.w200_thermostat_unavailable_since') %}
+          {{ unavailable_since not in ['', 'unknown', 'unavailable', 'none']
+             and (now() - as_datetime(unavailable_since)).total_seconds() >= 3600 }}
+        action:
+      - action: logbook.log
+        data:
+          name: Matter Recovery
+          message: >-
+            Reloading Matter config entry because climate.thermostat_hub_w200
+            has been unavailable for more than one hour.
+          entity_id: climate.thermostat_hub_w200
+      - action: homeassistant.reload_config_entry
+        data:
+          entry_id: 01K7J7SEZEF3TP4ZQRTFTX7737

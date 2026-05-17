@@ -75,6 +75,7 @@ class ThermostatAction(Enum):
     NONE = "none"  # No action needed
     TURN_ON = "turn_on"  # Thermostat should be turned on
     TURN_OFF = "turn_off"  # Thermostat should be turned off
+    UPDATE_SETPOINT = "update_setpoint"  # Thermostat target should be corrected
     WAIT_CYCLE_ON = "wait_cycle_on"  # Want to turn off but waiting for min on time
     WAIT_CYCLE_OFF = "wait_cycle_off"  # Want to turn on but waiting for min off time
 
@@ -164,6 +165,7 @@ class ThermostatState:
     thermostat_entity_id: str
     hvac_mode: HVACMode | None = None
     is_on: bool = False
+    thermostat_available: bool = True
 
     # Target temperatures
     target_temperature: float | None = None
@@ -1498,12 +1500,14 @@ class ThermostatController:
 
         # Get current thermostat state
         hvac_mode, is_on = self.get_thermostat_state()
+        thermostat_available = hvac_mode is not None
         target_temp, target_temp_low, target_temp_high = self.get_target_temperatures()
 
         thermostat_state = ThermostatState(
             thermostat_entity_id=self.thermostat_entity_id,
             hvac_mode=hvac_mode,
             is_on=is_on,
+            thermostat_available=thermostat_available,
             target_temperature=target_temp,
             target_temp_low=target_temp_low,
             target_temp_high=target_temp_high,
@@ -1556,14 +1560,14 @@ class ThermostatController:
         thermostat_state.inferred_hvac_mode = inferred_mode
 
         # Determine evaluation HVAC mode
-        # If thermostat is off, use the inferred mode for evaluation
+        # If thermostat is off or unavailable, use the inferred mode for evaluation.
         evaluation_hvac_mode = hvac_mode
 
-        if hvac_mode == HVACMode.OFF:
+        if hvac_mode is None or hvac_mode == HVACMode.OFF:
             if inferred_mode:
                 evaluation_hvac_mode = inferred_mode
                 _LOGGER.debug(
-                    "Thermostat is off - inferred mode %s from %d sensors (avg: %.2f°F)",
+                    "Thermostat is off/unavailable - inferred mode %s from %d sensors (avg: %.2f°F)",
                     inferred_mode.value,
                     len(all_sensor_readings),
                     sum(all_sensor_readings.values()) / len(all_sensor_readings) if all_sensor_readings else 0,
@@ -1573,7 +1577,12 @@ class ThermostatController:
                 evaluation_hvac_mode = HVACMode.HEAT
                 _LOGGER.debug("Could not infer HVAC mode, defaulting to HEAT for satiation evaluation")
 
-            if self._we_turned_off:
+            if hvac_mode is None:
+                _LOGGER.warning(
+                    "Thermostat entity %s is unavailable; evaluating room demand but skipping control actions",
+                    self.thermostat_entity_id,
+                )
+            elif self._we_turned_off:
                 _LOGGER.debug("Thermostat is off (we turned it off) - continuing evaluation")
             elif respect_user_off:
                 _LOGGER.debug("Thermostat is off (user choice) - evaluating temps but taking no action")
@@ -1723,7 +1732,7 @@ class ThermostatController:
         # In eco mode, only consider active rooms (critical_count will be 0)
         # Use tracked_active_count (only tracked rooms) for decision making
         unsatiated_active = tracked_active_count - satiated_count
-        if hvac_mode == HVACMode.OFF:
+        if hvac_mode is None or hvac_mode == HVACMode.OFF:
             # Use absolute temperature needs for consensus logic
             needs_conditioning = rooms_need_heat or rooms_need_cool or critical_count > 0
         else:
@@ -1745,6 +1754,11 @@ class ThermostatController:
         if user_turned_off:
             thermostat_state.recommended_action = ThermostatAction.NONE
             thermostat_state.action_reason = "Thermostat is off (user choice)"
+            return thermostat_state
+
+        if not thermostat_available:
+            thermostat_state.recommended_action = ThermostatAction.NONE
+            thermostat_state.action_reason = "Thermostat entity unavailable; skipping control"
             return thermostat_state
 
         # If paused by contact sensors, don't recommend any action
@@ -1857,8 +1871,14 @@ class ThermostatController:
                     else:
                         thermostat_state.action_reason = f"No clear mode consensus ({' and '.join(reason_parts)})"
             else:
-                thermostat_state.recommended_action = ThermostatAction.NONE
-                thermostat_state.action_reason = f"Already on, {' and '.join(reason_parts)}"
+                if self._temperature_setpoint_needs_update(hvac_mode, thermostat_state):
+                    thermostat_state.recommended_action = ThermostatAction.UPDATE_SETPOINT
+                    thermostat_state.action_reason = (
+                        f"Already on, {' and '.join(reason_parts)}, updating thermostat setpoint"
+                    )
+                else:
+                    thermostat_state.recommended_action = ThermostatAction.NONE
+                    thermostat_state.action_reason = f"Already on, {' and '.join(reason_parts)}"
 
         return thermostat_state
 
@@ -1892,6 +1912,7 @@ class ThermostatController:
             "thermostat_entity_id": state.thermostat_entity_id,
             "hvac_mode": state.hvac_mode.value if state.hvac_mode else None,
             "is_on": state.is_on,
+            "thermostat_available": state.thermostat_available,
             "target_temperature": state.target_temperature,
             "target_temp_low": state.target_temp_low,
             "target_temp_high": state.target_temp_high,
@@ -1928,11 +1949,96 @@ class ThermostatController:
             },
         }
 
+    @staticmethod
+    def _temperature_matches(
+        current_temperature: Any,
+        desired_temperature: float,
+    ) -> bool:
+        """Return whether two temperature values are effectively equal."""
+        try:
+            current_float = float(current_temperature)
+        except (TypeError, ValueError):
+            return False
+
+        return abs(current_float - desired_temperature) < 0.1
+
+    def _get_temperature_service_data(
+        self,
+        target_mode: HVACMode | str | None,
+        thermostat_state: ThermostatState,
+    ) -> dict[str, Any] | None:
+        """Build climate.set_temperature data for the target HVAC mode."""
+        if isinstance(target_mode, str):
+            try:
+                target_mode = HVACMode(target_mode)
+            except ValueError:
+                return None
+
+        if target_mode is None:
+            return None
+
+        if target_mode == HVACMode.HEAT:
+            if thermostat_state.target_temperature is None:
+                return None
+            return {
+                "entity_id": self.thermostat_entity_id,
+                "temperature": thermostat_state.target_temperature + self._heating_boost_offset,
+            }
+
+        if target_mode == HVACMode.COOL:
+            if thermostat_state.target_temperature is None:
+                return None
+            return {
+                "entity_id": self.thermostat_entity_id,
+                "temperature": thermostat_state.target_temperature - self._cooling_boost_offset,
+            }
+
+        if target_mode == HVACMode.HEAT_COOL:
+            service_data: dict[str, Any] = {"entity_id": self.thermostat_entity_id}
+            if thermostat_state.target_temp_low is not None:
+                service_data["target_temp_low"] = (
+                    thermostat_state.target_temp_low + self._heating_boost_offset
+                )
+            if thermostat_state.target_temp_high is not None:
+                service_data["target_temp_high"] = (
+                    thermostat_state.target_temp_high - self._cooling_boost_offset
+                )
+            if len(service_data) == 1:
+                return None
+            return service_data
+
+        return None
+
+    def _temperature_setpoint_needs_update(
+        self,
+        target_mode: HVACMode | str | None,
+        thermostat_state: ThermostatState,
+    ) -> bool:
+        """Return whether the physical thermostat target differs from desired targets."""
+        service_data = self._get_temperature_service_data(target_mode, thermostat_state)
+        if service_data is None:
+            return False
+
+        state = self.hass.states.get(self.thermostat_entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False
+
+        for attribute_name in (ATTR_TEMPERATURE, ATTR_TARGET_TEMP_LOW, ATTR_TARGET_TEMP_HIGH):
+            if attribute_name not in service_data:
+                continue
+            if not self._temperature_matches(
+                state.attributes.get(attribute_name),
+                service_data[attribute_name],
+            ):
+                return True
+
+        return False
+
     async def _apply_boost_temperature(
         self,
-        target_mode: HVACMode | str,
+        target_mode: HVACMode | str | None,
         thermostat_state: ThermostatState,
-    ) -> None:
+    ) -> bool:
         """Apply the target temperature (with optional boost offset) to the physical thermostat.
 
         This ensures the physical thermostat has the correct target temperature set,
@@ -1944,110 +2050,23 @@ class ThermostatController:
             target_mode: The HVAC mode being set (heat, cool, heat_cool).
             thermostat_state: The current thermostat state with target temperatures.
         """
-        # Convert string mode to HVACMode if needed
-        if isinstance(target_mode, str):
-            try:
-                target_mode = HVACMode(target_mode)
-            except ValueError:
-                _LOGGER.debug("Unknown HVAC mode %s, skipping temperature set", target_mode)
-                return
+        service_data = self._get_temperature_service_data(target_mode, thermostat_state)
+        if service_data is None:
+            _LOGGER.debug("No target temperature available for mode %s", target_mode)
+            return False
 
-        # Get current target temperatures (these already include away mode adjustments)
-        target_temp = thermostat_state.target_temperature
-        target_temp_low = thermostat_state.target_temp_low
-        target_temp_high = thermostat_state.target_temp_high
-
-        if target_mode == HVACMode.HEAT:
-            if target_temp is not None:
-                final_temp = target_temp + self._heating_boost_offset
-                if self._heating_boost_offset != 0.0:
-                    _LOGGER.info(
-                        "Setting %s temperature to %.1f (target %.1f + boost %.1f)",
-                        self.thermostat_entity_id,
-                        final_temp,
-                        target_temp,
-                        self._heating_boost_offset,
-                    )
-                else:
-                    _LOGGER.info(
-                        "Setting %s temperature to %.1f",
-                        self.thermostat_entity_id,
-                        final_temp,
-                    )
-                await self.hass.services.async_call(
-                    "climate",
-                    "set_temperature",
-                    {
-                        "entity_id": self.thermostat_entity_id,
-                        "temperature": final_temp,
-                    },
-                    blocking=True,
-                )
-
-        elif target_mode == HVACMode.COOL:
-            if target_temp is not None:
-                final_temp = target_temp - self._cooling_boost_offset
-                if self._cooling_boost_offset != 0.0:
-                    _LOGGER.info(
-                        "Setting %s temperature to %.1f (target %.1f - boost %.1f)",
-                        self.thermostat_entity_id,
-                        final_temp,
-                        target_temp,
-                        self._cooling_boost_offset,
-                    )
-                else:
-                    _LOGGER.info(
-                        "Setting %s temperature to %.1f",
-                        self.thermostat_entity_id,
-                        final_temp,
-                    )
-                await self.hass.services.async_call(
-                    "climate",
-                    "set_temperature",
-                    {
-                        "entity_id": self.thermostat_entity_id,
-                        "temperature": final_temp,
-                    },
-                    blocking=True,
-                )
-
-        elif target_mode == HVACMode.HEAT_COOL:
-            # For heat_cool mode, set both setpoints
-            if target_temp_low is not None or target_temp_high is not None:
-                service_data: dict[str, Any] = {"entity_id": self.thermostat_entity_id}
-
-                if target_temp_low is not None:
-                    service_data["target_temp_low"] = target_temp_low + self._heating_boost_offset
-
-                if target_temp_high is not None:
-                    service_data["target_temp_high"] = target_temp_high - self._cooling_boost_offset
-
-                has_boost = self._heating_boost_offset != 0.0 or self._cooling_boost_offset != 0.0
-                if has_boost:
-                    _LOGGER.info(
-                        "Setting %s temps to low=%.1f, high=%.1f "
-                        "(targets: low=%.1f, high=%.1f, boosts: heat=+%.1f, cool=-%.1f)",
-                        self.thermostat_entity_id,
-                        service_data.get("target_temp_low", 0),
-                        service_data.get("target_temp_high", 0),
-                        target_temp_low or 0,
-                        target_temp_high or 0,
-                        self._heating_boost_offset,
-                        self._cooling_boost_offset,
-                    )
-                else:
-                    _LOGGER.info(
-                        "Setting %s temps to low=%.1f, high=%.1f",
-                        self.thermostat_entity_id,
-                        service_data.get("target_temp_low", 0),
-                        service_data.get("target_temp_high", 0),
-                    )
-                await self.hass.services.async_call(
-                    "climate",
-                    "set_temperature",
-                    service_data,
-                    blocking=True,
-                )
+        _LOGGER.info(
+            "Setting %s thermostat target: %s",
+            self.thermostat_entity_id,
+            {key: value for key, value in service_data.items() if key != "entity_id"},
+        )
+        await self.hass.services.async_call(
+            "climate",
+            "set_temperature",
+            service_data,
+            blocking=True,
+        )
+        return True
 
     async def async_execute_action(
         self,
@@ -2074,6 +2093,18 @@ class ThermostatController:
                 thermostat_state.action_reason,
             )
             return False
+
+        if thermostat_state.recommended_action == ThermostatAction.UPDATE_SETPOINT:
+            target_mode = thermostat_state.hvac_mode
+            if target_mode is None or target_mode == HVACMode.OFF:
+                target_mode = thermostat_state.inferred_hvac_mode
+
+            _LOGGER.info(
+                "Executing thermostat UPDATE_SETPOINT action for %s. Reason: %s",
+                self.thermostat_entity_id,
+                thermostat_state.action_reason,
+            )
+            return await self._apply_boost_temperature(target_mode, thermostat_state)
 
         if thermostat_state.recommended_action == ThermostatAction.TURN_ON:
             # Use the inferred HVAC mode from consensus logic

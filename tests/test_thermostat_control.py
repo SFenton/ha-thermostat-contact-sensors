@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.components.climate import HVACMode
 from homeassistant.const import (
-    STATE_OFF,
-    STATE_ON,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
     UnitOfTemperature,
@@ -17,8 +15,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from custom_components.thermostat_contact_sensors.thermostat_control import (
-    ATTR_CURRENT_TEMPERATURE,
-    ATTR_HVAC_MODE,
     ATTR_TARGET_TEMP_HIGH,
     ATTR_TARGET_TEMP_LOW,
     RoomTemperatureState,
@@ -668,6 +664,199 @@ class TestThermostatController:
         assert controller._last_off_time is not None
         can_on, reason = controller.can_turn_on()
         assert can_on is False
+
+    def test_missing_thermostat_evaluates_rooms_but_skips_control(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """A missing physical thermostat should not make cold rooms look satiated."""
+        global_thermostat = MagicMock()
+        global_thermostat.effective_target_temp_low = 72.0
+        global_thermostat.effective_target_temp_high = 76.0
+        controller._global_thermostat_getter = lambda: global_thermostat
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                return None
+            if entity_id == TEST_TEMP_SENSOR_1:
+                sensor_state = MagicMock()
+                sensor_state.state = "68.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        active_area = AreaOccupancyState(
+            area_id=TEST_AREA_LIVING_ROOM,
+            area_name="Living Room",
+            is_active=True,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            [active_area],
+            {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]},
+        )
+
+        room_state = state.room_states[TEST_AREA_LIVING_ROOM]
+        assert state.thermostat_available is False
+        assert state.hvac_mode is None
+        assert state.inferred_hvac_mode == HVACMode.HEAT
+        assert state.all_active_rooms_satiated is False
+        assert room_state.is_satiated is False
+        assert room_state.satiation_reason == SatiationReason.NOT_SATIATED
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "unavailable" in state.action_reason
+
+    def test_unknown_thermostat_state_evaluates_with_inferred_mode(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """An unknown physical thermostat state should still evaluate room demand."""
+        global_thermostat = MagicMock()
+        global_thermostat.effective_target_temp_low = 72.0
+        global_thermostat.effective_target_temp_high = 76.0
+        controller._global_thermostat_getter = lambda: global_thermostat
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                thermostat_state = MagicMock()
+                thermostat_state.state = STATE_UNKNOWN
+                thermostat_state.attributes = {}
+                return thermostat_state
+            if entity_id == TEST_TEMP_SENSOR_1:
+                sensor_state = MagicMock()
+                sensor_state.state = "68.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        active_area = AreaOccupancyState(
+            area_id=TEST_AREA_LIVING_ROOM,
+            area_name="Living Room",
+            is_active=True,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            [active_area],
+            {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]},
+        )
+
+        assert state.thermostat_available is False
+        assert state.room_states[TEST_AREA_LIVING_ROOM].is_satiated is False
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "unavailable" in state.action_reason
+
+    def test_already_on_with_stale_heat_setpoint_updates_setpoint(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """If heat is on but the physical target is too low, update the setpoint."""
+        global_thermostat = MagicMock()
+        global_thermostat.effective_target_temp_low = 72.0
+        global_thermostat.effective_target_temp_high = 76.0
+        controller._global_thermostat_getter = lambda: global_thermostat
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                thermostat_state = MagicMock()
+                thermostat_state.state = HVACMode.HEAT
+                thermostat_state.attributes = {"temperature": 69.0}
+                return thermostat_state
+            if entity_id == TEST_TEMP_SENSOR_1:
+                sensor_state = MagicMock()
+                sensor_state.state = "68.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        active_area = AreaOccupancyState(
+            area_id=TEST_AREA_LIVING_ROOM,
+            area_name="Living Room",
+            is_active=True,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            [active_area],
+            {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]},
+        )
+
+        assert state.recommended_action == ThermostatAction.UPDATE_SETPOINT
+        assert "updating thermostat setpoint" in state.action_reason
+
+    def test_already_on_with_matching_heat_setpoint_does_not_update(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """Do not spam set_temperature when the physical target is already correct."""
+        global_thermostat = MagicMock()
+        global_thermostat.effective_target_temp_low = 72.0
+        global_thermostat.effective_target_temp_high = 76.0
+        controller._global_thermostat_getter = lambda: global_thermostat
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                thermostat_state = MagicMock()
+                thermostat_state.state = HVACMode.HEAT
+                thermostat_state.attributes = {"temperature": 72.0}
+                return thermostat_state
+            if entity_id == TEST_TEMP_SENSOR_1:
+                sensor_state = MagicMock()
+                sensor_state.state = "68.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        active_area = AreaOccupancyState(
+            area_id=TEST_AREA_LIVING_ROOM,
+            area_name="Living Room",
+            is_active=True,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            [active_area],
+            {TEST_AREA_LIVING_ROOM: [TEST_TEMP_SENSOR_1]},
+        )
+
+        assert state.recommended_action == ThermostatAction.NONE
+        assert "Already on" in state.action_reason
+
+    async def test_execute_update_setpoint_sets_temperature(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """UPDATE_SETPOINT should correct temperature without changing HVAC mode."""
+        mock_hass.services = MagicMock()
+        mock_hass.services.async_call = AsyncMock()
+
+        state = ThermostatState(
+            thermostat_entity_id=TEST_THERMOSTAT,
+            hvac_mode=HVACMode.HEAT,
+            recommended_action=ThermostatAction.UPDATE_SETPOINT,
+            target_temperature=72.0,
+        )
+
+        assert await controller.async_execute_action(state) is True
+        mock_hass.services.async_call.assert_awaited_once_with(
+            "climate",
+            "set_temperature",
+            {
+                "entity_id": TEST_THERMOSTAT,
+                "temperature": 72.0,
+            },
+            blocking=True,
+        )
 
 
 # =============================================================================

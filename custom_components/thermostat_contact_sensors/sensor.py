@@ -291,6 +291,9 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
         if state is None:
             return "unknown"
 
+        if not state.thermostat_available:
+            return "thermostat_unavailable"
+
         # Check for paused state first
         if self.coordinator.is_paused:
             return "paused"
@@ -330,6 +333,7 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
             "heating_needed": "mdi:fire",
             "cooling_needed": "mdi:snowflake",
             "conditioning_needed": "mdi:thermostat-auto",
+            "thermostat_unavailable": "mdi:thermostat-alert",
             "unknown": "mdi:thermostat",
         }
         return icons.get(value, "mdi:thermostat")
@@ -359,6 +363,7 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
         # HVAC mode and target temps
         attrs["hvac_mode"] = state.hvac_mode.value if state.hvac_mode else None
         attrs["is_on"] = state.is_on
+        attrs["thermostat_available"] = state.thermostat_available
         attrs["target_temperature"] = state.target_temperature
         attrs["target_temp_high"] = state.target_temp_high
         attrs["target_temp_low"] = state.target_temp_low
