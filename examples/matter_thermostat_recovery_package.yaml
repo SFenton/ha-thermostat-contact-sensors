@@ -59,7 +59,7 @@ automation:
           {% set unavailable_since = states('input_text.w200_thermostat_unavailable_since') %}
           {{ unavailable_since not in ['', 'unknown', 'unavailable', 'none']
              and (now() - as_datetime(unavailable_since)).total_seconds() >= 3600 }}
-        action:
+    action:
       - action: logbook.log
         data:
           name: Matter Recovery
