@@ -13,7 +13,10 @@ from homeassistant.components.climate import HVACMode
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from custom_components.thermostat_contact_sensors.const import DOMAIN
-from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+from custom_components.thermostat_contact_sensors.thermostat_control import (
+    ThermostatAction,
+    ThermostatState,
+)
 
 from .conftest import (
     TEST_SENSOR_1,
@@ -231,6 +234,42 @@ async def test_sensor_device_info(
 
     assert entry is not None
     assert entry.device_id == our_device.id
+
+    await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+
+async def test_thermostat_control_sensor_shows_off_when_turn_off_recommended(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Control sensor should show controller intent while HVAC state catches up."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = mock_config_entry.runtime_data
+    coordinator._last_thermostat_state = ThermostatState(
+        thermostat_entity_id=TEST_THERMOSTAT,
+        hvac_mode=HVACMode.COOL,
+        is_on=True,
+        active_room_count=1,
+        satiated_room_count=0,
+        all_active_rooms_satiated=False,
+        recommended_action=ThermostatAction.TURN_OFF,
+        action_reason="Anomaly: house trend is HEAT but rooms need COOL; turning off",
+    )
+    coordinator.async_set_updated_data(None)
+    await hass.async_block_till_done()
+
+    entity_id = _entity_id_for_unique_id(
+        hass, f"{mock_config_entry.entry_id}_thermostat_control"
+    )
+    state = hass.states.get(entity_id)
+
+    assert state is not None
+    assert state.state == "off"
+    assert state.attributes["recommended_action"] == "turn_off"
 
     await hass.config_entries.async_unload(mock_config_entry.entry_id)
 

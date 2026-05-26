@@ -23,7 +23,12 @@ from .const import (
 )
 from .coordinator import ThermostatContactSensorsCoordinator
 from .occupancy import AreaOccupancyState
-from .thermostat_control import RoomTemperatureState, ThermostatState, get_temperature_from_state
+from .thermostat_control import (
+    RoomTemperatureState,
+    ThermostatAction,
+    ThermostatState,
+    get_temperature_from_state,
+)
 
 from homeassistant.components.climate import HVACMode
 
@@ -297,6 +302,9 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
         # Check for paused state first
         if self.coordinator.is_paused:
             return "paused"
+
+        if state.recommended_action == ThermostatAction.TURN_OFF:
+            return "off"
 
         # Check HVAC mode
         if state.hvac_mode and state.hvac_mode.value == "off":
