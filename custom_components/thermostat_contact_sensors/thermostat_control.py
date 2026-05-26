@@ -1871,7 +1871,33 @@ class ThermostatController:
                     else:
                         thermostat_state.action_reason = f"No clear mode consensus ({' and '.join(reason_parts)})"
             else:
-                if self._temperature_setpoint_needs_update(hvac_mode, thermostat_state):
+                current_mode_has_demand = (
+                    (hvac_mode == HVACMode.HEAT and rooms_need_heat)
+                    or (hvac_mode == HVACMode.COOL and rooms_need_cool)
+                )
+                current_mode_mismatches_trend = (
+                    hvac_mode in (HVACMode.HEAT, HVACMode.COOL)
+                    and inferred_mode in (HVACMode.HEAT, HVACMode.COOL)
+                    and hvac_mode != inferred_mode
+                    and current_mode_has_demand
+                )
+                if current_mode_mismatches_trend:
+                    trend_mode = inferred_mode.value.upper()
+                    current_mode = hvac_mode.value.upper()
+                    mismatch_reason = (
+                        f"Anomaly: house trend is {trend_mode} but rooms need {current_mode} "
+                        f"({' and '.join(reason_parts)})"
+                    )
+                    can_off, cycle_reason = self.can_turn_off(now)
+                    if can_off:
+                        thermostat_state.recommended_action = ThermostatAction.TURN_OFF
+                        thermostat_state.action_reason = f"{mismatch_reason}; turning off"
+                    else:
+                        thermostat_state.recommended_action = ThermostatAction.WAIT_CYCLE_ON
+                        thermostat_state.action_reason = (
+                            f"Want to turn off because {mismatch_reason} but {cycle_reason}"
+                        )
+                elif self._temperature_setpoint_needs_update(hvac_mode, thermostat_state):
                     thermostat_state.recommended_action = ThermostatAction.UPDATE_SETPOINT
                     thermostat_state.action_reason = (
                         f"Already on, {' and '.join(reason_parts)}, updating thermostat setpoint"

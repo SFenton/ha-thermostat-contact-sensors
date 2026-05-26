@@ -831,6 +831,146 @@ class TestThermostatController:
         assert state.recommended_action == ThermostatAction.NONE
         assert "Already on" in state.action_reason
 
+    def test_already_cooling_turns_off_when_house_trend_is_heat(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """Do not keep cooling one hot room when the whole house trend is heat."""
+        global_thermostat = MagicMock()
+        global_thermostat.effective_target_temp_low = 72.0
+        global_thermostat.effective_target_temp_high = 74.0
+        controller._global_thermostat_getter = lambda: global_thermostat
+        controller._last_on_time = dt_util.utcnow() - timedelta(minutes=10)
+
+        office_temp = "sensor.office_temperature"
+        cold_room_temp_1 = "sensor.cold_room_temperature_1"
+        cold_room_temp_2 = "sensor.cold_room_temperature_2"
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                thermostat_state = MagicMock()
+                thermostat_state.state = HVACMode.COOL.value
+                thermostat_state.attributes = {"temperature": 74.0}
+                return thermostat_state
+            if entity_id == office_temp:
+                sensor_state = MagicMock()
+                sensor_state.state = "77.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            if entity_id == cold_room_temp_1:
+                sensor_state = MagicMock()
+                sensor_state.state = "65.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            if entity_id == cold_room_temp_2:
+                sensor_state = MagicMock()
+                sensor_state.state = "67.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        office = AreaOccupancyState(
+            area_id="office",
+            area_name="Office",
+            is_active=True,
+        )
+        cold_room = AreaOccupancyState(
+            area_id="cold_room",
+            area_name="Cold Room",
+            is_active=False,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[office],
+            area_temp_sensors={
+                "office": [office_temp],
+                "cold_room": [cold_room_temp_1, cold_room_temp_2],
+            },
+            inactive_areas=[],
+            eco_mode=True,
+            all_areas_for_trend=[office, cold_room],
+            tracked_area_ids={"office"},
+        )
+
+        assert state.inferred_hvac_mode == HVACMode.HEAT
+        assert state.rooms_need_heat is False
+        assert state.rooms_need_cool is True
+        assert state.recommended_action == ThermostatAction.TURN_OFF
+        assert "house trend is HEAT but rooms need COOL" in state.action_reason
+
+    def test_already_heating_turns_off_when_house_trend_is_cool(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """Do not keep heating one cold room when the whole house trend is cool."""
+        global_thermostat = MagicMock()
+        global_thermostat.effective_target_temp_low = 72.0
+        global_thermostat.effective_target_temp_high = 74.0
+        controller._global_thermostat_getter = lambda: global_thermostat
+        controller._last_on_time = dt_util.utcnow() - timedelta(minutes=10)
+
+        office_temp = "sensor.office_temperature"
+        hot_room_temp_1 = "sensor.hot_room_temperature_1"
+        hot_room_temp_2 = "sensor.hot_room_temperature_2"
+
+        def get_state(entity_id):
+            if entity_id == TEST_THERMOSTAT:
+                thermostat_state = MagicMock()
+                thermostat_state.state = HVACMode.HEAT.value
+                thermostat_state.attributes = {"temperature": 72.0}
+                return thermostat_state
+            if entity_id == office_temp:
+                sensor_state = MagicMock()
+                sensor_state.state = "68.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            if entity_id == hot_room_temp_1:
+                sensor_state = MagicMock()
+                sensor_state.state = "80.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            if entity_id == hot_room_temp_2:
+                sensor_state = MagicMock()
+                sensor_state.state = "82.0"
+                sensor_state.attributes = {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT}
+                return sensor_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        office = AreaOccupancyState(
+            area_id="office",
+            area_name="Office",
+            is_active=True,
+        )
+        hot_room = AreaOccupancyState(
+            area_id="hot_room",
+            area_name="Hot Room",
+            is_active=False,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[office],
+            area_temp_sensors={
+                "office": [office_temp],
+                "hot_room": [hot_room_temp_1, hot_room_temp_2],
+            },
+            inactive_areas=[],
+            eco_mode=True,
+            all_areas_for_trend=[office, hot_room],
+            tracked_area_ids={"office"},
+        )
+
+        assert state.inferred_hvac_mode == HVACMode.COOL
+        assert state.rooms_need_heat is True
+        assert state.rooms_need_cool is False
+        assert state.recommended_action == ThermostatAction.TURN_OFF
+        assert "house trend is COOL but rooms need HEAT" in state.action_reason
+
     async def test_execute_update_setpoint_sets_temperature(
         self,
         controller,
