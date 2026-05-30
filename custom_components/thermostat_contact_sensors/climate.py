@@ -29,9 +29,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_AREA_ENABLED,
+    CONF_TEMPERATURE_SENSORS,
     DOMAIN,
 )
 from .coordinator import ThermostatContactSensorsCoordinator
+from .thermostat_control import get_temperature_from_state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -293,21 +295,32 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
 
         # Get temperature state for this area from last thermostat evaluation
         thermostat_state = coordinator.last_thermostat_state
-        if thermostat_state is None:
-            return None
-
-        room_state = thermostat_state.room_states.get(self._area_id)
-        if room_state is None:
-            return None
+        room_state = None
+        if thermostat_state is not None:
+            room_state = thermostat_state.room_states.get(self._area_id)
 
         # Return the determining temperature if available
-        if room_state.determining_temperature is not None:
+        if room_state is not None and room_state.determining_temperature is not None:
             return round(room_state.determining_temperature, 1)
 
         # If no determining temp, try to get average of all readings
-        if room_state.sensor_readings:
+        if room_state is not None and room_state.sensor_readings:
             readings = list(room_state.sensor_readings.values())
             return round(sum(readings) / len(readings), 1)
+
+        # Rooms filtered out of the current control decision still have live
+        # temperature sensors and should not report an empty climate temperature.
+        area_config = coordinator.areas_config.get(self._area_id, {})
+        live_readings: list[float] = []
+        for sensor_id in area_config.get(CONF_TEMPERATURE_SENSORS, []):
+            temp = get_temperature_from_state(
+                self.hass.states.get(sensor_id), coordinator.temperature_unit
+            )
+            if temp is not None:
+                live_readings.append(temp)
+
+        if live_readings:
+            return round(sum(live_readings) / len(live_readings), 1)
 
         return None
 
@@ -392,7 +405,6 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
 
         # Get temperature sensors for this area
         area_config = coordinator.areas_config.get(self._area_id, {})
-        from .const import CONF_TEMPERATURE_SENSORS
         temp_sensors = area_config.get(CONF_TEMPERATURE_SENSORS, [])
         attrs["temperature_sensors"] = temp_sensors
 

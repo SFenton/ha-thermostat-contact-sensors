@@ -228,6 +228,39 @@ class TestAreaVirtualThermostat:
         await hass.config_entries.async_unload(config_entry.entry_id)
 
     @pytest.mark.asyncio
+    async def test_current_temperature_falls_back_to_live_sensors_when_room_not_evaluated(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        setup_climate_entities: None,
+    ):
+        """Test climate current temperature still reports when a room is filtered out."""
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+
+        hass.states.async_set(
+            TEMP_SENSOR,
+            "22.9",
+            {"unit_of_measurement": "°C", "friendly_name": "Living Room Temperature"},
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: ThermostatContactSensorsCoordinator = config_entry.runtime_data
+        thermostat = coordinator.area_thermostats["living_room"]
+        coordinator._last_thermostat_state = ThermostatState(thermostat_entity_id=THERMOSTAT)
+
+        coordinator.async_set_updated_data(None)
+        await hass.async_block_till_done()
+
+        assert thermostat.current_temperature == 73.2
+        state = hass.states.get(thermostat.entity_id)
+        assert state is not None
+        assert state.attributes.get("current_temperature") is not None
+
+        await hass.config_entries.async_unload(config_entry.entry_id)
+
+    @pytest.mark.asyncio
     async def test_virtual_thermostat_only_supports_heat_cool(
         self,
         hass: HomeAssistant,
