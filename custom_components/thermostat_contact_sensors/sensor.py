@@ -20,6 +20,9 @@ from .const import (
     CONF_AREA_ENABLED,
     CONF_TEMPERATURE_SENSORS,
     DOMAIN,
+    PREDICTIVE_MODE_DISABLED,
+    PREDICTIVE_MODE_PRE_COOL,
+    PREDICTIVE_MODE_PRE_HEAT,
 )
 from .coordinator import ThermostatContactSensorsCoordinator
 from .occupancy import AreaOccupancyState
@@ -46,6 +49,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         OpenSensorCountSensor(coordinator, entry),
         ThermostatControlSensor(coordinator, entry),
+        PredictiveComfortModeSensor(coordinator, entry),
     ]
 
     # Create sensors for each enabled area
@@ -120,6 +124,58 @@ class OpenSensorCountSensor(CoordinatorEntity, SensorEntity):
             "monitored_sensors": coordinator.contact_sensors,
             "total_monitored": len(coordinator.contact_sensors),
         }
+
+
+class PredictiveComfortModeSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the current Predictive Comfort Mode recommendation."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_predictive_comfort_mode"
+        self._attr_name = "Predictive Comfort Mode"
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    @property
+    def native_value(self) -> str:
+        """Return the predictive comfort recommendation."""
+        return self.coordinator.predictive_mode
+
+    @property
+    def icon(self) -> str:
+        """Return an icon for the current recommendation."""
+        mode = self.coordinator.predictive_mode
+        if mode == PREDICTIVE_MODE_PRE_COOL:
+            return "mdi:snowflake-thermometer"
+        if mode == PREDICTIVE_MODE_PRE_HEAT:
+            return "mdi:sun-thermometer"
+        if mode == PREDICTIVE_MODE_DISABLED:
+            return "mdi:thermostat-off"
+        return "mdi:home-thermometer-outline"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return predictive comfort diagnostics."""
+        result = dict(self.coordinator.predictive_result)
+        result.pop("mode", None)
+        result["thermostat"] = self.coordinator.thermostat
+        return result
 
 
 class RoomOccupancySensor(CoordinatorEntity, SensorEntity):
@@ -303,16 +359,16 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
         if self.coordinator.is_paused:
             return "paused"
 
+        # Check if no active rooms
+        if state.active_room_count == 0:
+            return "idle"
+
         if state.recommended_action == ThermostatAction.TURN_OFF:
             return "off"
 
         # Check HVAC mode
         if state.hvac_mode and state.hvac_mode.value == "off":
             return "off"
-
-        # Check if no active rooms
-        if state.active_room_count == 0:
-            return "idle"
 
         # Check satiation
         if state.all_active_rooms_satiated:

@@ -10,14 +10,24 @@ import pytest
 from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
 from custom_components.thermostat_contact_sensors.const import (
     CONF_CLOSE_TIMEOUT,
     CONF_NOTIFY_SERVICE,
     CONF_OPEN_TIMEOUT,
+    CONF_PREDICTIVE_ACTIVITY_ENTITIES,
+    CONF_PREDICTIVE_AUTO_ADJUST,
+    CONF_PREDICTIVE_COMFORT_ENABLED,
+    CONF_PREDICTIVE_HUMIDITY_SENSORS,
+    CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+    CONF_PREDICTIVE_MIN_LEARNING_SAMPLES,
+    CONF_PREDICTIVE_TEMPERATURE_SENSORS,
+    CONF_PREDICTIVE_WEATHER_ENTITY,
     DOMAIN,
+    PREDICTIVE_MODE_DISABLED,
+    PREDICTIVE_MODE_PRE_COOL,
 )
 from custom_components.thermostat_contact_sensors.coordinator import (
     ThermostatContactSensorsCoordinator,
@@ -25,10 +35,14 @@ from custom_components.thermostat_contact_sensors.coordinator import (
 
 from .conftest import (
     TEST_NOTIFY_SERVICE,
+    TEST_ACTIVITY_ENTITY,
+    TEST_HUMIDITY_SENSOR,
     TEST_SENSOR_1,
     TEST_SENSOR_2,
     TEST_SENSOR_3,
+    TEST_TEMPERATURE_SENSOR,
     TEST_THERMOSTAT,
+    TEST_WEATHER,
     get_test_config_options,
 )
 
@@ -301,6 +315,7 @@ class TestThermostatPausing:
         coordinator.reconcile_restored_pause_state()
 
         assert coordinator._close_timer is not None
+        coordinator._cancel_close_timer()
 
 
 class TestVentEffectiveMode:
@@ -1162,6 +1177,220 @@ class TestOptionsUpdate:
         coordinator.update_options(new_options)
 
         assert coordinator.open_timeout == 10
+
+        await coordinator.async_shutdown()
+
+
+class TestPredictiveComfort:
+    """Tests for Predictive Comfort Mode."""
+
+    def predictive_options(self) -> dict:
+        """Return options with Predictive Comfort Mode enabled."""
+        options = get_test_config_options()
+        options.update(
+            {
+                CONF_PREDICTIVE_COMFORT_ENABLED: True,
+                CONF_PREDICTIVE_WEATHER_ENTITY: TEST_WEATHER,
+                CONF_PREDICTIVE_TEMPERATURE_SENSORS: [TEST_TEMPERATURE_SENSOR],
+                CONF_PREDICTIVE_HUMIDITY_SENSORS: [TEST_HUMIDITY_SENSOR],
+                CONF_PREDICTIVE_ACTIVITY_ENTITIES: [TEST_ACTIVITY_ENTITY],
+            }
+        )
+        return options
+
+    def create_predictive_coordinator(
+        self,
+        hass: HomeAssistant,
+        options: dict,
+    ) -> ThermostatContactSensorsCoordinator:
+        """Create a coordinator with Predictive Comfort options."""
+        return ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="predictive_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+    def learning_history(self):
+        """Return history where the activity entity warms the room."""
+        base = dt_util.utcnow() - timedelta(hours=6)
+        return {
+            TEST_ACTIVITY_ENTITY: [
+                State(TEST_ACTIVITY_ENTITY, STATE_OFF, last_changed=base),
+                State(
+                    TEST_ACTIVITY_ENTITY,
+                    STATE_ON,
+                    last_changed=base + timedelta(minutes=10),
+                ),
+                State(
+                    TEST_ACTIVITY_ENTITY,
+                    STATE_OFF,
+                    last_changed=base + timedelta(minutes=120),
+                ),
+                State(
+                    TEST_ACTIVITY_ENTITY,
+                    STATE_ON,
+                    last_changed=base + timedelta(minutes=180),
+                ),
+            ],
+            TEST_TEMPERATURE_SENSOR: [
+                State(TEST_TEMPERATURE_SENSOR, "70.0", last_changed=base),
+                State(
+                    TEST_TEMPERATURE_SENSOR,
+                    "71.2",
+                    last_changed=base + timedelta(minutes=100),
+                ),
+                State(
+                    TEST_TEMPERATURE_SENSOR,
+                    "71.2",
+                    last_changed=base + timedelta(minutes=180),
+                ),
+                State(
+                    TEST_TEMPERATURE_SENSOR,
+                    "72.1",
+                    last_changed=base + timedelta(minutes=270),
+                ),
+            ],
+        }
+
+    async def test_predictive_comfort_disabled_by_default(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """Test Predictive Comfort Mode is disabled by default."""
+        await coordinator.async_setup()
+
+        assert coordinator.predictive_mode == PREDICTIVE_MODE_DISABLED
+        assert coordinator.predictive_result["reason"] == "Predictive Comfort Mode is disabled"
+
+        await coordinator.async_shutdown()
+
+    async def test_predictive_comfort_recommends_precool(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test predictive comfort recommends pre-cooling before heat load arrives."""
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        coordinator = self.create_predictive_coordinator(
+            hass,
+            self.predictive_options(),
+        )
+
+        await coordinator.async_setup()
+
+        assert coordinator.predictive_mode == PREDICTIVE_MODE_PRE_COOL
+        assert coordinator.predictive_result["target_temperature"] == 72.0
+        assert TEST_ACTIVITY_ENTITY in coordinator.predictive_result[
+            "active_activity_entities"
+        ]
+        assert coordinator.predictive_result["forecast_high"] == 82.0
+
+        await coordinator.async_shutdown()
+
+    async def test_predictive_comfort_resolves_global_weather_fallback(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test blank room weather config uses an available global weather source."""
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_WEATHER_ENTITY] = ""
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        assert coordinator._resolved_predictive_weather_entity() == TEST_WEATHER
+
+    async def test_predictive_learning_marks_meaningful_room_heat_load(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test history learning detects meaningful room heat-load entities."""
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_MIN_LEARNING_SAMPLES] = 2
+        options[CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES] = 90
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        heat_gains = coordinator._learn_activity_heat_gains(self.learning_history())
+
+        assert heat_gains[TEST_ACTIVITY_ENTITY] == 1.05
+
+    async def test_predictive_comfort_uses_learned_heat_gain(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test active room entities use learned gains when history is available."""
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "72")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_MIN_LEARNING_SAMPLES] = 2
+        options[CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES] = 90
+        coordinator = self.create_predictive_coordinator(hass, options)
+        coordinator._async_fetch_predictive_history = AsyncMock(
+            return_value=self.learning_history()
+        )
+
+        await coordinator.async_setup()
+
+        assert coordinator.predictive_result["activity_effect"] == 1.1
+        assert coordinator.predictive_result["learning"]["status"] == "ready"
+
+        await coordinator.async_shutdown()
+
+    async def test_predictive_comfort_auto_adjusts_setpoint(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test predictive comfort can pre-cool by updating thermostat setpoints."""
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_AUTO_ADJUST] = True
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        await coordinator.async_setup()
+        await hass.async_block_till_done()
+
+        thermostat_state = hass.states.get(TEST_THERMOSTAT)
+        assert thermostat_state.attributes["temperature"] == 72.0
+        assert coordinator.predictive_result["adjustment_status"] == "applied"
+
+        await coordinator.async_shutdown()
+
+    async def test_predictive_comfort_skips_adjustment_when_contact_open(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test predictive comfort does not adjust while a contact sensor is open."""
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON)
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_AUTO_ADJUST] = True
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        await coordinator.async_setup()
+        await hass.async_block_till_done()
+
+        thermostat_state = hass.states.get(TEST_THERMOSTAT)
+        assert thermostat_state.attributes["temperature"] == 22
+        assert (
+            coordinator.predictive_result["adjustment_status"]
+            == "skipped_contact_sensor_open"
+        )
 
         await coordinator.async_shutdown()
 

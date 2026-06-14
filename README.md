@@ -34,6 +34,14 @@ A comprehensive Home Assistant custom integration that provides intelligent HVAC
 - **Debounce protection**: Prevents rapid open/close cycling of vents
 - **Group support**: Properly counts and controls vent groups
 
+### Predictive Comfort Mode
+- **Global weather forecasting**: Uses a shared weather entity for the house, with automatic fallback to common weather sources
+- **Room-aware heat loads**: Add room-specific devices/entities such as PCs, TVs, or appliances that may warm a room
+- **History learning**: Uses recorder history to learn whether configured heat-load entities meaningfully move room temperatures
+- **Humidity and rain modeling**: Adjusts predicted comfort pressure for indoor humidity and forecast precipitation
+- **Safe proactive control**: Automatic setpoint changes are opt-in, rate-limited, and skipped while contact sensors are open or the integration is paused
+- **Diagnostics sensor**: Exposes the current recommendation, forecast inputs, learned heat gains, and adjustment status
+
 ## Installation
 
 ### Manual Installation
@@ -72,6 +80,7 @@ After setup, access the integration options to configure:
 - Enable/disable specific areas
 - Select which sensors to use for each area
 - Configure temperature sensors and vents per area
+- Add per-area Predictive Comfort heat-load entities
 - Set per-area vent open delays
 
 #### Global Settings
@@ -93,6 +102,37 @@ After setup, access the integration options to configure:
 - Notification service selection
 - Customizable titles and messages with Jinja2 templates
 - Notification tag for persistent/replaceable notifications
+
+#### Predictive Comfort Mode
+
+Predictive Comfort Mode is disabled by default. When enabled, it evaluates current indoor temperature, configured comfort band, humidity, room heat-load entities, and weather forecast pressure to recommend `idle`, `pre_cool`, or `pre_heat`. It does not change the thermostat unless **Automatically Adjust Thermostat Setpoints** is also enabled. Changing HVAC modes is a separate opt-in control.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Enable Predictive Comfort Mode** | off | Calculate proactive comfort recommendations and expose diagnostics |
+| **Automatically Adjust Thermostat Setpoints** | off | Allow rate-limited `climate.set_temperature` calls |
+| **Allow HVAC Mode Changes** | off | Allow switching supported heat/cool modes before applying a proactive target |
+| **Global Weather Entity** | auto | Weather source shared by the house; blank falls back to another entry, `weather.pirate_weather`, `weather.forecast_home`, or the first weather entity |
+| **Global Temperature Sensors** | area sensors | Optional global indoor sensors; blank uses enabled area temperature sensors |
+| **Humidity Sensors** | none | Indoor humidity sensors used to add perceived heat pressure |
+| **Global Heat-Load Entities** | none | House-level devices/entities that add heat load; prefer room-specific entities in area options |
+| **Comfort Low / High** | 71°F / 74°F | Desired comfort band |
+| **Forecast Lookahead** | 6 hours | How far ahead weather influences predictions |
+| **Trigger Margin** | 0.5°F | Prediction must exceed the comfort band by this amount before pre-heating/pre-cooling |
+| **Pre-Cool / Pre-Heat Offset** | 2°F / 1°F | How aggressively to move the target inside the comfort band |
+| **Outdoor Influence** | 0.15 | Weight applied to forecast heat/cold pressure |
+| **Humidity Sensitivity** | 0.05 | Perceived heat added per humidity point above baseline |
+| **Fallback Activity Heat Gain** | 1°F | Heat gain per active entity before history learning has enough samples |
+| **Rain Cooling Adjustment** | 2°F | Cooling effect subtracted when precipitation is forecast |
+| **Evaluation Interval** | 15 min | Periodic reevaluation cadence |
+| **Minimum Adjustment Interval** | 45 min | Rate limit between automatic setpoint changes |
+| **History Learning Enabled** | on | Learn device/entity heat impact from recorder history |
+| **History Lookback** | 7 days | Recorder history window for learning |
+| **Learning Window** | 90 min | Temperature comparison window after a heat-load entity activates |
+| **Learning Refresh Interval** | 360 min | Minimum time between history-learning refreshes |
+| **Minimum Learning Samples** | 3 | Activation samples required before a gain is trusted |
+| **Meaningful Temperature Delta** | 0.5°F | Minimum average temperature rise to count as meaningful |
+| **Maximum Learned Heat Gain** | 5°F | Cap for learned gain from one entity |
 
 ## Template Variables
 
@@ -162,6 +202,16 @@ For each configuration, the integration creates:
 - **State**: Current thermostat control status
 - **Attributes**: Details about satiation state, active rooms, and recommended actions
 
+### Sensor: Predictive Comfort Mode
+- **State**: `disabled`, `idle`, `pre_cool`, `pre_heat`, or `insufficient_data`
+- **Attributes**:
+  - `reason` / `reasons`: Why the recommendation was chosen
+  - `indoor_temperature` and `predicted_temperature`: Current and modeled temperatures
+  - `forecast_high`, `forecast_low`, `weather_entity`, and rain/humidity effects
+  - `active_activity_entities`: Currently active heat-load entities
+  - `learning`: History-learning status and learned gains
+  - `target_temperature`, `target_hvac_mode`, and `adjustment_status`
+
 ### Switch: Respect User Off
 - **When OFF** (default): Integration will always turn thermostat back on when windows close
 - **When ON**: Integration respects user's choice—if thermostat was off before pause, it stays off
@@ -215,6 +265,14 @@ Force recalculation of thermostat state and vent positions.
 3. The system ensures at least N vents remain open (minimum vents open setting)
 4. Priority determines which vents stay open: critical > active > occupied > distance from target
 5. Debounce protection prevents rapid vent changes
+
+### Predictive Comfort Logic
+1. The integration gathers indoor temperatures from configured global sensors or enabled area temperature sensors
+2. The configured global weather entity supplies current conditions and forecast highs/lows within the lookahead window
+3. Humidity, active heat-load entities, outdoor forecast pressure, and rain cooling are combined into a predicted indoor temperature
+4. If the prediction exceeds the comfort band plus margin, the sensor recommends pre-cooling or pre-heating
+5. If automatic adjustment is enabled, contact sensors are closed, and the rate limit has elapsed, the thermostat setpoint is nudged proactively
+6. Recorder history periodically learns whether room-specific heat-load entities cause meaningful temperature swings and uses learned gains instead of the fallback
 
 ## Multiple Thermostats
 

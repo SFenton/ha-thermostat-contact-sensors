@@ -14,6 +14,8 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_CONTACT_SENSORS,
     CONF_NOTIFY_SERVICE,
     CONF_OPEN_TIMEOUT,
+    CONF_PREDICTIVE_AUTO_ADJUST,
+    CONF_PREDICTIVE_COMFORT_ENABLED,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_OPEN_TIMEOUT,
@@ -171,6 +173,8 @@ async def test_config_flow_default_values(hass: HomeAssistant) -> None:
     assert result["options"][CONF_OPEN_TIMEOUT] == DEFAULT_OPEN_TIMEOUT
     assert result["options"][CONF_CLOSE_TIMEOUT] == DEFAULT_CLOSE_TIMEOUT
     assert result["options"][CONF_NOTIFY_SERVICE] == ""
+    assert result["options"][CONF_PREDICTIVE_COMFORT_ENABLED] is False
+    assert result["options"][CONF_PREDICTIVE_AUTO_ADJUST] is False
 
     # Cleanup: unload the entry to stop timers
     await hass.config_entries.async_unload(result["result"].entry_id)

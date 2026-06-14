@@ -11,6 +11,7 @@ from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAI
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
+from homeassistant.components.weather import DOMAIN as WEATHER_DOMAIN
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
@@ -43,6 +44,32 @@ from .const import (
     CONF_NOTIFY_TITLE_PAUSED,
     CONF_NOTIFY_TITLE_RESUMED,
     CONF_OPEN_TIMEOUT,
+    CONF_PREDICTIVE_ACTIVITY_ENTITIES,
+    CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+    CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+    CONF_PREDICTIVE_AUTO_ADJUST,
+    CONF_PREDICTIVE_COMFORT_ENABLED,
+    CONF_PREDICTIVE_COMFORT_HIGH,
+    CONF_PREDICTIVE_COMFORT_LOW,
+    CONF_PREDICTIVE_EVALUATION_INTERVAL,
+    CONF_PREDICTIVE_HISTORY_LEARNING_ENABLED,
+    CONF_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+    CONF_PREDICTIVE_HUMIDITY_SENSITIVITY,
+    CONF_PREDICTIVE_HUMIDITY_SENSORS,
+    CONF_PREDICTIVE_LEARNING_REFRESH_INTERVAL,
+    CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+    CONF_PREDICTIVE_LOOKAHEAD_HOURS,
+    CONF_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
+    CONF_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
+    CONF_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
+    CONF_PREDICTIVE_MIN_LEARNING_SAMPLES,
+    CONF_PREDICTIVE_OUTDOOR_INFLUENCE,
+    CONF_PREDICTIVE_PRECOOL_OFFSET,
+    CONF_PREDICTIVE_PREHEAT_OFFSET,
+    CONF_PREDICTIVE_RAIN_COOLING,
+    CONF_PREDICTIVE_TEMPERATURE_SENSORS,
+    CONF_PREDICTIVE_TRIGGER_MARGIN,
+    CONF_PREDICTIVE_WEATHER_ENTITY,
     CONF_SENSORS,
     CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
@@ -68,6 +95,28 @@ from .const import (
     DEFAULT_NOTIFY_TITLE_PAUSED,
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
+    DEFAULT_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+    DEFAULT_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+    DEFAULT_PREDICTIVE_AUTO_ADJUST,
+    DEFAULT_PREDICTIVE_COMFORT_ENABLED,
+    DEFAULT_PREDICTIVE_COMFORT_HIGH,
+    DEFAULT_PREDICTIVE_COMFORT_LOW,
+    DEFAULT_PREDICTIVE_EVALUATION_INTERVAL,
+    DEFAULT_PREDICTIVE_HISTORY_LEARNING_ENABLED,
+    DEFAULT_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+    DEFAULT_PREDICTIVE_HUMIDITY_SENSITIVITY,
+    DEFAULT_PREDICTIVE_LEARNING_REFRESH_INTERVAL,
+    DEFAULT_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+    DEFAULT_PREDICTIVE_LOOKAHEAD_HOURS,
+    DEFAULT_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
+    DEFAULT_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
+    DEFAULT_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
+    DEFAULT_PREDICTIVE_MIN_LEARNING_SAMPLES,
+    DEFAULT_PREDICTIVE_OUTDOOR_INFLUENCE,
+    DEFAULT_PREDICTIVE_PRECOOL_OFFSET,
+    DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
+    DEFAULT_PREDICTIVE_RAIN_COOLING,
+    DEFAULT_PREDICTIVE_TRIGGER_MARGIN,
     DEFAULT_TEMPERATURE_DEADBAND,
     DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
     DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
@@ -81,6 +130,46 @@ _LOGGER = logging.getLogger(__name__)
 
 # Device classes for contact sensors (door/window sensors that trigger pause)
 CONTACT_SENSOR_DEVICE_CLASSES = {"door", "window", "garage_door", "opening"}
+
+
+def _default_predictive_options() -> dict[str, Any]:
+    """Return safe defaults for Predictive Comfort Mode."""
+    return {
+        CONF_PREDICTIVE_COMFORT_ENABLED: DEFAULT_PREDICTIVE_COMFORT_ENABLED,
+        CONF_PREDICTIVE_AUTO_ADJUST: DEFAULT_PREDICTIVE_AUTO_ADJUST,
+        CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE: DEFAULT_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+        CONF_PREDICTIVE_WEATHER_ENTITY: "",
+        CONF_PREDICTIVE_TEMPERATURE_SENSORS: [],
+        CONF_PREDICTIVE_HUMIDITY_SENSORS: [],
+        CONF_PREDICTIVE_ACTIVITY_ENTITIES: [],
+        CONF_PREDICTIVE_COMFORT_LOW: DEFAULT_PREDICTIVE_COMFORT_LOW,
+        CONF_PREDICTIVE_COMFORT_HIGH: DEFAULT_PREDICTIVE_COMFORT_HIGH,
+        CONF_PREDICTIVE_LOOKAHEAD_HOURS: DEFAULT_PREDICTIVE_LOOKAHEAD_HOURS,
+        CONF_PREDICTIVE_TRIGGER_MARGIN: DEFAULT_PREDICTIVE_TRIGGER_MARGIN,
+        CONF_PREDICTIVE_PRECOOL_OFFSET: DEFAULT_PREDICTIVE_PRECOOL_OFFSET,
+        CONF_PREDICTIVE_PREHEAT_OFFSET: DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
+        CONF_PREDICTIVE_OUTDOOR_INFLUENCE: DEFAULT_PREDICTIVE_OUTDOOR_INFLUENCE,
+        CONF_PREDICTIVE_HUMIDITY_SENSITIVITY: DEFAULT_PREDICTIVE_HUMIDITY_SENSITIVITY,
+        CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN: DEFAULT_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+        CONF_PREDICTIVE_RAIN_COOLING: DEFAULT_PREDICTIVE_RAIN_COOLING,
+        CONF_PREDICTIVE_EVALUATION_INTERVAL: DEFAULT_PREDICTIVE_EVALUATION_INTERVAL,
+        CONF_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL: (
+            DEFAULT_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL
+        ),
+        CONF_PREDICTIVE_HISTORY_LEARNING_ENABLED: (
+            DEFAULT_PREDICTIVE_HISTORY_LEARNING_ENABLED
+        ),
+        CONF_PREDICTIVE_HISTORY_LOOKBACK_DAYS: DEFAULT_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+        CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES: (
+            DEFAULT_PREDICTIVE_LEARNING_WINDOW_MINUTES
+        ),
+        CONF_PREDICTIVE_LEARNING_REFRESH_INTERVAL: (
+            DEFAULT_PREDICTIVE_LEARNING_REFRESH_INTERVAL
+        ),
+        CONF_PREDICTIVE_MIN_LEARNING_SAMPLES: DEFAULT_PREDICTIVE_MIN_LEARNING_SAMPLES,
+        CONF_PREDICTIVE_MEANINGFUL_TEMP_DELTA: DEFAULT_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
+        CONF_PREDICTIVE_MAX_LEARNED_HEAT_GAIN: DEFAULT_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
+    }
 
 
 def get_areas_with_sensors(hass: HomeAssistant) -> dict[str, dict]:
@@ -160,6 +249,7 @@ def build_default_areas_config(hass: HomeAssistant) -> dict[str, dict]:
             CONF_CONTACT_SENSORS: area_info["contact_sensors"],
             CONF_TEMPERATURE_SENSORS: area_info["temperature_sensors"],
             CONF_SENSORS: area_info["sensors"],
+            CONF_PREDICTIVE_ACTIVITY_ENTITIES: [],
             CONF_VENTS: [],  # Vents are not auto-assigned
         }
 
@@ -193,16 +283,9 @@ class ThermostatContactSensorsConfigFlow(
                 # Build default areas configuration
                 areas_config = build_default_areas_config(self.hass)
 
-                return self.async_create_entry(
-                    title=name,
-                    data={
-                        CONF_NAME: name,
-                        CONF_THERMOSTAT: user_input[CONF_THERMOSTAT],
-                        CONF_AREAS: areas_config,
-                        # Keep legacy field for backwards compatibility
-                        CONF_CONTACT_SENSORS: user_input.get(CONF_CONTACT_SENSORS, []),
-                    },
-                    options={
+                options = _default_predictive_options()
+                options.update(
+                    {
                         CONF_OPEN_TIMEOUT: user_input.get(
                             CONF_OPEN_TIMEOUT, DEFAULT_OPEN_TIMEOUT
                         ),
@@ -225,7 +308,19 @@ class ThermostatContactSensorsConfigFlow(
                         CONF_NOTIFICATION_TAG: user_input.get(
                             CONF_NOTIFICATION_TAG, DEFAULT_NOTIFICATION_TAG
                         ),
+                    }
+                )
+
+                return self.async_create_entry(
+                    title=name,
+                    data={
+                        CONF_NAME: name,
+                        CONF_THERMOSTAT: user_input[CONF_THERMOSTAT],
+                        CONF_AREAS: areas_config,
+                        # Keep legacy field for backwards compatibility
+                        CONF_CONTACT_SENSORS: user_input.get(CONF_CONTACT_SENSORS, []),
                     },
+                    options=options,
                 )
 
         # Build schema for config flow
@@ -305,7 +400,309 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
         """Show the main menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["manage_areas", "configure_area_sensors", "global_settings", "thermostat"],
+            menu_options=[
+                "manage_areas",
+                "configure_area_sensors",
+                "global_settings",
+                "predictive_comfort",
+                "thermostat",
+            ],
+        )
+
+    async def async_step_predictive_comfort(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle Predictive Comfort Mode settings."""
+        if user_input is not None:
+            new_options = {
+                **_default_predictive_options(),
+                **self.config_entry.options,
+                **user_input,
+            }
+            if not user_input.get(CONF_PREDICTIVE_WEATHER_ENTITY):
+                new_options[CONF_PREDICTIVE_WEATHER_ENTITY] = ""
+            return self.async_create_entry(title="", data=new_options)
+
+        options = {**_default_predictive_options(), **self.config_entry.options}
+
+        weather_key = (
+            vol.Optional(
+                CONF_PREDICTIVE_WEATHER_ENTITY,
+                default=options[CONF_PREDICTIVE_WEATHER_ENTITY],
+            )
+            if options.get(CONF_PREDICTIVE_WEATHER_ENTITY)
+            else vol.Optional(CONF_PREDICTIVE_WEATHER_ENTITY)
+        )
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_PREDICTIVE_COMFORT_ENABLED,
+                    default=options[CONF_PREDICTIVE_COMFORT_ENABLED],
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_PREDICTIVE_AUTO_ADJUST,
+                    default=options[CONF_PREDICTIVE_AUTO_ADJUST],
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+                    default=options[CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE],
+                ): selector.BooleanSelector(),
+                weather_key: selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=WEATHER_DOMAIN,
+                        multiple=False,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_TEMPERATURE_SENSORS,
+                    default=options.get(CONF_PREDICTIVE_TEMPERATURE_SENSORS, []),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=SENSOR_DOMAIN,
+                        multiple=True,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_HUMIDITY_SENSORS,
+                    default=options.get(CONF_PREDICTIVE_HUMIDITY_SENSORS, []),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=SENSOR_DOMAIN,
+                        multiple=True,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_ACTIVITY_ENTITIES,
+                    default=options.get(CONF_PREDICTIVE_ACTIVITY_ENTITIES, []),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        multiple=True,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_COMFORT_LOW,
+                    default=options[CONF_PREDICTIVE_COMFORT_LOW],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50,
+                        max=80,
+                        step=0.5,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_COMFORT_HIGH,
+                    default=options[CONF_PREDICTIVE_COMFORT_HIGH],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=55,
+                        max=90,
+                        step=0.5,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_LOOKAHEAD_HOURS,
+                    default=options[CONF_PREDICTIVE_LOOKAHEAD_HOURS],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=24,
+                        step=1,
+                        unit_of_measurement="hours",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_TRIGGER_MARGIN,
+                    default=options[CONF_PREDICTIVE_TRIGGER_MARGIN],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=5,
+                        step=0.1,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_PRECOOL_OFFSET,
+                    default=options[CONF_PREDICTIVE_PRECOOL_OFFSET],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=8,
+                        step=0.5,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_PREHEAT_OFFSET,
+                    default=options[CONF_PREDICTIVE_PREHEAT_OFFSET],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=8,
+                        step=0.5,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_OUTDOOR_INFLUENCE,
+                    default=options[CONF_PREDICTIVE_OUTDOOR_INFLUENCE],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=1,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_HUMIDITY_SENSITIVITY,
+                    default=options[CONF_PREDICTIVE_HUMIDITY_SENSITIVITY],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=0.5,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+                    default=options[CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=5,
+                        step=0.1,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_RAIN_COOLING,
+                    default=options[CONF_PREDICTIVE_RAIN_COOLING],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=10,
+                        step=0.5,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_EVALUATION_INTERVAL,
+                    default=options[CONF_PREDICTIVE_EVALUATION_INTERVAL],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=120,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
+                    default=options[CONF_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=240,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_HISTORY_LEARNING_ENABLED,
+                    default=options[CONF_PREDICTIVE_HISTORY_LEARNING_ENABLED],
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+                    default=options[CONF_PREDICTIVE_HISTORY_LOOKBACK_DAYS],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=30,
+                        step=1,
+                        unit_of_measurement="days",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+                    default=options[CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=15,
+                        max=360,
+                        step=15,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_LEARNING_REFRESH_INTERVAL,
+                    default=options[CONF_PREDICTIVE_LEARNING_REFRESH_INTERVAL],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=15,
+                        max=1440,
+                        step=15,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_MIN_LEARNING_SAMPLES,
+                    default=options[CONF_PREDICTIVE_MIN_LEARNING_SAMPLES],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=20,
+                        step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
+                    default=options[CONF_PREDICTIVE_MEANINGFUL_TEMP_DELTA],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=5,
+                        step=0.1,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
+                    default=options[CONF_PREDICTIVE_MAX_LEARNED_HEAT_GAIN],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=10,
+                        step=0.5,
+                        unit_of_measurement="°F",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="predictive_comfort",
+            data_schema=data_schema,
         )
 
     async def async_step_thermostat(
@@ -701,6 +1098,7 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                         CONF_CONTACT_SENSORS: area_info["contact_sensors"],
                         CONF_TEMPERATURE_SENSORS: area_info["temperature_sensors"],
                         CONF_SENSORS: area_info["sensors"],
+                        CONF_PREDICTIVE_ACTIVITY_ENTITIES: [],
                         CONF_VENTS: [],
                     }
                 else:
@@ -850,6 +1248,9 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 CONF_CONTACT_SENSORS: user_input.get(CONF_CONTACT_SENSORS, []),
                 CONF_TEMPERATURE_SENSORS: user_input.get(CONF_TEMPERATURE_SENSORS, []),
                 CONF_SENSORS: user_input.get(CONF_SENSORS, []),
+                CONF_PREDICTIVE_ACTIVITY_ENTITIES: user_input.get(
+                    CONF_PREDICTIVE_ACTIVITY_ENTITIES, []
+                ),
                 CONF_VENTS: user_input.get(CONF_VENTS, []),
             }
 
@@ -931,6 +1332,15 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
         )] = selector.EntitySelector(
             selector.EntitySelectorConfig(
                 domain=SENSOR_DOMAIN,
+                multiple=True,
+            )
+        )
+
+        schema_dict[vol.Optional(
+            CONF_PREDICTIVE_ACTIVITY_ENTITIES,
+            default=current_area_config.get(CONF_PREDICTIVE_ACTIVITY_ENTITIES, []),
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
                 multiple=True,
             )
         )

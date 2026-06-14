@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from functools import partial
 import logging
 import time
 from typing import Any
 
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
 from homeassistant.components.climate import ClimateEntityFeature
+from homeassistant.components.recorder import get_instance as get_recorder_instance
+from homeassistant.components.recorder.history import get_significant_states
 from homeassistant.const import (
     STATE_NOT_HOME,
     STATE_OFF,
@@ -18,7 +22,12 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_interval,
+)
+from homeassistant.helpers.recorder import DATA_INSTANCE as RECORDER_DATA_INSTANCE
 from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -32,6 +41,32 @@ from .const import (
     CONF_AWAY_PRESENCE_ENTITY,
     CONF_CLOSE_TIMEOUT,
     CONF_ECO_MODE_CRITICAL_TRACKING,
+    CONF_PREDICTIVE_ACTIVITY_ENTITIES,
+    CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+    CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+    CONF_PREDICTIVE_AUTO_ADJUST,
+    CONF_PREDICTIVE_COMFORT_ENABLED,
+    CONF_PREDICTIVE_COMFORT_HIGH,
+    CONF_PREDICTIVE_COMFORT_LOW,
+    CONF_PREDICTIVE_EVALUATION_INTERVAL,
+    CONF_PREDICTIVE_HISTORY_LEARNING_ENABLED,
+    CONF_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+    CONF_PREDICTIVE_HUMIDITY_SENSITIVITY,
+    CONF_PREDICTIVE_HUMIDITY_SENSORS,
+    CONF_PREDICTIVE_LEARNING_REFRESH_INTERVAL,
+    CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+    CONF_PREDICTIVE_LOOKAHEAD_HOURS,
+    CONF_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
+    CONF_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
+    CONF_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
+    CONF_PREDICTIVE_MIN_LEARNING_SAMPLES,
+    CONF_PREDICTIVE_OUTDOOR_INFLUENCE,
+    CONF_PREDICTIVE_PRECOOL_OFFSET,
+    CONF_PREDICTIVE_PREHEAT_OFFSET,
+    CONF_PREDICTIVE_RAIN_COOLING,
+    CONF_PREDICTIVE_TEMPERATURE_SENSORS,
+    CONF_PREDICTIVE_TRIGGER_MARGIN,
+    CONF_PREDICTIVE_WEATHER_ENTITY,
     CONF_GRACE_PERIOD_MINUTES,
     CONF_COOLING_BOOST_OFFSET,
     CONF_HEATING_BOOST_OFFSET,
@@ -70,6 +105,28 @@ from .const import (
     DEFAULT_NOTIFY_TITLE_PAUSED,
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
+    DEFAULT_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+    DEFAULT_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+    DEFAULT_PREDICTIVE_AUTO_ADJUST,
+    DEFAULT_PREDICTIVE_COMFORT_ENABLED,
+    DEFAULT_PREDICTIVE_COMFORT_HIGH,
+    DEFAULT_PREDICTIVE_COMFORT_LOW,
+    DEFAULT_PREDICTIVE_EVALUATION_INTERVAL,
+    DEFAULT_PREDICTIVE_HISTORY_LEARNING_ENABLED,
+    DEFAULT_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+    DEFAULT_PREDICTIVE_HUMIDITY_SENSITIVITY,
+    DEFAULT_PREDICTIVE_LEARNING_REFRESH_INTERVAL,
+    DEFAULT_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+    DEFAULT_PREDICTIVE_LOOKAHEAD_HOURS,
+    DEFAULT_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
+    DEFAULT_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
+    DEFAULT_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
+    DEFAULT_PREDICTIVE_MIN_LEARNING_SAMPLES,
+    DEFAULT_PREDICTIVE_OUTDOOR_INFLUENCE,
+    DEFAULT_PREDICTIVE_PRECOOL_OFFSET,
+    DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
+    DEFAULT_PREDICTIVE_RAIN_COOLING,
+    DEFAULT_PREDICTIVE_TRIGGER_MARGIN,
     DEFAULT_TEMPERATURE_DEADBAND,
     DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
     DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
@@ -79,6 +136,11 @@ from .const import (
     ECO_CRITICAL_ALL,
     ECO_CRITICAL_NONE,
     ECO_CRITICAL_SELECT,
+    PREDICTIVE_MODE_DISABLED,
+    PREDICTIVE_MODE_IDLE,
+    PREDICTIVE_MODE_INSUFFICIENT_DATA,
+    PREDICTIVE_MODE_PRE_COOL,
+    PREDICTIVE_MODE_PRE_HEAT,
 )
 from .occupancy import RoomOccupancyTracker
 from .thermostat_control import (
@@ -93,6 +155,31 @@ from .thermostat_control import (
 from .vent_control import VentController, VentControlState
 
 _LOGGER = logging.getLogger(__name__)
+
+WEATHER_DOMAIN = "weather"
+SERVICE_GET_FORECASTS = "get_forecasts"
+SERVICE_SET_TEMPERATURE = "set_temperature"
+FORECAST_TYPE_HOURLY = "hourly"
+HUMIDITY_COMFORT_BASELINE = 45.0
+GLOBAL_WEATHER_ENTITY_PRIORITY = ("weather.pirate_weather", "weather.forecast_home")
+ACTIVE_STATES = {
+    "on",
+    "home",
+    "active",
+    "playing",
+    "heat",
+    "cool",
+    "heat_cool",
+    "auto",
+}
+RAINY_CONDITIONS = {
+    "hail",
+    "lightning-rainy",
+    "pouring",
+    "rainy",
+    "snowy",
+    "snowy-rainy",
+}
 
 
 @dataclass(frozen=True)
@@ -170,11 +257,22 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Track last known non-off HVAC mode for manual override detection
         self._last_known_hvac_mode: str | None = None
 
+        # Predictive comfort tracking
+        self.predictive_result: dict[str, Any] = self._predictive_disabled_result()
+        self.predictive_learning_result: dict[str, Any] = (
+            self._predictive_learning_disabled_result()
+        )
+        self._activity_heat_gains: dict[str, float] = {}
+        self._last_predictive_adjustment: datetime | None = None
+        self._last_predictive_learning_update: datetime | None = None
+
         # Listener cleanup
         self._unsub_state_change: callable | None = None
         self._unsub_thermostat_state_change: callable | None = None
         self._unsub_temp_sensor_state_change: callable | None = None
         self._unsub_presence_state_change: callable | None = None
+        self._unsub_predictive_state_change: callable | None = None
+        self._unsub_predictive_interval: callable | None = None
 
         # Away mode tracking
         self._is_away: bool = False
@@ -336,6 +434,131 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     def away_mode_configured(self) -> bool:
         """Return whether away mode has been configured with a presence entity."""
         return bool(self.away_presence_entity)
+
+    @property
+    def predictive_comfort_enabled(self) -> bool:
+        """Return whether predictive comfort evaluation is enabled."""
+        return bool(
+            self._options.get(
+                CONF_PREDICTIVE_COMFORT_ENABLED,
+                DEFAULT_PREDICTIVE_COMFORT_ENABLED,
+            )
+        )
+
+    @property
+    def predictive_auto_adjust(self) -> bool:
+        """Return whether predictive comfort may update thermostat setpoints."""
+        return bool(
+            self._options.get(
+                CONF_PREDICTIVE_AUTO_ADJUST,
+                DEFAULT_PREDICTIVE_AUTO_ADJUST,
+            )
+        )
+
+    @property
+    def predictive_allow_hvac_mode_change(self) -> bool:
+        """Return whether predictive comfort may change HVAC modes."""
+        return bool(
+            self._options.get(
+                CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+                DEFAULT_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+            )
+        )
+
+    @property
+    def predictive_weather_entity(self) -> str:
+        """Return the configured weather entity used for predictive comfort."""
+        return self._options.get(CONF_PREDICTIVE_WEATHER_ENTITY, "")
+
+    @property
+    def predictive_history_learning_enabled(self) -> bool:
+        """Return whether predictive comfort should learn from history."""
+        return bool(
+            self._options.get(
+                CONF_PREDICTIVE_HISTORY_LEARNING_ENABLED,
+                DEFAULT_PREDICTIVE_HISTORY_LEARNING_ENABLED,
+            )
+        )
+
+    @property
+    def predictive_temperature_sensors(self) -> list[str]:
+        """Return indoor temperature sensors used for predictive comfort."""
+        configured = self._entity_list_option(CONF_PREDICTIVE_TEMPERATURE_SENSORS)
+        if configured:
+            return configured
+
+        return self._area_entity_list(CONF_TEMPERATURE_SENSORS)
+
+    @property
+    def predictive_humidity_sensors(self) -> list[str]:
+        """Return humidity sensors used for predictive comfort."""
+        return self._entity_list_option(CONF_PREDICTIVE_HUMIDITY_SENSORS)
+
+    @property
+    def predictive_activity_entities(self) -> list[str]:
+        """Return activity entities used for predictive comfort."""
+        entities = self._entity_list_option(CONF_PREDICTIVE_ACTIVITY_ENTITIES)
+        entities.extend(self._area_entity_list(CONF_PREDICTIVE_ACTIVITY_ENTITIES))
+        return list(dict.fromkeys(entities))
+
+    @property
+    def predictive_mode(self) -> str:
+        """Return the current predictive comfort mode."""
+        return self.predictive_result.get("mode", PREDICTIVE_MODE_DISABLED)
+
+    def _entity_list_option(self, key: str) -> list[str]:
+        """Return an option value normalized to a list of entity IDs."""
+        value = self._options.get(key, [])
+        if isinstance(value, str):
+            return [value] if value else []
+        if isinstance(value, list):
+            return [entity_id for entity_id in value if isinstance(entity_id, str)]
+        return []
+
+    def _area_entity_list(self, key: str) -> list[str]:
+        """Return area-level entity IDs for a config key."""
+        entities: list[str] = []
+        for area_config in self._areas_config.values():
+            if not area_config.get(CONF_AREA_ENABLED, True):
+                continue
+            value = area_config.get(key, [])
+            if isinstance(value, str):
+                if value:
+                    entities.append(value)
+            elif isinstance(value, list):
+                entities.extend(
+                    entity_id for entity_id in value if isinstance(entity_id, str)
+                )
+        return list(dict.fromkeys(entities))
+
+    def _option_float(self, key: str, default: float) -> float:
+        """Return a numeric option as a float."""
+        value = self._options.get(key, default)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            _LOGGER.warning("Invalid numeric option %s=%r; using %s", key, value, default)
+            return float(default)
+
+    def _option_int(self, key: str, default: int) -> int:
+        """Return a numeric option as an int."""
+        return int(round(self._option_float(key, float(default))))
+
+    def _predictive_disabled_result(self) -> dict[str, Any]:
+        """Return a disabled predictive comfort result."""
+        return {
+            "mode": PREDICTIVE_MODE_DISABLED,
+            "reason": "Predictive Comfort Mode is disabled",
+            "reasons": ["Predictive Comfort Mode is disabled"],
+            "auto_adjust_enabled": False,
+        }
+
+    def _predictive_learning_disabled_result(self) -> dict[str, Any]:
+        """Return a disabled predictive learning result."""
+        return {
+            "status": "disabled",
+            "reason": "Predictive history learning is disabled",
+        }
 
     def get_physical_thermostat_hvac_action(self):
         """Return hvac_action of the physical thermostat if available."""
@@ -966,6 +1189,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.vent_controller.vent_debounce_seconds = options.get(
             CONF_VENT_DEBOUNCE_SECONDS, DEFAULT_VENT_DEBOUNCE_SECONDS
         )
+        self._setup_predictive_tracking()
+        self.hass.async_create_task(
+            self.async_evaluate_predictive_comfort(force_learning=True)
+        )
 
     async def async_setup(self, *, run_initial_actions: bool = False) -> None:
         """Set up the coordinator and start listening to state changes.
@@ -1035,6 +1262,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 self._async_temp_sensor_state_changed,
             )
 
+        self._setup_predictive_tracking()
+        await self.async_evaluate_predictive_comfort()
+
         _LOGGER.debug(
             "Coordinator setup complete. Monitoring %d sensors for thermostat %s",
             len(self.contact_sensors),
@@ -1100,6 +1330,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self._unsub_presence_state_change:
             self._unsub_presence_state_change()
             self._unsub_presence_state_change = None
+
+        self._teardown_predictive_tracking()
 
         # Shut down thermostat controller (saves state)
         await self.thermostat_controller.async_shutdown()
@@ -1221,6 +1453,833 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         self._last_vent_control_state = control_state
         return control_state
+
+    def _setup_predictive_tracking(self) -> None:
+        """Set up listeners for predictive comfort inputs."""
+        self._teardown_predictive_tracking()
+
+        if not self.predictive_comfort_enabled:
+            self.predictive_result = self._predictive_disabled_result()
+            self.async_set_updated_data(None)
+            return
+
+        tracked_entities = set(self.predictive_temperature_sensors)
+        tracked_entities.update(self.predictive_humidity_sensors)
+        tracked_entities.update(self.predictive_activity_entities)
+        if weather_entity := self._resolved_predictive_weather_entity():
+            tracked_entities.add(weather_entity)
+
+        tracked_entities.discard("")
+        if tracked_entities:
+            self._unsub_predictive_state_change = async_track_state_change_event(
+                self.hass,
+                list(tracked_entities),
+                self._async_predictive_state_changed,
+            )
+
+        interval = max(
+            1,
+            self._option_int(
+                CONF_PREDICTIVE_EVALUATION_INTERVAL,
+                DEFAULT_PREDICTIVE_EVALUATION_INTERVAL,
+            ),
+        )
+        self._unsub_predictive_interval = async_track_time_interval(
+            self.hass,
+            self._async_predictive_interval,
+            timedelta(minutes=interval),
+        )
+
+    def _teardown_predictive_tracking(self) -> None:
+        """Cancel predictive comfort listeners."""
+        if self._unsub_predictive_state_change:
+            self._unsub_predictive_state_change()
+            self._unsub_predictive_state_change = None
+
+        if self._unsub_predictive_interval:
+            self._unsub_predictive_interval()
+            self._unsub_predictive_interval = None
+
+    def _resolved_predictive_weather_entity(self) -> str:
+        """Return the configured, shared, or auto-detected weather entity."""
+        if configured_weather_entity := self.predictive_weather_entity:
+            return configured_weather_entity
+
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if entry.entry_id == self.config_entry_id:
+                continue
+            shared_weather_entity = entry.options.get(CONF_PREDICTIVE_WEATHER_ENTITY)
+            if shared_weather_entity and self.hass.states.get(shared_weather_entity):
+                return shared_weather_entity
+
+        for entity_id in GLOBAL_WEATHER_ENTITY_PRIORITY:
+            if self.hass.states.get(entity_id):
+                return entity_id
+
+        for state in self.hass.states.async_all():
+            if state.entity_id.startswith(f"{WEATHER_DOMAIN}."):
+                return state.entity_id
+
+        return ""
+
+    @callback
+    def _async_predictive_state_changed(self, event) -> None:
+        """Handle predictive input state changes."""
+        self.hass.async_create_task(self.async_evaluate_predictive_comfort())
+
+    @callback
+    def _async_predictive_interval(self, now: datetime) -> None:
+        """Handle periodic predictive comfort evaluation."""
+        self.hass.async_create_task(self.async_evaluate_predictive_comfort())
+
+    async def async_evaluate_predictive_comfort(
+        self,
+        *,
+        force_learning: bool = False,
+    ) -> None:
+        """Evaluate Predictive Comfort Mode and optionally adjust thermostat."""
+        if not self.predictive_comfort_enabled:
+            self.predictive_result = self._predictive_disabled_result()
+            self.async_set_updated_data(None)
+            return
+
+        await self._async_update_predictive_learning(force=force_learning)
+        result = await self._async_build_predictive_result()
+        self.predictive_result = result
+        await self._async_apply_predictive_result(result)
+        self.async_set_updated_data(None)
+
+    async def _async_update_predictive_learning(self, *, force: bool = False) -> None:
+        """Update learned activity heat gains from room history."""
+        if not self.predictive_history_learning_enabled:
+            self._activity_heat_gains = {}
+            self.predictive_learning_result = self._predictive_learning_disabled_result()
+            return
+
+        temperature_sensors = self.predictive_temperature_sensors
+        activity_entities = self.predictive_activity_entities
+        if not temperature_sensors or not activity_entities:
+            self._activity_heat_gains = {}
+            self.predictive_learning_result = {
+                "status": "insufficient_config",
+                "reason": (
+                    "Select room temperature sensors and activity entities to learn "
+                    "room heat-load impact"
+                ),
+            }
+            return
+
+        now = dt_util.utcnow()
+        refresh_interval = self._option_int(
+            CONF_PREDICTIVE_LEARNING_REFRESH_INTERVAL,
+            DEFAULT_PREDICTIVE_LEARNING_REFRESH_INTERVAL,
+        )
+        if (
+            not force
+            and self._last_predictive_learning_update is not None
+            and now - self._last_predictive_learning_update
+            < timedelta(minutes=refresh_interval)
+        ):
+            return
+
+        start_time = now - timedelta(
+            days=self._option_int(
+                CONF_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+                DEFAULT_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+            )
+        )
+        entity_ids = [*temperature_sensors, *activity_entities]
+
+        try:
+            history = await self._async_fetch_predictive_history(
+                start_time,
+                now,
+                entity_ids,
+            )
+        except (HomeAssistantError, KeyError) as ex:
+            self._activity_heat_gains = {}
+            self.predictive_learning_result = {
+                "status": "unavailable",
+                "reason": f"Recorder history is unavailable: {ex}",
+            }
+            return
+
+        self._activity_heat_gains = self._learn_activity_heat_gains(history)
+        self._last_predictive_learning_update = now
+        meaningful_entities = [
+            entity_id
+            for entity_id, heat_gain in self._activity_heat_gains.items()
+            if heat_gain > 0
+        ]
+        self.predictive_learning_result = {
+            "status": "ready",
+            "reason": (
+                f"Learned heat-load impact for {len(meaningful_entities)} "
+                f"of {len(activity_entities)} configured activity entities"
+            ),
+            "lookback_days": self._option_int(
+                CONF_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+                DEFAULT_PREDICTIVE_HISTORY_LOOKBACK_DAYS,
+            ),
+            "window_minutes": self._option_int(
+                CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+                DEFAULT_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+            ),
+            "last_updated": now.isoformat(),
+            "learned_heat_gains": self._activity_heat_gains,
+        }
+
+    async def _async_fetch_predictive_history(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        entity_ids: list[str],
+    ) -> dict[str, list[State | dict[str, Any]]]:
+        """Fetch recorder history for predictive learning."""
+        if RECORDER_DATA_INSTANCE not in self.hass.data:
+            raise HomeAssistantError("recorder integration is not loaded")
+
+        recorder_instance = get_recorder_instance(self.hass)
+        return await recorder_instance.async_add_executor_job(
+            partial(
+                get_significant_states,
+                self.hass,
+                start_time,
+                end_time,
+                entity_ids,
+                None,
+                True,
+                False,
+                False,
+                True,
+                False,
+            )
+        )
+
+    def _learn_activity_heat_gains(
+        self,
+        history: dict[str, list[State | dict[str, Any]]],
+    ) -> dict[str, float]:
+        """Learn per-activity-entity heat gains from room temperature history."""
+        temperature_history = self._temperature_history_by_entity(history)
+        heat_gains: dict[str, float] = {}
+        min_samples = self._option_int(
+            CONF_PREDICTIVE_MIN_LEARNING_SAMPLES,
+            DEFAULT_PREDICTIVE_MIN_LEARNING_SAMPLES,
+        )
+        meaningful_delta = self._option_float(
+            CONF_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
+            DEFAULT_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
+        )
+        max_gain = self._option_float(
+            CONF_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
+            DEFAULT_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
+        )
+        window = timedelta(
+            minutes=self._option_int(
+                CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+                DEFAULT_PREDICTIVE_LEARNING_WINDOW_MINUTES,
+            )
+        )
+
+        for entity_id in self.predictive_activity_entities:
+            activation_times = self._activity_activation_times(history.get(entity_id, []))
+            deltas = []
+            for activation_time in activation_times:
+                start_temperature = self._average_temperature_at(
+                    temperature_history,
+                    activation_time,
+                )
+                end_temperature = self._average_temperature_at(
+                    temperature_history,
+                    activation_time + window,
+                )
+                if start_temperature is None or end_temperature is None:
+                    continue
+                deltas.append(end_temperature - start_temperature)
+
+            average_delta = sum(deltas) / len(deltas) if deltas else 0.0
+            if len(deltas) >= min_samples and average_delta >= meaningful_delta:
+                heat_gains[entity_id] = round(min(average_delta, max_gain), 2)
+            else:
+                heat_gains[entity_id] = 0.0
+
+        return heat_gains
+
+    def _temperature_history_by_entity(
+        self,
+        history: dict[str, list[State | dict[str, Any]]],
+    ) -> dict[str, list[tuple[datetime, float]]]:
+        """Return numeric temperature history by sensor."""
+        temperature_history: dict[str, list[tuple[datetime, float]]] = {}
+        for entity_id in self.predictive_temperature_sensors:
+            readings = []
+            for item in history.get(entity_id, []):
+                timestamp = self._history_timestamp(item)
+                value = self._float_or_none(self._history_state(item))
+                if timestamp is not None and value is not None:
+                    readings.append((timestamp, value))
+            temperature_history[entity_id] = sorted(readings, key=lambda item: item[0])
+        return temperature_history
+
+    def _activity_activation_times(
+        self,
+        states: list[State | dict[str, Any]],
+    ) -> list[datetime]:
+        """Return times when an activity entity became active."""
+        activation_times = []
+        previous_active = False
+        for item in sorted(
+            states,
+            key=lambda state_item: self._history_timestamp(state_item)
+            or dt_util.utcnow(),
+        ):
+            timestamp = self._history_timestamp(item)
+            if timestamp is None:
+                continue
+            active = self._is_activity_state_value(self._history_state(item))
+            if active and not previous_active:
+                activation_times.append(timestamp)
+            previous_active = active
+        return activation_times
+
+    def _average_temperature_at(
+        self,
+        temperature_history: dict[str, list[tuple[datetime, float]]],
+        when: datetime,
+    ) -> float | None:
+        """Return the average latest-known room temperature at a point in time."""
+        values = []
+        for readings in temperature_history.values():
+            latest_value = None
+            for timestamp, value in readings:
+                if timestamp > when:
+                    break
+                latest_value = value
+            if latest_value is not None:
+                values.append(latest_value)
+
+        if not values:
+            return None
+        return sum(values) / len(values)
+
+    async def _async_build_predictive_result(self) -> dict[str, Any]:
+        """Build a Predictive Comfort Mode recommendation."""
+        comfort_low = self._option_float(
+            CONF_PREDICTIVE_COMFORT_LOW,
+            DEFAULT_PREDICTIVE_COMFORT_LOW,
+        )
+        comfort_high = self._option_float(
+            CONF_PREDICTIVE_COMFORT_HIGH,
+            DEFAULT_PREDICTIVE_COMFORT_HIGH,
+        )
+
+        indoor_temperature = self._average_numeric_states(
+            self.predictive_temperature_sensors
+        )
+        if indoor_temperature is None:
+            indoor_temperature = self._thermostat_current_temperature()
+
+        outdoor_data = await self._async_get_weather_data()
+        current_outdoor_temperature = outdoor_data["current_temperature"]
+        forecast_high = outdoor_data["forecast_high"]
+        forecast_low = outdoor_data["forecast_low"]
+        rainy_forecast = outdoor_data["rainy_forecast"]
+
+        active_activity_entities = self._active_activity_entities()
+        humidity = self._average_numeric_states(self.predictive_humidity_sensors)
+
+        if indoor_temperature is None:
+            return {
+                "mode": PREDICTIVE_MODE_INSUFFICIENT_DATA,
+                "reason": "No indoor temperature data is available",
+                "reasons": ["No indoor temperature data is available"],
+                "auto_adjust_enabled": self.predictive_auto_adjust,
+                "comfort_low": comfort_low,
+                "comfort_high": comfort_high,
+                "tracked_temperature_sensors": self.predictive_temperature_sensors,
+            }
+
+        if forecast_high is None and current_outdoor_temperature is not None:
+            forecast_high = current_outdoor_temperature
+        if forecast_low is None and current_outdoor_temperature is not None:
+            forecast_low = current_outdoor_temperature
+
+        humidity_effect = self._humidity_effect(humidity)
+        activity_effect = self._activity_effect(active_activity_entities)
+        rain_cooling = (
+            self._option_float(
+                CONF_PREDICTIVE_RAIN_COOLING,
+                DEFAULT_PREDICTIVE_RAIN_COOLING,
+            )
+            if rainy_forecast
+            else 0.0
+        )
+
+        outdoor_influence = self._option_float(
+            CONF_PREDICTIVE_OUTDOOR_INFLUENCE,
+            DEFAULT_PREDICTIVE_OUTDOOR_INFLUENCE,
+        )
+        heat_pressure = 0.0
+        cool_pressure = 0.0
+        trend_pressure = 0.0
+        if forecast_high is not None:
+            heat_pressure = max(0.0, forecast_high - comfort_high) * outdoor_influence
+        if forecast_low is not None:
+            cool_pressure = max(0.0, comfort_low - forecast_low) * outdoor_influence
+        if current_outdoor_temperature is not None and forecast_high is not None:
+            trend_pressure = max(
+                0.0,
+                forecast_high - current_outdoor_temperature,
+            ) * outdoor_influence
+
+        predicted_temperature = (
+            indoor_temperature
+            + heat_pressure
+            + trend_pressure
+            + humidity_effect
+            + activity_effect
+            - cool_pressure
+            - rain_cooling
+        )
+
+        trigger_margin = self._option_float(
+            CONF_PREDICTIVE_TRIGGER_MARGIN,
+            DEFAULT_PREDICTIVE_TRIGGER_MARGIN,
+        )
+        mode = PREDICTIVE_MODE_IDLE
+        target_temperature: float | None = None
+        target_hvac_mode: str | None = None
+        reasons: list[str] = []
+
+        if predicted_temperature > comfort_high + trigger_margin:
+            mode = PREDICTIVE_MODE_PRE_COOL
+            target_temperature = max(
+                comfort_low,
+                comfort_high
+                - self._option_float(
+                    CONF_PREDICTIVE_PRECOOL_OFFSET,
+                    DEFAULT_PREDICTIVE_PRECOOL_OFFSET,
+                ),
+            )
+            target_hvac_mode = HVACMode.COOL
+            reasons.append(
+                f"Predicted indoor temperature {predicted_temperature:.1f}°F exceeds "
+                f"comfort high {comfort_high:.1f}°F"
+            )
+        elif predicted_temperature < comfort_low - trigger_margin:
+            mode = PREDICTIVE_MODE_PRE_HEAT
+            target_temperature = min(
+                comfort_high,
+                comfort_low
+                + self._option_float(
+                    CONF_PREDICTIVE_PREHEAT_OFFSET,
+                    DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
+                ),
+            )
+            target_hvac_mode = HVACMode.HEAT
+            reasons.append(
+                f"Predicted indoor temperature {predicted_temperature:.1f}°F is below "
+                f"comfort low {comfort_low:.1f}°F"
+            )
+        else:
+            reasons.append("Predicted indoor temperature remains within comfort band")
+
+        if forecast_high is not None:
+            reasons.append(f"Forecast high considered: {forecast_high:.1f}°F")
+        if rainy_forecast:
+            reasons.append(f"Rain or precipitation cooling applied: {rain_cooling:.1f}°F")
+        if humidity_effect:
+            reasons.append(f"Humidity heat effect: +{humidity_effect:.1f}°F")
+        if activity_effect:
+            reasons.append(
+                f"Activity heat gain from {len(active_activity_entities)} active "
+                f"entity/entities: +{activity_effect:.1f}°F"
+            )
+
+        return {
+            "mode": mode,
+            "reason": reasons[0],
+            "reasons": reasons,
+            "auto_adjust_enabled": self.predictive_auto_adjust,
+            "allow_hvac_mode_change": self.predictive_allow_hvac_mode_change,
+            "comfort_low": round(comfort_low, 1),
+            "comfort_high": round(comfort_high, 1),
+            "indoor_temperature": round(indoor_temperature, 1),
+            "predicted_temperature": round(predicted_temperature, 1),
+            "current_outdoor_temperature": self._round_optional(
+                current_outdoor_temperature
+            ),
+            "forecast_high": self._round_optional(forecast_high),
+            "forecast_low": self._round_optional(forecast_low),
+            "humidity": self._round_optional(humidity),
+            "humidity_effect": round(humidity_effect, 1),
+            "activity_effect": round(activity_effect, 1),
+            "active_activity_entities": active_activity_entities,
+            "learning": self.predictive_learning_result,
+            "learned_activity_heat_gains": self._activity_heat_gains,
+            "rainy_forecast": rainy_forecast,
+            "rain_cooling": round(rain_cooling, 1),
+            "target_temperature": self._round_optional(target_temperature),
+            "target_hvac_mode": target_hvac_mode,
+            "weather_entity": self._resolved_predictive_weather_entity(),
+            "configured_weather_entity": self.predictive_weather_entity,
+            "lookahead_hours": self._option_int(
+                CONF_PREDICTIVE_LOOKAHEAD_HOURS,
+                DEFAULT_PREDICTIVE_LOOKAHEAD_HOURS,
+            ),
+            "tracked_temperature_sensors": self.predictive_temperature_sensors,
+            "tracked_humidity_sensors": self.predictive_humidity_sensors,
+            "tracked_activity_entities": self.predictive_activity_entities,
+        }
+
+    async def _async_apply_predictive_result(self, result: dict[str, Any]) -> None:
+        """Apply a predictive comfort recommendation when configured to do so."""
+        if not self.predictive_auto_adjust:
+            result["adjustment_status"] = "auto_adjust_disabled"
+            return
+
+        if result["mode"] not in (
+            PREDICTIVE_MODE_PRE_COOL,
+            PREDICTIVE_MODE_PRE_HEAT,
+        ):
+            result["adjustment_status"] = "no_adjustment_needed"
+            return
+
+        if self.is_paused or self.open_count > 0:
+            result["adjustment_status"] = "skipped_contact_sensor_open"
+            return
+
+        target_temperature = result.get("target_temperature")
+        if target_temperature is None:
+            result["adjustment_status"] = "missing_target_temperature"
+            return
+
+        now = dt_util.utcnow()
+        min_interval = self._option_int(
+            CONF_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
+            DEFAULT_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
+        )
+        if (
+            self._last_predictive_adjustment is not None
+            and now - self._last_predictive_adjustment < timedelta(minutes=min_interval)
+        ):
+            result["adjustment_status"] = "rate_limited"
+            result["last_adjustment"] = self._last_predictive_adjustment.isoformat()
+            return
+
+        climate_state = self.hass.states.get(self.thermostat)
+        if climate_state is None or climate_state.state in (
+            STATE_UNAVAILABLE,
+            STATE_UNKNOWN,
+        ):
+            result["adjustment_status"] = "thermostat_unavailable"
+            return
+
+        target_hvac_mode = result.get("target_hvac_mode")
+        if (
+            self.predictive_allow_hvac_mode_change
+            and target_hvac_mode
+            and climate_state.state != target_hvac_mode
+            and target_hvac_mode in climate_state.attributes.get("hvac_modes", [])
+        ):
+            await self.hass.services.async_call(
+                CLIMATE_DOMAIN,
+                "set_hvac_mode",
+                {
+                    "entity_id": self.thermostat,
+                    "hvac_mode": target_hvac_mode,
+                },
+                blocking=True,
+            )
+
+        service_data = self._set_temperature_service_data(
+            climate_state,
+            float(target_temperature),
+            result["mode"],
+        )
+        await self.hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            service_data,
+            blocking=True,
+        )
+
+        self._last_predictive_adjustment = now
+        result["adjustment_status"] = "applied"
+        result["last_adjustment"] = now.isoformat()
+        result["applied_service_data"] = service_data
+
+    def _set_temperature_service_data(
+        self,
+        climate_state: State,
+        target_temperature: float,
+        mode: str,
+    ) -> dict[str, Any]:
+        """Build climate.set_temperature service data for the thermostat type."""
+        attributes = climate_state.attributes
+        service_data: dict[str, Any] = {"entity_id": self.thermostat}
+
+        if (
+            attributes.get("target_temp_low") is not None
+            or attributes.get("target_temp_high") is not None
+        ):
+            low = self._option_float(
+                CONF_PREDICTIVE_COMFORT_LOW,
+                DEFAULT_PREDICTIVE_COMFORT_LOW,
+            )
+            high = self._option_float(
+                CONF_PREDICTIVE_COMFORT_HIGH,
+                DEFAULT_PREDICTIVE_COMFORT_HIGH,
+            )
+            service_data["target_temp_low"] = (
+                target_temperature if mode == PREDICTIVE_MODE_PRE_HEAT else low
+            )
+            service_data["target_temp_high"] = (
+                target_temperature if mode == PREDICTIVE_MODE_PRE_COOL else high
+            )
+        else:
+            service_data["temperature"] = target_temperature
+
+        return service_data
+
+    def _thermostat_current_temperature(self) -> float | None:
+        """Return the thermostat current temperature, if numeric."""
+        climate_state = self.hass.states.get(self.thermostat)
+        if climate_state is None:
+            return None
+        return self._float_or_none(climate_state.attributes.get("current_temperature"))
+
+    def _average_numeric_states(self, entity_ids: list[str]) -> float | None:
+        """Return the average numeric state for available entities."""
+        values = []
+        for entity_id in entity_ids:
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                continue
+            value = self._float_or_none(state.state)
+            if value is not None:
+                values.append(value)
+
+        if not values:
+            return None
+        return sum(values) / len(values)
+
+    def _active_activity_entities(self) -> list[str]:
+        """Return configured activity entities that are currently active."""
+        active_entities = []
+        for entity_id in self.predictive_activity_entities:
+            state = self.hass.states.get(entity_id)
+            if state is not None and self._is_activity_state_value(state.state):
+                active_entities.append(entity_id)
+        return active_entities
+
+    def _activity_effect(self, active_activity_entities: list[str]) -> float:
+        """Return heat effect from active room entities."""
+        if (
+            self.predictive_history_learning_enabled
+            and self.predictive_learning_result.get("status") == "ready"
+        ):
+            return sum(
+                self._activity_heat_gains.get(entity_id, 0.0)
+                for entity_id in active_activity_entities
+            )
+
+        return len(active_activity_entities) * self._option_float(
+            CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+            DEFAULT_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+        )
+
+    def _is_activity_state_value(self, value: Any) -> bool:
+        """Return whether an activity state should add heat load."""
+        if value in (STATE_UNAVAILABLE, STATE_UNKNOWN, None):
+            return False
+
+        normalized_state = str(value).lower()
+        if normalized_state in ACTIVE_STATES:
+            return True
+        if normalized_state in ("off", "not_home", "idle", "standby", "locked"):
+            return False
+
+        numeric_state = self._float_or_none(value)
+        return numeric_state is not None and numeric_state > 0.5
+
+    def _humidity_effect(self, humidity: float | None) -> float:
+        """Return perceived heat load from indoor humidity."""
+        if humidity is None:
+            return 0.0
+        return max(0.0, humidity - HUMIDITY_COMFORT_BASELINE) * self._option_float(
+            CONF_PREDICTIVE_HUMIDITY_SENSITIVITY,
+            DEFAULT_PREDICTIVE_HUMIDITY_SENSITIVITY,
+        )
+
+    async def _async_get_weather_data(self) -> dict[str, Any]:
+        """Return current and forecast weather values for predictive comfort."""
+        weather_entity = self._resolved_predictive_weather_entity()
+        state = self.hass.states.get(weather_entity) if weather_entity else None
+        current_temperature = None
+        forecast: list[dict[str, Any]] = []
+
+        if state is not None:
+            current_temperature = self._float_or_none(
+                state.attributes.get("temperature")
+            )
+            forecast = self._extract_forecast_list(state.attributes)
+
+        if not forecast and weather_entity and self.hass.services.has_service(
+            WEATHER_DOMAIN,
+            SERVICE_GET_FORECASTS,
+        ):
+            forecast = await self._async_fetch_weather_forecast(weather_entity)
+
+        forecast_items = self._forecast_items_in_lookahead(forecast)
+        forecast_temperatures = [
+            value
+            for item in forecast_items
+            if (value := self._float_or_none(item.get("temperature"))) is not None
+        ]
+        forecast_low_temperatures = [
+            value
+            for item in forecast_items
+            if (value := self._float_or_none(item.get("templow"))) is not None
+        ]
+        rainy_forecast = any(
+            self._forecast_item_is_rainy(item) for item in forecast_items
+        )
+
+        return {
+            "current_temperature": current_temperature,
+            "forecast_high": max(forecast_temperatures)
+            if forecast_temperatures
+            else None,
+            "forecast_low": (
+                min(forecast_low_temperatures or forecast_temperatures)
+                if (forecast_low_temperatures or forecast_temperatures)
+                else None
+            ),
+            "rainy_forecast": rainy_forecast,
+        }
+
+    async def _async_fetch_weather_forecast(
+        self,
+        weather_entity: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch hourly forecast data from Home Assistant's weather service."""
+        try:
+            response = await self.hass.services.async_call(
+                WEATHER_DOMAIN,
+                SERVICE_GET_FORECASTS,
+                {"entity_id": weather_entity, "type": FORECAST_TYPE_HOURLY},
+                blocking=True,
+                return_response=True,
+            )
+        except (HomeAssistantError, TypeError) as ex:
+            _LOGGER.warning(
+                "Failed to fetch weather forecast for predictive comfort from %s: %s",
+                weather_entity,
+                ex,
+            )
+            return []
+
+        if not isinstance(response, dict):
+            return []
+
+        entity_response = response.get(weather_entity, {})
+        if not isinstance(entity_response, dict):
+            return []
+
+        forecast = entity_response.get("forecast", [])
+        if not isinstance(forecast, list):
+            return []
+
+        return [item for item in forecast if isinstance(item, dict)]
+
+    def _extract_forecast_list(self, attributes: dict[str, Any]) -> list[dict[str, Any]]:
+        """Extract forecast data from a weather entity's attributes."""
+        for key in ("forecast", "forecast_hourly"):
+            forecast = attributes.get(key)
+            if isinstance(forecast, list):
+                return [item for item in forecast if isinstance(item, dict)]
+        return []
+
+    def _forecast_items_in_lookahead(
+        self,
+        forecast: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Return forecast entries within the configured lookahead window."""
+        if not forecast:
+            return []
+
+        now = dt_util.utcnow()
+        cutoff = now + timedelta(
+            hours=self._option_int(
+                CONF_PREDICTIVE_LOOKAHEAD_HOURS,
+                DEFAULT_PREDICTIVE_LOOKAHEAD_HOURS,
+            )
+        )
+        matching_items = []
+
+        for item in forecast:
+            item_datetime = item.get("datetime")
+            if item_datetime is None:
+                matching_items.append(item)
+                continue
+
+            parsed = dt_util.parse_datetime(item_datetime)
+            if parsed is None:
+                continue
+
+            parsed_utc = dt_util.as_utc(parsed)
+            if now <= parsed_utc <= cutoff:
+                matching_items.append(item)
+
+        return matching_items
+
+    def _forecast_item_is_rainy(self, item: dict[str, Any]) -> bool:
+        """Return whether a forecast item indicates rain or precipitation."""
+        condition = str(item.get("condition", "")).lower()
+        precipitation = self._float_or_none(item.get("precipitation")) or 0.0
+        precipitation_probability = (
+            self._float_or_none(item.get("precipitation_probability")) or 0.0
+        )
+        return (
+            condition in RAINY_CONDITIONS
+            or precipitation > 0
+            or precipitation_probability >= 50
+        )
+
+    def _float_or_none(self, value: Any) -> float | None:
+        """Return a value converted to float, or None when not numeric."""
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _history_state(self, item: State | dict[str, Any]) -> Any:
+        """Return state value from a recorder history item."""
+        if isinstance(item, State):
+            return item.state
+        return item.get("state")
+
+    def _history_timestamp(self, item: State | dict[str, Any]) -> datetime | None:
+        """Return UTC timestamp from a recorder history item."""
+        if isinstance(item, State):
+            return dt_util.as_utc(item.last_changed)
+
+        timestamp = item.get("last_changed") or item.get("last_updated")
+        if isinstance(timestamp, (int, float)):
+            return dt_util.utc_from_timestamp(timestamp)
+        if isinstance(timestamp, str):
+            parsed = dt_util.parse_datetime(timestamp)
+            if parsed is not None:
+                return dt_util.as_utc(parsed)
+        return None
+
+    def _round_optional(self, value: float | None) -> float | None:
+        """Round a float for attributes while preserving None."""
+        if value is None:
+            return None
+        return round(value, 1)
 
     def _update_open_sensors(self) -> None:
         """Update the dict of currently open sensors with timestamps."""
@@ -1418,6 +2477,14 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if old_state is None or old_state.state != new_state.state or old_hvac_action != new_hvac_action:
             self.async_set_updated_data(None)
 
+        if self.predictive_comfort_enabled and (
+            old_state is None
+            or old_state.state != new_state.state
+            or old_state.attributes.get("current_temperature")
+            != new_state.attributes.get("current_temperature")
+        ):
+            self.hass.async_create_task(self.async_evaluate_predictive_comfort())
+
         # Handle manual overrides while paused
         if self.is_paused:
             if self._restoring_hvac_mode:
@@ -1483,6 +2550,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         # Notify listeners of data update
         self.async_set_updated_data(None)
+
+        if self.predictive_comfort_enabled:
+            self.hass.async_create_task(self.async_evaluate_predictive_comfort())
 
     def _handle_sensor_opened(self, entity_id: str) -> None:
         """Handle a sensor being opened."""

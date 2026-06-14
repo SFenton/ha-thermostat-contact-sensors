@@ -37,6 +37,7 @@
           "manage_areas": "Enable/Disable Areas",
           "configure_area_sensors": "Configure Area Sensors",
           "global_settings": "Global Settings",
+          "predictive_comfort": "Predictive Comfort Mode",
           "thermostat": "Change Thermostat"
         }
       },
@@ -63,6 +64,7 @@
           "binary_sensors": "Binary Sensors (motion, occupancy - for room activity)",
           "temperature_sensors": "Temperature Sensors",
           "sensors": "Other Sensors",
+          "predictive_activity_entities": "Predictive Heat-Load Entities",
           "vents": "Vents (cover entities)",
           "area_vent_open_delay_seconds": "Vent Open Delay (seconds, optional override)"
         },
@@ -72,8 +74,69 @@
           "binary_sensors": "Motion, occupancy, and other binary sensors for room activity detection",
           "temperature_sensors": "Temperature sensors in this area",
           "sensors": "Other sensors in this area",
+          "predictive_activity_entities": "Room-specific entities that may add heat load, such as PCs, TVs, amplifiers, or appliances. Predictive Comfort can learn their temperature impact from recorder history.",
           "vents": "Cover entities (vents) in this area. Can include individual vents or vent groups.",
           "area_vent_open_delay_seconds": "Override the global vent open delay for this area. Leave empty to use global setting."
+        }
+      },
+      "predictive_comfort": {
+        "title": "Predictive Comfort Mode",
+        "description": "Use weather forecasts, humidity, room temperatures, and learned device heat loads to proactively prepare the house. Automatic setpoint changes and HVAC mode changes are disabled by default.",
+        "data": {
+          "predictive_comfort_enabled": "Enable Predictive Comfort Mode",
+          "predictive_auto_adjust": "Automatically Adjust Thermostat Setpoints",
+          "predictive_allow_hvac_mode_change": "Allow HVAC Mode Changes",
+          "predictive_weather_entity": "Global Weather Entity",
+          "predictive_temperature_sensors": "Global Temperature Sensors",
+          "predictive_humidity_sensors": "Humidity Sensors",
+          "predictive_activity_entities": "Global Heat-Load Entities",
+          "predictive_comfort_low": "Comfort Low",
+          "predictive_comfort_high": "Comfort High",
+          "predictive_lookahead_hours": "Forecast Lookahead",
+          "predictive_trigger_margin": "Trigger Margin",
+          "predictive_precool_offset": "Pre-Cool Offset",
+          "predictive_preheat_offset": "Pre-Heat Offset",
+          "predictive_outdoor_influence": "Outdoor Influence",
+          "predictive_humidity_sensitivity": "Humidity Sensitivity",
+          "predictive_activity_heat_gain": "Fallback Activity Heat Gain",
+          "predictive_rain_cooling": "Rain Cooling Adjustment",
+          "predictive_evaluation_interval": "Evaluation Interval",
+          "predictive_min_adjustment_interval": "Minimum Adjustment Interval",
+          "predictive_history_learning_enabled": "Enable History Learning",
+          "predictive_history_lookback_days": "History Lookback",
+          "predictive_learning_window_minutes": "Learning Window",
+          "predictive_learning_refresh_interval": "Learning Refresh Interval",
+          "predictive_min_learning_samples": "Minimum Learning Samples",
+          "predictive_meaningful_temp_delta": "Meaningful Temperature Delta",
+          "predictive_max_learned_heat_gain": "Maximum Learned Heat Gain"
+        },
+        "data_description": {
+          "predictive_comfort_enabled": "Evaluate proactive comfort recommendations. This only creates diagnostics unless automatic adjustment is also enabled.",
+          "predictive_auto_adjust": "Permit Predictive Comfort to call climate.set_temperature. Skipped while contact sensors are open or the integration is paused.",
+          "predictive_allow_hvac_mode_change": "Permit Predictive Comfort to change between supported heat/cool modes before setting a proactive target.",
+          "predictive_weather_entity": "Shared weather source for the house. Leave blank to use another configured entry's weather source or auto-detect weather.pirate_weather / weather.forecast_home.",
+          "predictive_temperature_sensors": "Optional global indoor temperature sensors. If blank, enabled area temperature sensors are used.",
+          "predictive_humidity_sensors": "Humidity sensors that increase perceived heat pressure above the comfort baseline.",
+          "predictive_activity_entities": "Global heat-load entities. Add room-specific devices in each area's options when possible.",
+          "predictive_comfort_low": "Lower end of the desired comfort band.",
+          "predictive_comfort_high": "Upper end of the desired comfort band.",
+          "predictive_lookahead_hours": "How far ahead weather forecast data should influence the prediction.",
+          "predictive_trigger_margin": "How far beyond the comfort band the prediction must move before recommending pre-heat or pre-cool.",
+          "predictive_precool_offset": "How far below comfort high to set cooling when pre-cooling.",
+          "predictive_preheat_offset": "How far above comfort low to set heating when pre-heating.",
+          "predictive_outdoor_influence": "Weight applied to forecast heat/cold pressure.",
+          "predictive_humidity_sensitivity": "Degrees of perceived heat added per humidity point above baseline.",
+          "predictive_activity_heat_gain": "Fallback heat gain per active heat-load entity when history learning has not learned enough yet.",
+          "predictive_rain_cooling": "Cooling effect subtracted when rain or precipitation is forecast.",
+          "predictive_evaluation_interval": "How often to reevaluate predictions even if no tracked entity changes.",
+          "predictive_min_adjustment_interval": "Rate limit between automatic thermostat setpoint adjustments.",
+          "predictive_history_learning_enabled": "Use recorder history to learn whether heat-load entities meaningfully change room temperature.",
+          "predictive_history_lookback_days": "How much recorder history to inspect for heat-load learning.",
+          "predictive_learning_window_minutes": "Temperature comparison window after a heat-load entity activates.",
+          "predictive_learning_refresh_interval": "How often history learning may refresh.",
+          "predictive_min_learning_samples": "Minimum activation samples required before a learned gain is considered valid.",
+          "predictive_meaningful_temp_delta": "Minimum average temperature increase required to count as meaningful.",
+          "predictive_max_learned_heat_gain": "Upper bound for learned heat gain from one entity."
         }
       },
       "global_settings": {
@@ -158,6 +221,9 @@
     "sensor": {
       "open_count": {
         "name": "Open Sensors"
+      },
+      "predictive_comfort_mode": {
+        "name": "Predictive Comfort Mode"
       }
     },
     "switch": {
