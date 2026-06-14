@@ -373,6 +373,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         return self._temperature_unit
 
     @property
+    def options(self) -> dict[str, Any]:
+        """Return a copy of the current coordinator options."""
+        return dict(self._options)
+
+    @property
     def eco_mode(self) -> bool:
         """Return True if eco mode is enabled."""
         return self._eco_mode_enabled

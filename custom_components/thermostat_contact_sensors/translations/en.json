@@ -235,6 +235,9 @@
       },
       "only_track_selected_rooms": {
         "name": "Only Track Selected Rooms"
+      },
+      "predictive_comfort_mode": {
+        "name": "Predictive Comfort Mode"
       }
     },
     "select": {

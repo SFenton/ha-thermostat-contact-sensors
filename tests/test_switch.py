@@ -8,6 +8,7 @@ import pytest
 from homeassistant.components.climate import HVACMode
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -184,6 +185,52 @@ class TestRespectUserOffSwitch:
         assert switch.is_on is False
 
         await coordinator.async_shutdown()
+
+
+async def test_predictive_comfort_switch_toggles_option(
+    hass: HomeAssistant,
+    mock_config_entry,
+    mock_climate_service,
+    setup_test_entities,
+) -> None:
+    """Test Predictive Comfort switch toggles the runtime enabled option."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    entity_id = entity_registry.async_get_entity_id(
+        "switch",
+        DOMAIN,
+        f"{mock_config_entry.entry_id}_predictive_comfort_mode",
+    )
+
+    assert entity_id is not None
+    assert hass.states.get(entity_id).state == STATE_OFF
+
+    await hass.services.async_call(
+        "switch",
+        "turn_on",
+        {"entity_id": entity_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(entity_id).state == STATE_ON
+    assert mock_config_entry.runtime_data.predictive_comfort_enabled is True
+
+    await hass.services.async_call(
+        "switch",
+        "turn_off",
+        {"entity_id": entity_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(entity_id).state == STATE_OFF
+    assert mock_config_entry.runtime_data.predictive_comfort_enabled is False
+
+    await hass.config_entries.async_unload(mock_config_entry.entry_id)
 
 
 class TestRespectUserOffBehavior:

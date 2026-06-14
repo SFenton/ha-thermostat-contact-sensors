@@ -16,6 +16,7 @@ from .const import (
     CONF_AREAS,
     CONF_AREA_ENABLED,
     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+    CONF_PREDICTIVE_COMFORT_ENABLED,
     DOMAIN,
 )
 from .coordinator import ThermostatContactSensorsCoordinator
@@ -36,6 +37,7 @@ async def async_setup_entry(
         RespectUserOffSwitch(coordinator, entry),
         EcoModeSwitch(coordinator, entry),
         OnlyTrackSelectedRoomsSwitch(coordinator, entry),
+        PredictiveComfortSwitch(coordinator, entry),
     ]
 
     # Add tracked room switches for each enabled area
@@ -313,6 +315,74 @@ class OnlyTrackSelectedRoomsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntit
                 "When ON: Only rooms with 'Track [Room]' enabled will be heated/cooled. "
                 "When OFF: All rooms are considered for heating/cooling decisions."
             ),
+        }
+
+
+class PredictiveComfortSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
+    """Switch to enable or disable Predictive Comfort Mode."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:home-thermometer-outline"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_predictive_comfort_mode"
+        self._attr_name = "Predictive Comfort Mode"
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if predictive comfort is enabled."""
+        return self.coordinator.predictive_comfort_enabled
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state when added to hass."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._apply_value(last_state.state == "on", write_state=False)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable Predictive Comfort Mode."""
+        self._apply_value(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable Predictive Comfort Mode."""
+        self._apply_value(False)
+
+    def _apply_value(self, enabled: bool, *, write_state: bool = True) -> None:
+        """Apply the predictive comfort enabled option to the coordinator."""
+        new_options = {**self.coordinator.options, CONF_PREDICTIVE_COMFORT_ENABLED: enabled}
+        self.coordinator.update_options(new_options)
+        if write_state:
+            self.async_write_ha_state()
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return extra state attributes."""
+        return {
+            "description": (
+                "When ON: Predictive Comfort evaluates indoor comfort, forecast weather, "
+                "humidity, and configured heat-load entities. Automatic thermostat changes "
+                "still require the separate auto-adjust option."
+            ),
+            "auto_adjust_enabled": self.coordinator.predictive_auto_adjust,
+            "current_recommendation": self.coordinator.predictive_mode,
         }
 
 
