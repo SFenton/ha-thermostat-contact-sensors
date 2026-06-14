@@ -224,6 +224,12 @@
       },
       "predictive_comfort_mode": {
         "name": "Predictive Comfort Mode"
+      },
+      "predictive_auto_adjust": {
+        "name": "Predictive Auto Adjust"
+      },
+      "predictive_hvac_mode_changes": {
+        "name": "Predictive HVAC Mode Changes"
       }
     },
     "switch": {

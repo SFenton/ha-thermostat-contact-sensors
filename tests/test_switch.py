@@ -18,6 +18,9 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_AREAS,
     CONF_BINARY_SENSORS,
     CONF_CONTACT_SENSORS,
+    CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+    CONF_PREDICTIVE_AUTO_ADJUST,
+    CONF_PREDICTIVE_COMFORT_ENABLED,
     CONF_THERMOSTAT,
     DOMAIN,
 )
@@ -187,48 +190,69 @@ class TestRespectUserOffSwitch:
         await coordinator.async_shutdown()
 
 
-async def test_predictive_comfort_switch_toggles_option(
+async def test_predictive_comfort_switches_toggle_runtime_options(
     hass: HomeAssistant,
     mock_config_entry,
     mock_climate_service,
     setup_test_entities,
 ) -> None:
-    """Test Predictive Comfort switch toggles the runtime enabled option."""
+    """Test Predictive Comfort switches toggle runtime options."""
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     entity_registry = er.async_get(hass)
-    entity_id = entity_registry.async_get_entity_id(
-        "switch",
-        DOMAIN,
-        f"{mock_config_entry.entry_id}_predictive_comfort_mode",
+    switches = (
+        (
+            "predictive_comfort_mode",
+            CONF_PREDICTIVE_COMFORT_ENABLED,
+            "predictive_comfort_enabled",
+        ),
+        (
+            "predictive_auto_adjust",
+            CONF_PREDICTIVE_AUTO_ADJUST,
+            "predictive_auto_adjust",
+        ),
+        (
+            "predictive_hvac_mode_changes",
+            CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+            "predictive_allow_hvac_mode_change",
+        ),
     )
 
-    assert entity_id is not None
-    assert hass.states.get(entity_id).state == STATE_OFF
+    for unique_suffix, option_key, property_name in switches:
+        entity_id = entity_registry.async_get_entity_id(
+            "switch",
+            DOMAIN,
+            f"{mock_config_entry.entry_id}_{unique_suffix}",
+        )
 
-    await hass.services.async_call(
-        "switch",
-        "turn_on",
-        {"entity_id": entity_id},
-        blocking=True,
-    )
-    await hass.async_block_till_done()
+        assert entity_id is not None
+        assert hass.states.get(entity_id).state == STATE_OFF
 
-    assert hass.states.get(entity_id).state == STATE_ON
-    assert mock_config_entry.runtime_data.predictive_comfort_enabled is True
+        await hass.services.async_call(
+            "switch",
+            "turn_on",
+            {"entity_id": entity_id},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
 
-    await hass.services.async_call(
-        "switch",
-        "turn_off",
-        {"entity_id": entity_id},
-        blocking=True,
-    )
-    await hass.async_block_till_done()
+        assert hass.states.get(entity_id).state == STATE_ON
+        assert getattr(mock_config_entry.runtime_data, property_name) is True
+        assert mock_config_entry.runtime_data.options[option_key] is True
 
-    assert hass.states.get(entity_id).state == STATE_OFF
-    assert mock_config_entry.runtime_data.predictive_comfort_enabled is False
+        await hass.services.async_call(
+            "switch",
+            "turn_off",
+            {"entity_id": entity_id},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        assert hass.states.get(entity_id).state == STATE_OFF
+        assert getattr(mock_config_entry.runtime_data, property_name) is False
+        assert mock_config_entry.runtime_data.options[option_key] is False
 
     await hass.config_entries.async_unload(mock_config_entry.entry_id)
 

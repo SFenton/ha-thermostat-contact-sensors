@@ -16,6 +16,8 @@ from .const import (
     CONF_AREAS,
     CONF_AREA_ENABLED,
     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+    CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+    CONF_PREDICTIVE_AUTO_ADJUST,
     CONF_PREDICTIVE_COMFORT_ENABLED,
     DOMAIN,
 )
@@ -38,6 +40,8 @@ async def async_setup_entry(
         EcoModeSwitch(coordinator, entry),
         OnlyTrackSelectedRoomsSwitch(coordinator, entry),
         PredictiveComfortSwitch(coordinator, entry),
+        PredictiveAutoAdjustSwitch(coordinator, entry),
+        PredictiveHvacModeChangeSwitch(coordinator, entry),
     ]
 
     # Add tracked room switches for each enabled area
@@ -318,22 +322,32 @@ class OnlyTrackSelectedRoomsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntit
         }
 
 
-class PredictiveComfortSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
-    """Switch to enable or disable Predictive Comfort Mode."""
+class PredictiveOptionSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
+    """Switch that applies a Predictive Comfort runtime option."""
 
     _attr_has_entity_name = True
-    _attr_icon = "mdi:home-thermometer-outline"
 
     def __init__(
         self,
         coordinator: ThermostatContactSensorsCoordinator,
         entry: ConfigEntry,
+        *,
+        option_key: str,
+        coordinator_property: str,
+        unique_suffix: str,
+        name: str,
+        icon: str,
+        description: str,
     ) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
         self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_predictive_comfort_mode"
-        self._attr_name = "Predictive Comfort Mode"
+        self._option_key = option_key
+        self._coordinator_property = coordinator_property
+        self._description = description
+        self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
+        self._attr_name = name
+        self._attr_icon = icon
 
     @property
     def device_info(self):
@@ -347,8 +361,8 @@ class PredictiveComfortSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return True if predictive comfort is enabled."""
-        return self.coordinator.predictive_comfort_enabled
+        """Return True if the predictive option is enabled."""
+        return bool(getattr(self.coordinator, self._coordinator_property))
 
     async def async_added_to_hass(self) -> None:
         """Restore state when added to hass."""
@@ -358,16 +372,16 @@ class PredictiveComfortSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
             self._apply_value(last_state.state == "on", write_state=False)
 
     async def async_turn_on(self, **kwargs) -> None:
-        """Enable Predictive Comfort Mode."""
+        """Enable the predictive option."""
         self._apply_value(True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        """Disable Predictive Comfort Mode."""
+        """Disable the predictive option."""
         self._apply_value(False)
 
     def _apply_value(self, enabled: bool, *, write_state: bool = True) -> None:
-        """Apply the predictive comfort enabled option to the coordinator."""
-        new_options = {**self.coordinator.options, CONF_PREDICTIVE_COMFORT_ENABLED: enabled}
+        """Apply the predictive option to the coordinator."""
+        new_options = {**self.coordinator.options, self._option_key: enabled}
         self.coordinator.update_options(new_options)
         if write_state:
             self.async_write_ha_state()
@@ -376,14 +390,85 @@ class PredictiveComfortSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
     def extra_state_attributes(self) -> dict:
         """Return extra state attributes."""
         return {
-            "description": (
+            "description": self._description,
+            "predictive_comfort_enabled": self.coordinator.predictive_comfort_enabled,
+            "auto_adjust_enabled": self.coordinator.predictive_auto_adjust,
+            "allow_hvac_mode_change": self.coordinator.predictive_allow_hvac_mode_change,
+            "current_recommendation": self.coordinator.predictive_mode,
+        }
+
+
+class PredictiveComfortSwitch(PredictiveOptionSwitch):
+    """Switch to enable or disable Predictive Comfort Mode."""
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the switch."""
+        super().__init__(
+            coordinator,
+            entry,
+            option_key=CONF_PREDICTIVE_COMFORT_ENABLED,
+            coordinator_property="predictive_comfort_enabled",
+            unique_suffix="predictive_comfort_mode",
+            name="Predictive Comfort Mode",
+            icon="mdi:home-thermometer-outline",
+            description=(
                 "When ON: Predictive Comfort evaluates indoor comfort, forecast weather, "
                 "humidity, and configured heat-load entities. Automatic thermostat changes "
                 "still require the separate auto-adjust option."
             ),
-            "auto_adjust_enabled": self.coordinator.predictive_auto_adjust,
-            "current_recommendation": self.coordinator.predictive_mode,
-        }
+        )
+
+
+class PredictiveAutoAdjustSwitch(PredictiveOptionSwitch):
+    """Switch to allow Predictive Comfort to adjust thermostat setpoints."""
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the switch."""
+        super().__init__(
+            coordinator,
+            entry,
+            option_key=CONF_PREDICTIVE_AUTO_ADJUST,
+            coordinator_property="predictive_auto_adjust",
+            unique_suffix="predictive_auto_adjust",
+            name="Predictive Auto Adjust",
+            icon="mdi:thermostat-auto",
+            description=(
+                "When ON: Predictive Comfort may make rate-limited thermostat "
+                "setpoint changes. HVAC mode changes still require their own switch."
+            ),
+        )
+
+
+class PredictiveHvacModeChangeSwitch(PredictiveOptionSwitch):
+    """Switch to allow Predictive Comfort to change HVAC modes."""
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the switch."""
+        super().__init__(
+            coordinator,
+            entry,
+            option_key=CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+            coordinator_property="predictive_allow_hvac_mode_change",
+            unique_suffix="predictive_hvac_mode_changes",
+            name="Predictive HVAC Mode Changes",
+            icon="mdi:hvac",
+            description=(
+                "When ON: Predictive Comfort may switch between supported HVAC modes "
+                "before applying a proactive setpoint."
+            ),
+        )
 
 
 class TrackedRoomSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
