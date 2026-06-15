@@ -18,6 +18,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_AREAS,
     CONF_BINARY_SENSORS,
     CONF_CONTACT_SENSORS,
+    CONF_PREDICTIVE_ALLOW_AWAY,
     CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     CONF_PREDICTIVE_AUTO_ADJUST,
     CONF_PREDICTIVE_COMFORT_ENABLED,
@@ -217,6 +218,11 @@ async def test_predictive_comfort_switches_toggle_runtime_options(
             "predictive_hvac_mode_changes",
             CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
             "predictive_allow_hvac_mode_change",
+        ),
+        (
+            "predictive_allow_away",
+            CONF_PREDICTIVE_ALLOW_AWAY,
+            "predictive_allow_away",
         ),
     )
 

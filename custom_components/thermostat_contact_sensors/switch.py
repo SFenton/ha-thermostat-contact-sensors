@@ -16,6 +16,7 @@ from .const import (
     CONF_AREAS,
     CONF_AREA_ENABLED,
     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+    CONF_PREDICTIVE_ALLOW_AWAY,
     CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     CONF_PREDICTIVE_AUTO_ADJUST,
     CONF_PREDICTIVE_COMFORT_ENABLED,
@@ -42,6 +43,7 @@ async def async_setup_entry(
         PredictiveComfortSwitch(coordinator, entry),
         PredictiveAutoAdjustSwitch(coordinator, entry),
         PredictiveHvacModeChangeSwitch(coordinator, entry),
+        PredictiveAllowAwaySwitch(coordinator, entry),
     ]
 
     # Add tracked room switches for each enabled area
@@ -394,6 +396,8 @@ class PredictiveOptionSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
             "predictive_comfort_enabled": self.coordinator.predictive_comfort_enabled,
             "auto_adjust_enabled": self.coordinator.predictive_auto_adjust,
             "allow_hvac_mode_change": self.coordinator.predictive_allow_hvac_mode_change,
+            "allow_away": self.coordinator.predictive_allow_away,
+            "away_mode_active": self.coordinator.is_away,
             "current_recommendation": self.coordinator.predictive_mode,
         }
 
@@ -467,6 +471,31 @@ class PredictiveHvacModeChangeSwitch(PredictiveOptionSwitch):
             description=(
                 "When ON: Predictive Comfort may switch between supported HVAC modes "
                 "before applying a proactive setpoint."
+            ),
+        )
+
+
+class PredictiveAllowAwaySwitch(PredictiveOptionSwitch):
+    """Switch to allow Predictive Comfort to apply setpoints while away."""
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the switch."""
+        super().__init__(
+            coordinator,
+            entry,
+            option_key=CONF_PREDICTIVE_ALLOW_AWAY,
+            coordinator_property="predictive_allow_away",
+            unique_suffix="predictive_allow_away",
+            name="Predictive Comfort While Away",
+            icon="mdi:home-export-outline",
+            description=(
+                "When ON: Predictive Comfort may apply proactive setpoints while "
+                "away mode is active. When OFF: recommendations are still reported, "
+                "but automatic thermostat changes are skipped while away."
             ),
         )
 

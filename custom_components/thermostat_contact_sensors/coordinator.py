@@ -43,6 +43,7 @@ from .const import (
     CONF_ECO_MODE_CRITICAL_TRACKING,
     CONF_PREDICTIVE_ACTIVITY_ENTITIES,
     CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+    CONF_PREDICTIVE_ALLOW_AWAY,
     CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     CONF_PREDICTIVE_AUTO_ADJUST,
     CONF_PREDICTIVE_COMFORT_ENABLED,
@@ -106,6 +107,7 @@ from .const import (
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
     DEFAULT_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+    DEFAULT_PREDICTIVE_ALLOW_AWAY,
     DEFAULT_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     DEFAULT_PREDICTIVE_AUTO_ADJUST,
     DEFAULT_PREDICTIVE_COMFORT_ENABLED,
@@ -433,7 +435,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     @property
     def is_away(self) -> bool:
         """Return whether away mode is currently active."""
-        return self._is_away
+        return getattr(self, "_is_away", False)
 
     @property
     def away_mode_configured(self) -> bool:
@@ -467,6 +469,16 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self._options.get(
                 CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
                 DEFAULT_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+            )
+        )
+
+    @property
+    def predictive_allow_away(self) -> bool:
+        """Return whether predictive comfort may adjust while away."""
+        return bool(
+            self._options.get(
+                CONF_PREDICTIVE_ALLOW_AWAY,
+                DEFAULT_PREDICTIVE_ALLOW_AWAY,
             )
         )
 
@@ -556,6 +568,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "reason": "Predictive Comfort Mode is disabled",
             "reasons": ["Predictive Comfort Mode is disabled"],
             "auto_adjust_enabled": False,
+            "allow_hvac_mode_change": self.predictive_allow_hvac_mode_change,
+            "allow_away": self.predictive_allow_away,
+            "away_mode_active": self.is_away,
         }
 
     def _predictive_learning_disabled_result(self) -> dict[str, Any]:
@@ -1800,6 +1815,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 "reason": "No indoor temperature data is available",
                 "reasons": ["No indoor temperature data is available"],
                 "auto_adjust_enabled": self.predictive_auto_adjust,
+                "allow_hvac_mode_change": self.predictive_allow_hvac_mode_change,
+                "allow_away": self.predictive_allow_away,
+                "away_mode_active": self.is_away,
                 "comfort_low": comfort_low,
                 "comfort_high": comfort_high,
                 "tracked_temperature_sensors": self.predictive_temperature_sensors,
@@ -1908,6 +1926,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "reasons": reasons,
             "auto_adjust_enabled": self.predictive_auto_adjust,
             "allow_hvac_mode_change": self.predictive_allow_hvac_mode_change,
+            "allow_away": self.predictive_allow_away,
+            "away_mode_active": self.is_away,
             "comfort_low": round(comfort_low, 1),
             "comfort_high": round(comfort_high, 1),
             "indoor_temperature": round(indoor_temperature, 1),
@@ -1942,6 +1962,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Apply a predictive comfort recommendation when configured to do so."""
         if not self.predictive_auto_adjust:
             result["adjustment_status"] = "auto_adjust_disabled"
+            return
+
+        if self.away_mode_configured and self.is_away and not self.predictive_allow_away:
+            result["adjustment_status"] = "skipped_away_mode"
             return
 
         if result["mode"] not in (

@@ -105,13 +105,14 @@ After setup, access the integration options to configure:
 
 #### Predictive Comfort Mode
 
-Predictive Comfort Mode is disabled by default. When enabled, it evaluates current indoor temperature, configured comfort band, humidity, room heat-load entities, and weather forecast pressure to recommend `idle`, `pre_cool`, or `pre_heat`. It does not change the thermostat unless **Automatically Adjust Thermostat Setpoints** is also enabled. Changing HVAC modes is a separate opt-in control.
+Predictive Comfort Mode is disabled by default. When enabled, it evaluates current indoor temperature, configured comfort band, humidity, room heat-load entities, and weather forecast pressure to recommend `idle`, `pre_cool`, or `pre_heat`. It does not change the thermostat unless **Automatically Adjust Thermostat Setpoints** is also enabled. Changing HVAC modes and applying adjustments while away are separate opt-in controls.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **Enable Predictive Comfort Mode** | off | Calculate proactive comfort recommendations and expose diagnostics |
 | **Automatically Adjust Thermostat Setpoints** | off | Allow rate-limited `climate.set_temperature` calls |
 | **Allow HVAC Mode Changes** | off | Allow switching supported heat/cool modes before applying a proactive target |
+| **Enable Predictive Comfort While Away** | off | Allow automatic pre-heating/pre-cooling while Away Mode is active; recommendations are still calculated when off |
 | **Global Weather Entity** | auto | Weather source shared by the house; blank falls back to another entry, `weather.pirate_weather`, `weather.forecast_home`, or the first weather entity |
 | **Global Temperature Sensors** | area sensors | Optional global indoor sensors; blank uses enabled area temperature sensors |
 | **Humidity Sensors** | none | Indoor humidity sensors used to add perceived heat pressure |

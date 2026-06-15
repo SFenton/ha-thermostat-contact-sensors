@@ -46,6 +46,7 @@ from .const import (
     CONF_OPEN_TIMEOUT,
     CONF_PREDICTIVE_ACTIVITY_ENTITIES,
     CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+    CONF_PREDICTIVE_ALLOW_AWAY,
     CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     CONF_PREDICTIVE_AUTO_ADJUST,
     CONF_PREDICTIVE_COMFORT_ENABLED,
@@ -96,6 +97,7 @@ from .const import (
     DEFAULT_NOTIFY_TITLE_RESUMED,
     DEFAULT_OPEN_TIMEOUT,
     DEFAULT_PREDICTIVE_ACTIVITY_HEAT_GAIN,
+    DEFAULT_PREDICTIVE_ALLOW_AWAY,
     DEFAULT_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     DEFAULT_PREDICTIVE_AUTO_ADJUST,
     DEFAULT_PREDICTIVE_COMFORT_ENABLED,
@@ -138,6 +140,7 @@ def _default_predictive_options() -> dict[str, Any]:
         CONF_PREDICTIVE_COMFORT_ENABLED: DEFAULT_PREDICTIVE_COMFORT_ENABLED,
         CONF_PREDICTIVE_AUTO_ADJUST: DEFAULT_PREDICTIVE_AUTO_ADJUST,
         CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE: DEFAULT_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
+        CONF_PREDICTIVE_ALLOW_AWAY: DEFAULT_PREDICTIVE_ALLOW_AWAY,
         CONF_PREDICTIVE_WEATHER_ENTITY: "",
         CONF_PREDICTIVE_TEMPERATURE_SENSORS: [],
         CONF_PREDICTIVE_HUMIDITY_SENSORS: [],
@@ -447,6 +450,10 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
                     default=options[CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE],
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_PREDICTIVE_ALLOW_AWAY,
+                    default=options[CONF_PREDICTIVE_ALLOW_AWAY],
                 ): selector.BooleanSelector(),
                 weather_key: selector.EntitySelector(
                     selector.EntitySelectorConfig(
