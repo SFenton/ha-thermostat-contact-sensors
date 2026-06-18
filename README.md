@@ -105,12 +105,12 @@ After setup, access the integration options to configure:
 
 #### Predictive Comfort Mode
 
-Predictive Comfort Mode is disabled by default. When enabled, it evaluates current indoor temperature, configured comfort band, humidity, room heat-load entities, and weather forecast pressure to recommend `idle`, `pre_cool`, or `pre_heat`. It does not change the thermostat unless **Automatically Adjust Thermostat Setpoints** is also enabled. Changing HVAC modes and applying adjustments while away are separate opt-in controls.
+Predictive Comfort Mode is disabled by default. When enabled, it evaluates current indoor temperature, configured comfort band, humidity, room heat-load entities, and weather forecast pressure to recommend `idle`, `pre_cool`, or `pre_heat`. It does not influence HVAC unless **Automatically Adjust Thermostat Setpoints** is also enabled. When automatic adjustment is enabled, Predictive Comfort contributes pre-heat/pre-cool demand to the main thermostat controller so normal cycle protection, room tracking, and vent coordination still decide how HVAC runs. Changing HVAC modes and applying adjustments while away are separate opt-in controls.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **Enable Predictive Comfort Mode** | off | Calculate proactive comfort recommendations and expose diagnostics |
-| **Automatically Adjust Thermostat Setpoints** | off | Allow rate-limited `climate.set_temperature` calls |
+| **Automatically Adjust Thermostat Setpoints** | off | Allow Predictive Comfort recommendations to coordinate thermostat demand and proactive targets through the main controller |
 | **Allow HVAC Mode Changes** | off | Allow switching supported heat/cool modes before applying a proactive target |
 | **Enable Predictive Comfort While Away** | off | Allow automatic pre-heating/pre-cooling while Away Mode is active; recommendations are still calculated when off |
 | **Global Weather Entity** | auto | Weather source shared by the house; blank falls back to another entry, `weather.pirate_weather`, `weather.forecast_home`, or the first weather entity |
@@ -126,7 +126,7 @@ Predictive Comfort Mode is disabled by default. When enabled, it evaluates curre
 | **Fallback Activity Heat Gain** | 1°F | Heat gain per active entity before history learning has enough samples |
 | **Rain Cooling Adjustment** | 2°F | Cooling effect subtracted when precipitation is forecast |
 | **Evaluation Interval** | 15 min | Periodic reevaluation cadence |
-| **Minimum Adjustment Interval** | 45 min | Rate limit between automatic setpoint changes |
+| **Minimum Adjustment Interval** | 45 min | Legacy direct-adjust interval; coordinated HVAC control uses the main thermostat cycle protections |
 | **History Learning Enabled** | on | Learn device/entity heat impact from recorder history |
 | **History Lookback** | 7 days | Recorder history window for learning |
 | **Learning Window** | 90 min | Temperature comparison window after a heat-load entity activates |
@@ -212,6 +212,7 @@ For each configuration, the integration creates:
   - `active_activity_entities`: Currently active heat-load entities
   - `learning`: History-learning status and learned gains
   - `target_temperature`, `target_hvac_mode`, and `adjustment_status`
+  - `coordinated_hvac_mode`, `coordinated_target_temperature`, `thermostat_control_action`, and `thermostat_control_reason` when automatic adjustment is coordinating with the main controller
 
 ### Switch: Respect User Off
 - **When OFF** (default): Integration will always turn thermostat back on when windows close

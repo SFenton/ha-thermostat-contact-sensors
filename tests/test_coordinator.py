@@ -20,6 +20,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_OPEN_TIMEOUT,
     CONF_PREDICTIVE_ACTIVITY_ENTITIES,
     CONF_PREDICTIVE_ALLOW_AWAY,
+    CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     CONF_PREDICTIVE_AUTO_ADJUST,
     CONF_PREDICTIVE_COMFORT_ENABLED,
     CONF_PREDICTIVE_HUMIDITY_SENSORS,
@@ -1357,6 +1358,7 @@ class TestPredictiveComfort:
 
         options = self.predictive_options()
         options[CONF_PREDICTIVE_AUTO_ADJUST] = True
+        options[CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE] = True
         coordinator = self.create_predictive_coordinator(hass, options)
 
         await coordinator.async_setup()
@@ -1364,7 +1366,37 @@ class TestPredictiveComfort:
 
         thermostat_state = hass.states.get(TEST_THERMOSTAT)
         assert thermostat_state.attributes["temperature"] == 72.0
-        assert coordinator.predictive_result["adjustment_status"] == "applied"
+        assert thermostat_state.state == HVACMode.COOL
+        assert coordinator.predictive_result["adjustment_status"] == "coordinated"
+
+        await coordinator.async_shutdown()
+
+    async def test_predictive_comfort_does_not_control_when_hvac_mode_changes_disabled(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test predictive comfort stays recommendation-only without mode control."""
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_AUTO_ADJUST] = True
+        options[CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE] = False
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        await coordinator.async_setup()
+        await hass.async_block_till_done()
+
+        thermostat_state = hass.states.get(TEST_THERMOSTAT)
+        assert thermostat_state.state == HVACMode.HEAT
+        assert thermostat_state.attributes["temperature"] == 22
+        assert (
+            coordinator.predictive_result["adjustment_status"]
+            == "hvac_mode_changes_disabled"
+        )
 
         await coordinator.async_shutdown()
 
@@ -1415,6 +1447,7 @@ class TestPredictiveComfort:
         options = self.predictive_options()
         options[CONF_PREDICTIVE_AUTO_ADJUST] = True
         options[CONF_PREDICTIVE_ALLOW_AWAY] = True
+        options[CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE] = True
         options[CONF_AWAY_PRESENCE_ENTITY] = away_entity
         coordinator = self.create_predictive_coordinator(hass, options)
 
@@ -1426,7 +1459,7 @@ class TestPredictiveComfort:
         assert coordinator.is_away is True
         assert coordinator.predictive_result["away_mode_active"] is True
         assert coordinator.predictive_result["allow_away"] is True
-        assert coordinator.predictive_result["adjustment_status"] == "applied"
+        assert coordinator.predictive_result["adjustment_status"] == "coordinated"
 
         await coordinator.async_shutdown()
 

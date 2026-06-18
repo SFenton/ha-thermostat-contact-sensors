@@ -2291,5 +2291,3 @@ class TestVirtualThermostatFallback:
 
 # Additional test classes removed - they were testing non-existent methods
 # and complex internal behavior already covered by existing integration tests
-
-

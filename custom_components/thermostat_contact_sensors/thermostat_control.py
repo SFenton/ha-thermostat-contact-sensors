@@ -179,6 +179,11 @@ class ThermostatState:
     rooms_need_heat: bool = False
     rooms_need_cool: bool = False
 
+    # Predictive Comfort demand, when enabled for control rather than recommendation only.
+    predictive_hvac_mode: HVACMode | None = None
+    predictive_target_temperature: float | None = None
+    predictive_reason: str | None = None
+
     # Room states (includes both active and critical rooms)
     room_states: dict[str, RoomTemperatureState] = field(default_factory=dict)
 
@@ -1453,6 +1458,9 @@ class ThermostatController:
         all_areas_for_trend: list[AreaOccupancyState] | None = None,
         tracked_area_ids: set[str] | None = None,
         force_critical_area_ids: set[str] | None = None,
+        predictive_hvac_mode: HVACMode | None = None,
+        predictive_target_temperature: float | None = None,
+        predictive_reason: str | None = None,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
 
@@ -1488,6 +1496,12 @@ class ThermostatController:
             force_critical_area_ids: Optional set of area IDs that should be considered
                 for CRITICAL temperature protection even when they are not tracked.
                 This is intended to be used with the tracked rooms feature.
+            predictive_hvac_mode: Optional heat/cool demand from Predictive Comfort.
+                When provided, it participates in the same on/off decision as room
+                demand instead of directly changing the thermostat.
+            predictive_target_temperature: Optional physical thermostat target to use
+                when acting on Predictive Comfort demand.
+            predictive_reason: Optional diagnostic reason from Predictive Comfort.
 
         Returns:
             ThermostatState with the recommended action.
@@ -1513,6 +1527,9 @@ class ThermostatController:
             target_temp_high=target_temp_high,
             last_on_time=self._last_on_time,
             last_off_time=self._last_off_time,
+            predictive_hvac_mode=predictive_hvac_mode,
+            predictive_target_temperature=predictive_target_temperature,
+            predictive_reason=predictive_reason,
         )
 
         # Track if paused - we still evaluate rooms for display, but won't take actions
@@ -1723,6 +1740,36 @@ class ThermostatController:
             self._unoccupied_heating_threshold,
             self._unoccupied_cooling_threshold,
         )
+        main_rooms_need_heat = rooms_need_heat
+        main_rooms_need_cool = rooms_need_cool
+        predictive_conflicts_with_main_demand = (
+            (predictive_hvac_mode == HVACMode.HEAT and main_rooms_need_cool)
+            or (predictive_hvac_mode == HVACMode.COOL and main_rooms_need_heat)
+        )
+        if predictive_conflicts_with_main_demand:
+            _LOGGER.debug(
+                "Ignoring Predictive Comfort %s demand because main room demand needs the opposite mode",
+                predictive_hvac_mode.value if predictive_hvac_mode else None,
+            )
+
+        predictive_needs_heat = (
+            predictive_hvac_mode == HVACMode.HEAT
+            and not predictive_conflicts_with_main_demand
+        )
+        predictive_needs_cool = (
+            predictive_hvac_mode == HVACMode.COOL
+            and not predictive_conflicts_with_main_demand
+        )
+        predictive_needs_conditioning = predictive_needs_heat or predictive_needs_cool
+
+        if predictive_needs_heat:
+            rooms_need_heat = True
+        elif predictive_needs_cool:
+            rooms_need_cool = True
+
+        if predictive_needs_conditioning and predictive_target_temperature is not None:
+            thermostat_state.target_temperature = predictive_target_temperature
+
         thermostat_state.rooms_need_heat = rooms_need_heat
         thermostat_state.rooms_need_cool = rooms_need_cool
 
@@ -1734,10 +1781,19 @@ class ThermostatController:
         unsatiated_active = tracked_active_count - satiated_count
         if hvac_mode is None or hvac_mode == HVACMode.OFF:
             # Use absolute temperature needs for consensus logic
-            needs_conditioning = rooms_need_heat or rooms_need_cool or critical_count > 0
+            needs_conditioning = (
+                rooms_need_heat
+                or rooms_need_cool
+                or critical_count > 0
+                or predictive_needs_conditioning
+            )
         else:
             # HVAC is on - use normal satiation logic
-            needs_conditioning = unsatiated_active > 0 or critical_count > 0
+            needs_conditioning = (
+                unsatiated_active > 0
+                or critical_count > 0
+                or predictive_needs_conditioning
+            )
 
         _LOGGER.debug(
             "Rooms need conditioning: heat=%s, cool=%s, inferred_mode=%s",
@@ -1772,11 +1828,11 @@ class ThermostatController:
         # Note: critical_count is mode-dependent (based on inferred mode evaluation)
         # but rooms_need_heat/rooms_need_cool are mode-independent
         # A room can need heat even if critical_count=0 (e.g., cold basement when trend=COOL)
-        has_mode_independent_critical = rooms_need_heat or rooms_need_cool
+        has_mode_independent_critical = main_rooms_need_heat or main_rooms_need_cool
         
         if len(active_areas) == 0 and critical_count == 0 and not has_mode_independent_critical:
             # No active rooms and no critical rooms (either mode-dependent or mode-independent)
-            if not rooms_configured:
+            if not rooms_configured and not predictive_needs_conditioning:
                 # No rooms configured at all - don't control thermostat
                 thermostat_state.recommended_action = ThermostatAction.NONE
                 thermostat_state.action_reason = "No rooms configured"
@@ -1811,10 +1867,17 @@ class ThermostatController:
             if critical_count > 0:
                 reason_parts.append(f"{critical_count} critical rooms")
             # Add mode-independent critical needs (e.g., cold basement when trend=COOL)
-            if rooms_need_heat and critical_count == 0 and unsatiated_active == 0:
+            if main_rooms_need_heat and critical_count == 0 and unsatiated_active == 0:
                 reason_parts.append("inactive room(s) in critical heat range")
-            if rooms_need_cool and critical_count == 0 and unsatiated_active == 0:
+            if main_rooms_need_cool and critical_count == 0 and unsatiated_active == 0:
                 reason_parts.append("inactive room(s) in critical cool range")
+            if predictive_needs_conditioning:
+                predictive_label = (
+                    "pre-heating" if predictive_hvac_mode == HVACMode.HEAT else "pre-cooling"
+                )
+                reason_parts.append(
+                    f"Predictive Comfort recommends {predictive_label}"
+                )
 
             if not is_on:
                 # Apply consensus logic: only turn on if the inferred mode aligns
@@ -1822,28 +1885,39 @@ class ThermostatController:
                 mode_to_engage: HVACMode | None = None
                 consensus_reason: str | None = None
 
-                if inferred_mode == HVACMode.HEAT and rooms_need_heat:
+                if inferred_mode == HVACMode.HEAT and main_rooms_need_heat:
                     mode_to_engage = HVACMode.HEAT
                     consensus_reason = "Trend=HEAT, rooms need heat"
-                elif inferred_mode == HVACMode.COOL and rooms_need_cool:
+                elif inferred_mode == HVACMode.COOL and main_rooms_need_cool:
                     mode_to_engage = HVACMode.COOL
                     consensus_reason = "Trend=COOL, rooms need cool"
                 elif inferred_mode is None:
                     # Can't infer mode (no sensors/targets) - fall back to what rooms need
-                    if rooms_need_heat:
+                    if main_rooms_need_heat:
                         mode_to_engage = HVACMode.HEAT
                         consensus_reason = "No trend data, rooms need heat"
-                    elif rooms_need_cool:
+                    elif main_rooms_need_cool:
                         mode_to_engage = HVACMode.COOL
                         consensus_reason = "No trend data, rooms need cool"
-                else:
-                    # Mismatch: trend doesn't align with what rooms need
-                    _LOGGER.debug(
-                        "Consensus mismatch: inferred_mode=%s, rooms_need_heat=%s, rooms_need_cool=%s - not turning on",
-                        inferred_mode.value if inferred_mode else None,
-                        rooms_need_heat,
-                        rooms_need_cool,
-                    )
+
+                if mode_to_engage is None:
+                    if (
+                        predictive_needs_conditioning
+                        and predictive_hvac_mode in (HVACMode.HEAT, HVACMode.COOL)
+                    ):
+                        mode_to_engage = predictive_hvac_mode
+                        consensus_reason = (
+                            predictive_reason
+                            or f"Predictive Comfort recommends {predictive_hvac_mode.value}"
+                        )
+                    else:
+                        # Mismatch: trend doesn't align with what rooms need.
+                        _LOGGER.debug(
+                            "Consensus mismatch: inferred_mode=%s, rooms_need_heat=%s, rooms_need_cool=%s - not turning on",
+                            inferred_mode.value if inferred_mode else None,
+                            rooms_need_heat,
+                            rooms_need_cool,
+                        )
 
                 if mode_to_engage:
                     can_on, cycle_reason = self.can_turn_on(now)
@@ -1871,6 +1945,17 @@ class ThermostatController:
                     else:
                         thermostat_state.action_reason = f"No clear mode consensus ({' and '.join(reason_parts)})"
             else:
+                current_mode_has_main_demand = (
+                    (hvac_mode == HVACMode.HEAT and main_rooms_need_heat)
+                    or (hvac_mode == HVACMode.COOL and main_rooms_need_cool)
+                )
+                predictive_requests_mode_change = (
+                    predictive_needs_conditioning
+                    and predictive_hvac_mode in (HVACMode.HEAT, HVACMode.COOL)
+                    and hvac_mode in (HVACMode.HEAT, HVACMode.COOL, HVACMode.HEAT_COOL)
+                    and hvac_mode != predictive_hvac_mode
+                    and not current_mode_has_main_demand
+                )
                 current_mode_has_demand = (
                     (hvac_mode == HVACMode.HEAT and rooms_need_heat)
                     or (hvac_mode == HVACMode.COOL and rooms_need_cool)
@@ -1881,7 +1966,14 @@ class ThermostatController:
                     and hvac_mode != inferred_mode
                     and current_mode_has_demand
                 )
-                if current_mode_mismatches_trend:
+                if predictive_requests_mode_change:
+                    thermostat_state.recommended_action = ThermostatAction.TURN_ON
+                    thermostat_state.inferred_hvac_mode = predictive_hvac_mode
+                    thermostat_state.action_reason = (
+                        f"Predictive Comfort recommends {predictive_hvac_mode.value}; "
+                        f"switching from {hvac_mode.value}"
+                    )
+                elif current_mode_mismatches_trend:
                     trend_mode = inferred_mode.value.upper()
                     current_mode = hvac_mode.value.upper()
                     mismatch_reason = (

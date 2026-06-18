@@ -59,7 +59,6 @@ from .const import (
     CONF_PREDICTIVE_LOOKAHEAD_HOURS,
     CONF_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
     CONF_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
-    CONF_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
     CONF_PREDICTIVE_MIN_LEARNING_SAMPLES,
     CONF_PREDICTIVE_OUTDOOR_INFLUENCE,
     CONF_PREDICTIVE_PRECOOL_OFFSET,
@@ -122,7 +121,6 @@ from .const import (
     DEFAULT_PREDICTIVE_LOOKAHEAD_HOURS,
     DEFAULT_PREDICTIVE_MAX_LEARNED_HEAT_GAIN,
     DEFAULT_PREDICTIVE_MEANINGFUL_TEMP_DELTA,
-    DEFAULT_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
     DEFAULT_PREDICTIVE_MIN_LEARNING_SAMPLES,
     DEFAULT_PREDICTIVE_OUTDOOR_INFLUENCE,
     DEFAULT_PREDICTIVE_PRECOOL_OFFSET,
@@ -146,6 +144,7 @@ from .const import (
 )
 from .occupancy import RoomOccupancyTracker
 from .thermostat_control import (
+    ThermostatAction,
     ThermostatController,
     ThermostatState,
     get_temperature_from_state,
@@ -160,7 +159,6 @@ _LOGGER = logging.getLogger(__name__)
 
 WEATHER_DOMAIN = "weather"
 SERVICE_GET_FORECASTS = "get_forecasts"
-SERVICE_SET_TEMPERATURE = "set_temperature"
 FORECAST_TYPE_HOURLY = "hourly"
 HUMIDITY_COMFORT_BASELINE = 45.0
 GLOBAL_WEATHER_ENTITY_PRIORITY = ("weather.pirate_weather", "weather.forecast_home")
@@ -265,7 +263,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             self._predictive_learning_disabled_result()
         )
         self._activity_heat_gains: dict[str, float] = {}
-        self._last_predictive_adjustment: datetime | None = None
         self._last_predictive_learning_update: datetime | None = None
 
         # Listener cleanup
@@ -522,6 +519,96 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     def predictive_mode(self) -> str:
         """Return the current predictive comfort mode."""
         return self.predictive_result.get("mode", PREDICTIVE_MODE_DISABLED)
+
+    def _predictive_hvac_mode_from_result(
+        self,
+        result: dict[str, Any],
+    ) -> HVACMode | None:
+        """Return the target HVAC mode from a predictive result."""
+        target_hvac_mode = result.get("target_hvac_mode")
+        if isinstance(target_hvac_mode, HVACMode):
+            return target_hvac_mode
+        if target_hvac_mode is None:
+            return None
+
+        try:
+            return HVACMode(str(target_hvac_mode))
+        except ValueError:
+            return None
+
+    def _predictive_control_request(
+        self,
+        result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return a Predictive Comfort demand for the main thermostat controller."""
+        predictive_result = result or self.predictive_result
+
+        if self.integration_paused:
+            return {"eligible": False, "status": "skipped_integration_paused"}
+
+        if not self.predictive_auto_adjust:
+            return {"eligible": False, "status": "auto_adjust_disabled"}
+
+        if self.away_mode_configured and self.is_away and not self.predictive_allow_away:
+            return {"eligible": False, "status": "skipped_away_mode"}
+
+        if predictive_result.get("mode") not in (
+            PREDICTIVE_MODE_PRE_COOL,
+            PREDICTIVE_MODE_PRE_HEAT,
+        ):
+            return {"eligible": False, "status": "no_adjustment_needed"}
+
+        if self.is_paused or self.open_count > 0:
+            return {"eligible": False, "status": "skipped_contact_sensor_open"}
+
+        target_temperature = predictive_result.get("target_temperature")
+        if target_temperature is None:
+            return {"eligible": False, "status": "missing_target_temperature"}
+
+        target_hvac_mode = self._predictive_hvac_mode_from_result(predictive_result)
+        if target_hvac_mode not in (HVACMode.HEAT, HVACMode.COOL):
+            return {"eligible": False, "status": "missing_target_hvac_mode"}
+
+        climate_state = self.hass.states.get(self.thermostat)
+        if climate_state is None or climate_state.state in (
+            STATE_UNAVAILABLE,
+            STATE_UNKNOWN,
+        ):
+            return {"eligible": False, "status": "thermostat_unavailable"}
+
+        supported_modes = climate_state.attributes.get("hvac_modes", [])
+        if isinstance(supported_modes, list):
+            supported_mode_values = {
+                mode_value
+                for mode in supported_modes
+                if (mode_value := self._hvac_mode_value(mode)) is not None
+            }
+        else:
+            supported_mode_values = set()
+        if (
+            supported_mode_values
+            and target_hvac_mode.value not in supported_mode_values
+        ):
+            return {"eligible": False, "status": "target_hvac_mode_unavailable"}
+
+        if (
+            climate_state.state != target_hvac_mode.value
+            and not self.predictive_allow_hvac_mode_change
+        ):
+            return {"eligible": False, "status": "hvac_mode_changes_disabled"}
+
+        try:
+            target_temperature_float = float(target_temperature)
+        except (TypeError, ValueError):
+            return {"eligible": False, "status": "missing_target_temperature"}
+
+        return {
+            "eligible": True,
+            "status": "coordinating",
+            "hvac_mode": target_hvac_mode,
+            "target_temperature": target_temperature_float,
+            "reason": predictive_result.get("reason"),
+        }
 
     def _entity_list_option(self, key: str) -> list[str]:
         """Return an option value normalized to a list of entity IDs."""
@@ -1069,6 +1156,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self.thermostat_controller.set_paused_by_contact_sensors(self.is_paused)
 
         # Evaluate what action should be taken
+        predictive_request = self._predictive_control_request()
         self._last_thermostat_state = self.thermostat_controller.evaluate_thermostat_action(
             active_areas=active_areas,
             area_temp_sensors=area_temp_sensors,
@@ -1081,6 +1169,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             all_areas_for_trend=list(self.occupancy_tracker.areas.values()),
             tracked_area_ids=tracked_area_ids,
             force_critical_area_ids=force_critical_area_ids,
+            predictive_hvac_mode=predictive_request.get("hvac_mode"),
+            predictive_target_temperature=predictive_request.get("target_temperature"),
+            predictive_reason=predictive_request.get("reason"),
         )
 
         self._refresh_vent_effective_mode_if_needed(self._last_thermostat_state)
@@ -1159,19 +1250,20 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         return state
 
-    async def async_update_thermostat_and_vents(self) -> None:
+    async def async_update_thermostat_and_vents(self) -> ThermostatState | None:
         """Re-evaluate thermostat state and then vents.
 
         This is used by UI entities (switch/select) where a config toggle should
         take effect immediately for both thermostat and vent control.
         """
         if self.integration_paused:
-            return
+            return self._last_thermostat_state
 
         async with self._control_lock:
-            await self.async_update_thermostat_state()
+            state = await self.async_update_thermostat_state()
             await self.async_update_vents()
             self.async_set_updated_data(None)
+            return state
 
     def update_options(self, options: dict[str, Any]) -> None:
         """Update options from config entry."""
@@ -1959,118 +2051,36 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         }
 
     async def _async_apply_predictive_result(self, result: dict[str, Any]) -> None:
-        """Apply a predictive comfort recommendation when configured to do so."""
-        if not self.predictive_auto_adjust:
-            result["adjustment_status"] = "auto_adjust_disabled"
+        """Coordinate a predictive recommendation with the main controller."""
+        request = self._predictive_control_request(result)
+        result["adjustment_status"] = request["status"]
+
+        if not request["eligible"]:
             return
 
-        if self.away_mode_configured and self.is_away and not self.predictive_allow_away:
-            result["adjustment_status"] = "skipped_away_mode"
-            return
-
-        if result["mode"] not in (
-            PREDICTIVE_MODE_PRE_COOL,
-            PREDICTIVE_MODE_PRE_HEAT,
-        ):
-            result["adjustment_status"] = "no_adjustment_needed"
-            return
-
-        if self.is_paused or self.open_count > 0:
-            result["adjustment_status"] = "skipped_contact_sensor_open"
-            return
-
-        target_temperature = result.get("target_temperature")
-        if target_temperature is None:
-            result["adjustment_status"] = "missing_target_temperature"
-            return
-
-        now = dt_util.utcnow()
-        min_interval = self._option_int(
-            CONF_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
-            DEFAULT_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL,
-        )
-        if (
-            self._last_predictive_adjustment is not None
-            and now - self._last_predictive_adjustment < timedelta(minutes=min_interval)
-        ):
-            result["adjustment_status"] = "rate_limited"
-            result["last_adjustment"] = self._last_predictive_adjustment.isoformat()
-            return
-
-        climate_state = self.hass.states.get(self.thermostat)
-        if climate_state is None or climate_state.state in (
-            STATE_UNAVAILABLE,
-            STATE_UNKNOWN,
-        ):
-            result["adjustment_status"] = "thermostat_unavailable"
-            return
-
-        target_hvac_mode = result.get("target_hvac_mode")
-        if (
-            self.predictive_allow_hvac_mode_change
-            and target_hvac_mode
-            and climate_state.state != target_hvac_mode
-            and target_hvac_mode in climate_state.attributes.get("hvac_modes", [])
-        ):
-            await self.hass.services.async_call(
-                CLIMATE_DOMAIN,
-                "set_hvac_mode",
-                {
-                    "entity_id": self.thermostat,
-                    "hvac_mode": target_hvac_mode,
-                },
-                blocking=True,
-            )
-
-        service_data = self._set_temperature_service_data(
-            climate_state,
-            float(target_temperature),
-            result["mode"],
-        )
-        await self.hass.services.async_call(
-            CLIMATE_DOMAIN,
-            SERVICE_SET_TEMPERATURE,
-            service_data,
-            blocking=True,
+        result["coordinated_hvac_mode"] = request["hvac_mode"].value
+        result["coordinated_target_temperature"] = round(
+            request["target_temperature"],
+            1,
         )
 
-        self._last_predictive_adjustment = now
-        result["adjustment_status"] = "applied"
-        result["last_adjustment"] = now.isoformat()
-        result["applied_service_data"] = service_data
+        thermostat_state = await self.async_update_thermostat_and_vents()
+        if thermostat_state is None:
+            result["adjustment_status"] = "coordinated_no_state"
+            return
 
-    def _set_temperature_service_data(
-        self,
-        climate_state: State,
-        target_temperature: float,
-        mode: str,
-    ) -> dict[str, Any]:
-        """Build climate.set_temperature service data for the thermostat type."""
-        attributes = climate_state.attributes
-        service_data: dict[str, Any] = {"entity_id": self.thermostat}
+        result["thermostat_control_action"] = thermostat_state.recommended_action.value
+        result["thermostat_control_reason"] = thermostat_state.action_reason
 
-        if (
-            attributes.get("target_temp_low") is not None
-            or attributes.get("target_temp_high") is not None
-        ):
-            low = self._option_float(
-                CONF_PREDICTIVE_COMFORT_LOW,
-                DEFAULT_PREDICTIVE_COMFORT_LOW,
-            )
-            high = self._option_float(
-                CONF_PREDICTIVE_COMFORT_HIGH,
-                DEFAULT_PREDICTIVE_COMFORT_HIGH,
-            )
-            service_data["target_temp_low"] = (
-                target_temperature if mode == PREDICTIVE_MODE_PRE_HEAT else low
-            )
-            service_data["target_temp_high"] = (
-                target_temperature if mode == PREDICTIVE_MODE_PRE_COOL else high
-            )
-        else:
-            service_data["temperature"] = target_temperature
+        if thermostat_state.recommended_action == ThermostatAction.WAIT_CYCLE_OFF:
+            result["adjustment_status"] = "coordinated_wait_cycle_off"
+            return
 
-        return service_data
+        if thermostat_state.recommended_action == ThermostatAction.WAIT_CYCLE_ON:
+            result["adjustment_status"] = "coordinated_wait_cycle_on"
+            return
+
+        result["adjustment_status"] = "coordinated"
 
     def _thermostat_current_temperature(self) -> float | None:
         """Return the thermostat current temperature, if numeric."""
