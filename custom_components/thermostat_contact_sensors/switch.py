@@ -16,6 +16,7 @@ from .const import (
     CONF_AREAS,
     CONF_AREA_ENABLED,
     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+    CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
     CONF_PREDICTIVE_ALLOW_AWAY,
     CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     CONF_PREDICTIVE_AUTO_ADJUST,
@@ -55,6 +56,9 @@ async def async_setup_entry(
             entities.append(TrackedRoomSwitch(coordinator, entry, area_id, area_name))
             entities.append(
                 ForceTrackWhenCriticalSwitch(coordinator, entry, area_id, area_name)
+            )
+            entities.append(
+                TrackOnlyWhenOccupiedSwitch(coordinator, entry, area_id, area_name)
             )
 
     async_add_entities(entities)
@@ -687,5 +691,94 @@ class ForceTrackWhenCriticalSwitch(CoordinatorEntity, RestoreEntity, SwitchEntit
             "description": (
                 "When ON: This room is always included for critical-temperature tracking when applicable. "
                 "Used by 'Eco Mode Critical Tracking' = 'Track Select Critical'."
+            ),
+        }
+
+
+class TrackOnlyWhenOccupiedSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
+    """Per-area override: ignore thermostat and vent demand until occupied."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:motion-sensor-off"
+
+    def __init__(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+        entry: ConfigEntry,
+        area_id: str,
+        area_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._area_id = area_id
+        self._area_name = area_name
+        self._attr_unique_id = f"{entry.entry_id}_{area_id}_track_only_when_occupied"
+        self._attr_name = f"{area_name} Track Only When Occupied"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": self._entry.data.get(CONF_NAME, "Thermostat Contact Sensors"),
+            "manufacturer": "Custom Integration",
+            "model": "Thermostat Contact Sensors",
+        }
+
+    def _get_current_value(self) -> bool:
+        area_config = self.coordinator.areas_config.get(self._area_id, {})
+        return bool(area_config.get(CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED, False))
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            desired = last_state.state == "on"
+            await self._apply_value(desired, trigger_update=False)
+
+    @property
+    def is_on(self) -> bool:
+        return self._get_current_value()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._apply_value(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._apply_value(False)
+
+    async def _apply_value(self, enabled: bool, *, trigger_update: bool = True) -> None:
+        """Persist the occupancy gate and optionally trigger re-evaluation."""
+        coordinator: ThermostatContactSensorsCoordinator = self.coordinator
+
+        coordinator.areas_config.setdefault(self._area_id, {})[
+            CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED
+        ] = enabled
+
+        areas_config = dict(self._entry.data.get(CONF_AREAS, {}))
+        area_cfg = dict(areas_config.get(self._area_id, {}))
+        area_cfg[CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED] = enabled
+        areas_config[self._area_id] = area_cfg
+
+        new_data = {**self._entry.data, CONF_AREAS: areas_config}
+        if self.hass is not None:
+            self.hass.config_entries.async_update_entry(self._entry, data=new_data)
+
+        if self.entity_id is not None:
+            self.async_write_ha_state()
+
+        if trigger_update:
+            self.hass.async_create_task(coordinator.async_update_thermostat_and_vents())
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        area_state = self.coordinator.occupancy_tracker.areas.get(self._area_id)
+        is_occupied = bool(area_state and area_state.is_occupied)
+        return {
+            "area_id": self._area_id,
+            "area_name": self._area_name,
+            "is_occupied": is_occupied,
+            "effective": bool(self.is_on and not is_occupied),
+            "description": (
+                "When ON: This room is ignored for thermostat decisions and minimum-vent "
+                "selection while unoccupied, and its vents are closed unless the room is occupied."
             ),
         }

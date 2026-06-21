@@ -60,6 +60,7 @@
         "description": "Select which sensors and vents to use for this area.",
         "data": {
           "enabled": "Enable this area",
+          "track_only_when_occupied": "Track Only When Occupied",
           "contact_sensors": "Contact Sensors (door/window - triggers thermostat pause)",
           "binary_sensors": "Binary Sensors (motion, occupancy - for room activity)",
           "temperature_sensors": "Temperature Sensors",
@@ -70,6 +71,7 @@
         },
         "data_description": {
           "enabled": "When disabled, this area will be ignored by the integration",
+          "track_only_when_occupied": "When enabled, this area only participates in thermostat decisions and minimum-vent selection while it is currently occupied. When unoccupied, its vents are closed even if the room temperature is beyond the normal critical threshold.",
           "contact_sensors": "Door/window sensors that will pause the thermostat when left open too long",
           "binary_sensors": "Motion, occupancy, and other binary sensors for room activity detection",
           "temperature_sensors": "Temperature sensors in this area",

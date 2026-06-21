@@ -75,6 +75,7 @@ CONF_AREA_VENT_OPEN_DELAY_SECONDS = "area_vent_open_delay_seconds"
 
 # Per-area critical temperature override
 CONF_AREA_FORCE_TRACK_WHEN_CRITICAL = "force_track_when_critical"
+CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED = "track_only_when_occupied"
 
 # Eco Mode critical temperature tracking options
 CONF_ECO_MODE_CRITICAL_TRACKING = "eco_mode_critical_tracking"

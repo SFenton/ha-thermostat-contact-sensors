@@ -1816,6 +1816,58 @@ class TestIntelligentMinimumVentSelection:
         assert control_state.area_states["room_b"].vents[0].should_be_open is True
         assert control_state.area_states["room_c"].vents[0].should_be_open is False
 
+    def test_excluded_room_closes_and_loses_minimum_vent_priority(self, controller):
+        """Track-only-when-occupied rooms are closed and skipped for minimum vents."""
+        controller.min_vents_open = 1
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_OPEN
+            state.attributes = {"current_tilt_position": 100}
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {
+            "guest_bathroom": ["cover.guest_bathroom_vent"],
+            "office": ["cover.office_vent"],
+        }
+        room_temp_states = {
+            "guest_bathroom": RoomTemperatureState(
+                area_id="guest_bathroom",
+                area_name="Guest Bathroom",
+                determining_temperature=55.0,
+                is_satiated=False,
+                is_critical=True,
+            ),
+            "office": RoomTemperatureState(
+                area_id="office",
+                area_name="Office",
+                determining_temperature=68.0,
+                is_satiated=False,
+                is_critical=False,
+            ),
+        }
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            target_temp_high=78.0,
+            excluded_area_ids={"guest_bathroom"},
+            now=now,
+        )
+
+        assert (
+            control_state.area_states["guest_bathroom"].vents[0].should_be_open
+            is False
+        )
+        assert control_state.area_states["office"].vents[0].should_be_open is True
+
 
 # =============================================================================
 # Tests for Unavailable Vent Retry and Fallback
@@ -2061,4 +2113,3 @@ class TestUnavailableVentRetry:
         assert control_state.area_states["room_c"].vents[0].should_be_open is True
         assert control_state.area_states["room_d"].vents[0].should_be_open is True
         assert control_state.vents_should_be_open == 3
-

@@ -18,6 +18,7 @@ from .const import (
     CONF_AREA_ENABLED,
     CONF_AREA_ID,
     CONF_AREA_MIN_VENTS_OPEN,
+    CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
     CONF_AREAS,
     CONF_BINARY_SENSORS,
     CONF_CONTACT_SENSORS,
@@ -70,6 +71,9 @@ async def async_migrate_entry(
             migrated_area = dict(area_config)
             if CONF_AREA_MIN_VENTS_OPEN in migrated_area:
                 migrated_area.pop(CONF_AREA_MIN_VENTS_OPEN, None)
+                changed = True
+            if CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED not in migrated_area:
+                migrated_area[CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED] = False
                 changed = True
             migrated_areas[area_id] = migrated_area
         data[CONF_AREAS] = migrated_areas

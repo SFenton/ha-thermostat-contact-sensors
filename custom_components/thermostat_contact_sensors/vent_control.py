@@ -505,6 +505,7 @@ class VentController:
         only_track_selected_rooms: bool = False,
         tracked_area_ids: set[str] | None = None,
         force_track_when_critical_area_ids: set[str] | None = None,
+        excluded_area_ids: set[str] | None = None,
     ) -> list[tuple[str, str, int, float]]:
         """Calculate priority order for keeping minimum vents open.
 
@@ -530,6 +531,7 @@ class VentController:
             only_track_selected_rooms: Whether TSR is enabled.
             tracked_area_ids: Set of tracked room area_ids (when TSR enabled).
             force_track_when_critical_area_ids: Set of rooms with FTCR enabled.
+            excluded_area_ids: Rooms excluded from minimum-vent selection.
 
         Returns:
             List of (area_id, vent_entity_id, member_count, priority_score).
@@ -540,6 +542,7 @@ class VentController:
 
         tracked_area_ids = tracked_area_ids or set()
         force_track_when_critical_area_ids = force_track_when_critical_area_ids or set()
+        excluded_area_ids = excluded_area_ids or set()
 
         # Determine effective HVAC mode for prioritization
         effective_mode = hvac_mode
@@ -557,6 +560,9 @@ class VentController:
                 )
 
         for area_id, area_state in area_states.items():
+            if area_id in excluded_area_ids:
+                continue
+
             for vent in area_state.vents:
                 priority_score = 0.0
                 priority_score: float = 0.0
@@ -634,6 +640,7 @@ class VentController:
         only_track_selected_rooms: bool = False,
         tracked_area_ids: set[str] | None = None,
         force_track_when_critical_area_ids: set[str] | None = None,
+        excluded_area_ids: set[str] | None = None,
         now: datetime | None = None,
     ) -> VentControlState:
         """Evaluate all vents and determine which should be open.
@@ -678,6 +685,7 @@ class VentController:
 
         tracked_area_ids = tracked_area_ids or set()
         force_track_when_critical_area_ids = force_track_when_critical_area_ids or set()
+        excluded_area_ids = excluded_area_ids or set()
 
         # Build occupancy start time lookup
         occupancy_times: dict[str, datetime | None] = {}
@@ -697,6 +705,7 @@ class VentController:
 
             is_active = area_id in active_area_ids
             is_occupied = area_id in occupied_area_ids
+            is_excluded = area_id in excluded_area_ids
             occupancy_start_time = occupancy_times.get(area_id)
             area_delay = area_vent_delays.get(area_id, self._vent_open_delay_seconds)
             vent_open_delay_elapsed = True
@@ -704,7 +713,7 @@ class VentController:
                 vent_open_delay_elapsed = (now - occupancy_start_time).total_seconds() >= area_delay
 
             # Get temperature state for this area
-            temp_state = room_temp_states.get(area_id)
+            temp_state = None if is_excluded else room_temp_states.get(area_id)
             is_satiated = temp_state.is_satiated if temp_state else False
             is_critical = temp_state.is_critical if temp_state else False
             distance_from_target = None
@@ -735,7 +744,7 @@ class VentController:
             # - Eco ON + TSR OFF: force-open all critical rooms.
             # - Eco ON + TSR ON: force-open critical tracked rooms + critical FTCR rooms.
             is_force_open_critical = False
-            if is_critical:
+            if is_critical and not is_excluded:
                 if eco_mode and only_track_selected_rooms:
                     is_force_open_critical = (
                         area_id in tracked_area_ids
@@ -751,6 +760,7 @@ class VentController:
             is_force_open_active_unsatiated = False
             if (
                 is_active
+                and not is_excluded
                 and temp_state is not None
                 and not temp_state.is_satiated
                 and determining_temperature is not None
@@ -822,6 +832,7 @@ class VentController:
                 only_track_selected_rooms=only_track_selected_rooms,
                 tracked_area_ids=tracked_area_ids,
                 force_track_when_critical_area_ids=force_track_when_critical_area_ids,
+                excluded_area_ids=excluded_area_ids,
             )
 
             # Select the best vents to reach minimum count

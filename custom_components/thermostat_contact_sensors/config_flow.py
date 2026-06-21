@@ -22,6 +22,7 @@ from .const import (
     CONF_AREA_ENABLED,
     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
     CONF_AREA_ID,
+    CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_AREAS,
     CONF_AWAY_COOL_TEMP_DIFF,
@@ -251,6 +252,7 @@ def build_default_areas_config(hass: HomeAssistant) -> dict[str, dict]:
             CONF_AREA_ID: area_id,
             CONF_AREA_ENABLED: True,
             CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: False,
+            CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED: False,
             CONF_BINARY_SENSORS: area_info["binary_sensors"],
             CONF_CONTACT_SENSORS: area_info["contact_sensors"],
             CONF_TEMPERATURE_SENSORS: area_info["temperature_sensors"],
@@ -1115,6 +1117,7 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                         CONF_AREA_ID: area_id,
                         CONF_AREA_ENABLED: is_enabled,
                         CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: False,
+                        CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED: False,
                         CONF_BINARY_SENSORS: area_info["binary_sensors"],
                         CONF_CONTACT_SENSORS: area_info["contact_sensors"],
                         CONF_TEMPERATURE_SENSORS: area_info["temperature_sensors"],
@@ -1265,6 +1268,10 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
                     current_area_config.get(CONF_AREA_FORCE_TRACK_WHEN_CRITICAL, False),
                 ),
+                CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED: user_input.get(
+                    CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
+                    current_area_config.get(CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED, False),
+                ),
                 CONF_BINARY_SENSORS: user_input.get(CONF_BINARY_SENSORS, []),
                 CONF_CONTACT_SENSORS: user_input.get(CONF_CONTACT_SENSORS, []),
                 CONF_TEMPERATURE_SENSORS: user_input.get(CONF_TEMPERATURE_SENSORS, []),
@@ -1302,6 +1309,10 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
                 default=current_area_config.get(CONF_AREA_FORCE_TRACK_WHEN_CRITICAL, False),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
+                default=current_area_config.get(CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED, False),
             ): selector.BooleanSelector(),
         }
 

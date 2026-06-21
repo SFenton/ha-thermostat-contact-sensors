@@ -10,6 +10,7 @@ from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.thermostat_contact_sensors.const import (
     CONF_AREAS,
+    CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
     CONF_NOTIFY_SERVICE,
@@ -178,6 +179,10 @@ async def test_config_flow_default_values(hass: HomeAssistant) -> None:
     assert result["options"][CONF_PREDICTIVE_COMFORT_ENABLED] is False
     assert result["options"][CONF_PREDICTIVE_AUTO_ADJUST] is False
     assert result["options"][CONF_PREDICTIVE_TREND_WEIGHT] == DEFAULT_PREDICTIVE_TREND_WEIGHT
+    assert all(
+        area_config.get(CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED) is False
+        for area_config in result["data"][CONF_AREAS].values()
+    )
 
     # Cleanup: unload the entry to stop timers
     await hass.config_entries.async_unload(result["result"].entry_id)

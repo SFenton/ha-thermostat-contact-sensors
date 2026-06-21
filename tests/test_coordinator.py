@@ -2588,6 +2588,77 @@ class TestForceTrackWhenCriticalOverride:
     """Tests for the force_track_when_critical per-area override."""
 
     @pytest.mark.asyncio
+    async def test_track_only_when_occupied_ignores_unoccupied_critical_room(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ):
+        """Track-only rooms do not participate in critical protection while empty."""
+        from homeassistant import util as dt_util
+
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+            CONF_AREA_ID,
+            CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
+            CONF_BINARY_SENSORS,
+            CONF_TEMPERATURE_SENSORS,
+        )
+
+        areas_config = {
+            "guest_bathroom": {
+                CONF_AREA_ID: "guest_bathroom",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: ["binary_sensor.guest_bath_motion"],
+                CONF_TEMPERATURE_SENSORS: ["sensor.guest_bath_temp"],
+                CONF_AREA_FORCE_TRACK_WHEN_CRITICAL: True,
+                CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED: True,
+            },
+            "office": {
+                CONF_AREA_ID: "office",
+                CONF_AREA_ENABLED: True,
+                CONF_BINARY_SENSORS: [],
+                CONF_TEMPERATURE_SENSORS: ["sensor.office_temp"],
+            },
+        }
+
+        temp_attrs = {"unit_of_measurement": "°C", "device_class": "temperature"}
+        hass.states.async_set("sensor.guest_bath_temp", "16.0", temp_attrs)
+        hass.states.async_set("sensor.office_temp", "21.0", temp_attrs)
+        hass.states.async_set("binary_sensor.guest_bath_motion", STATE_OFF)
+        await hass.async_block_till_done()
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+
+        await coordinator.async_setup()
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        assert thermostat_state.critical_room_count == 0
+        assert "guest_bathroom" not in thermostat_state.room_states
+
+        guest_bathroom = coordinator.occupancy_tracker.areas["guest_bathroom"]
+        guest_bathroom.occupied_binary_sensors = {"binary_sensor.guest_bath_motion"}
+        guest_bathroom.occupancy_start_time = dt_util.utcnow()
+        guest_bathroom.is_active = False
+
+        thermostat_state = coordinator.update_thermostat_state()
+
+        assert thermostat_state is not None
+        assert thermostat_state.critical_room_count == 1
+        assert thermostat_state.room_states["guest_bathroom"].is_critical is True
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.asyncio
     async def test_force_track_critical_overrides_eco_mode(
         self,
         hass: HomeAssistant,

@@ -35,6 +35,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_AREA_ENABLED,
     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
+    CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
     CONF_AREA_VENT_OPEN_DELAY_SECONDS,
     CONF_AWAY_COOL_TEMP_DIFF,
     CONF_AWAY_HEAT_TEMP_DIFF,
@@ -894,7 +895,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         This is intentionally independent of TSR and thermostat decision-making.
         It reads the configured per-area temperature sensors directly from HA
-        so *inactive/untracked* rooms can still influence vent prioritization.
+        so *inactive/untracked* rooms can still influence vent prioritization,
+        unless the room is configured to track only while occupied.
         """
         state_for_mode = state or self._last_thermostat_state
         mode_for_eval = None
@@ -920,6 +922,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         result: dict[str, VentOnlyRoomTemperatureState] = {}
         for area_id, sensors in self.get_area_temp_sensors().items():
+            if not self._area_available_for_tracking(area_id):
+                continue
+
             readings: dict[str, float] = {}
             for entity_id in sensors:
                 state = self.hass.states.get(entity_id)
@@ -1017,6 +1022,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         if self._last_thermostat_state:
             room_temp_states.update(self._last_thermostat_state.room_states)
 
+        for area_id in list(room_temp_states):
+            if not self._area_available_for_tracking(area_id):
+                room_temp_states.pop(area_id, None)
+
         # Only add vent-only states for areas not already represented by the
         # thermostat controller.
         for area_id, vent_state in self._build_vent_only_room_temp_states().items():
@@ -1063,6 +1072,43 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         area_config = self._areas_config.get(area_id, {})
         return area_config.get(CONF_AREA_FORCE_TRACK_WHEN_CRITICAL, False)
 
+    def _area_tracks_only_when_occupied(self, area_id: str) -> bool:
+        """Return True if an area should be ignored while unoccupied."""
+        area_config = self._areas_config.get(area_id, {})
+        return bool(area_config.get(CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED, False))
+
+    def _area_is_currently_occupied(self, area_id: str) -> bool:
+        """Return True if the occupancy tracker currently sees the area occupied."""
+        area = self.occupancy_tracker.areas.get(area_id)
+        return bool(area and area.is_occupied)
+
+    def _area_available_for_tracking(self, area_id: str) -> bool:
+        """Return True if an area may participate in thermostat/vent decisions."""
+        return (
+            not self._area_tracks_only_when_occupied(area_id)
+            or self._area_is_currently_occupied(area_id)
+        )
+
+    def _filter_trackable_areas(
+        self, areas: list[Any]
+    ) -> list[Any]:
+        """Remove areas configured to track only when occupied if currently empty."""
+        return [
+            area
+            for area in areas
+            if self._area_available_for_tracking(area.area_id)
+        ]
+
+    def _unoccupied_track_only_area_ids(self) -> set[str]:
+        """Return enabled areas that should stay closed/ignored until occupied."""
+        return {
+            area_id
+            for area_id, area_config in self._areas_config.items()
+            if area_config.get(CONF_AREA_ENABLED, True)
+            and self._area_tracks_only_when_occupied(area_id)
+            and not self._area_is_currently_occupied(area_id)
+        }
+
     def update_thermostat_state(self) -> ThermostatState | None:
         """Evaluate and update the current thermostat control state.
 
@@ -1070,8 +1116,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             The updated ThermostatState.
         """
         # Get active and inactive areas from occupancy tracker
-        all_active_areas = self.occupancy_tracker.active_areas
-        all_inactive_areas = self.occupancy_tracker.inactive_areas
+        all_active_areas = self._filter_trackable_areas(
+            self.occupancy_tracker.active_areas
+        )
+        all_inactive_areas = self._filter_trackable_areas(
+            self.occupancy_tracker.inactive_areas
+        )
         area_temp_sensors = self.get_area_temp_sensors()
 
         # TSR affects thermostat *decision-making*, not whether we evaluate a room.
@@ -1166,9 +1216,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             respect_user_off=self.respect_user_off,
             eco_mode=eco_mode_for_thermostat,
             eco_away_targets=eco_away_targets,
-            # Trend/inferred HVAC mode should always be based on *all* rooms' sensors,
-            # independent of Eco/TSR/force-critical filtering.
-            all_areas_for_trend=list(self.occupancy_tracker.areas.values()),
+            # Trend/inferred HVAC mode should be based on all currently trackable
+            # room sensors, independent of Eco/TSR/force-critical filtering.
+            all_areas_for_trend=self._filter_trackable_areas(
+                list(self.occupancy_tracker.areas.values())
+            ),
             tracked_area_ids=tracked_area_ids,
             force_critical_area_ids=force_critical_area_ids,
             predictive_hvac_mode=predictive_request.get("hvac_mode"),
@@ -1506,8 +1558,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Vent control is intentionally independent of TSR.
         # TSR controls which rooms can *drive thermostat actions*, but vents should
         # respond to occupancy/temperature in all rooms to prevent starvation.
-        active_areas = self.occupancy_tracker.active_areas
-        occupied_areas = self.occupancy_tracker.occupied_areas
+        active_areas = self._filter_trackable_areas(self.occupancy_tracker.active_areas)
+        occupied_areas = self._filter_trackable_areas(
+            self.occupancy_tracker.occupied_areas
+        )
+        excluded_area_ids = self._unoccupied_track_only_area_ids()
 
         # Get room temperature states and target temperatures from last thermostat state.
         # Room temperature states for vent control are merged with vent-only sensors.
@@ -1552,6 +1607,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             only_track_selected_rooms=self.only_track_selected_rooms,
             tracked_area_ids=tracked_area_ids,
             force_track_when_critical_area_ids=force_track_when_critical_area_ids,
+            excluded_area_ids=excluded_area_ids,
         )
 
         # Execute pending commands

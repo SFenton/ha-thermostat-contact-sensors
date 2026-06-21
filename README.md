@@ -25,6 +25,7 @@ A comprehensive Home Assistant custom integration that provides intelligent HVAC
 - **Multi-mode support**: Works with HEAT, COOL, and HEAT_COOL (auto) modes
 - **Cycle protection**: Minimum on/off times to protect HVAC equipment from rapid cycling
 - **Critical room protection**: Unoccupied rooms can still trigger HVAC if temperature falls too far from target
+- **Per-area occupancy gating**: Rooms with **Track Only When Occupied** enabled are excluded from critical protection and thermostat trend decisions while unoccupied
 
 ### Smart Vent Control
 - **Automatic vent management**: Controls cover entities (vents) based on occupancy and temperature
@@ -82,6 +83,7 @@ After setup, access the integration options to configure:
 - Configure temperature sensors and vents per area
 - Add per-area Predictive Comfort heat-load entities
 - Set per-area vent open delays
+- Enable **Track Only When Occupied** for high-airflow areas that should keep vents closed and ignore temperature demand while empty
 
 #### Global Settings
 
@@ -267,7 +269,8 @@ Force recalculation of thermostat state and vent positions.
 2. Vents in satiated or inactive rooms close
 3. The system ensures at least N vents remain open (minimum vents open setting)
 4. Priority determines which vents stay open: critical > active > occupied > distance from target
-5. Debounce protection prevents rapid vent changes
+5. Rooms with **Track Only When Occupied** enabled are excluded from minimum-vent selection while unoccupied, so their vents close even when their temperature is beyond the normal threshold
+6. Debounce protection prevents rapid vent changes
 
 ### Predictive Comfort Logic
 1. The integration gathers indoor temperatures from configured global sensors or enabled area temperature sensors
