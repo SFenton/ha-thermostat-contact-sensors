@@ -70,6 +70,7 @@ from .const import (
     CONF_PREDICTIVE_RAIN_COOLING,
     CONF_PREDICTIVE_TEMPERATURE_SENSORS,
     CONF_PREDICTIVE_TRIGGER_MARGIN,
+    CONF_PREDICTIVE_TREND_WEIGHT,
     CONF_PREDICTIVE_WEATHER_ENTITY,
     CONF_SENSORS,
     CONF_TEMPERATURE_DEADBAND,
@@ -119,6 +120,7 @@ from .const import (
     DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
     DEFAULT_PREDICTIVE_RAIN_COOLING,
     DEFAULT_PREDICTIVE_TRIGGER_MARGIN,
+    DEFAULT_PREDICTIVE_TREND_WEIGHT,
     DEFAULT_TEMPERATURE_DEADBAND,
     DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
     DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
@@ -152,6 +154,7 @@ def _default_predictive_options() -> dict[str, Any]:
         CONF_PREDICTIVE_PRECOOL_OFFSET: DEFAULT_PREDICTIVE_PRECOOL_OFFSET,
         CONF_PREDICTIVE_PREHEAT_OFFSET: DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
         CONF_PREDICTIVE_OUTDOOR_INFLUENCE: DEFAULT_PREDICTIVE_OUTDOOR_INFLUENCE,
+        CONF_PREDICTIVE_TREND_WEIGHT: DEFAULT_PREDICTIVE_TREND_WEIGHT,
         CONF_PREDICTIVE_HUMIDITY_SENSITIVITY: DEFAULT_PREDICTIVE_HUMIDITY_SENSITIVITY,
         CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN: DEFAULT_PREDICTIVE_ACTIVITY_HEAT_GAIN,
         CONF_PREDICTIVE_RAIN_COOLING: DEFAULT_PREDICTIVE_RAIN_COOLING,
@@ -567,6 +570,17 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                         min=0,
                         max=1,
                         step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_PREDICTIVE_TREND_WEIGHT,
+                    default=options[CONF_PREDICTIVE_TREND_WEIGHT],
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=1,
+                        step=0.05,
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),

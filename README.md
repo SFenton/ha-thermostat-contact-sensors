@@ -121,7 +121,8 @@ Predictive Comfort Mode is disabled by default. When enabled, it evaluates curre
 | **Forecast Lookahead** | 6 hours | How far ahead weather influences predictions |
 | **Trigger Margin** | 0.5°F | Prediction must exceed the comfort band by this amount before pre-heating/pre-cooling |
 | **Pre-Cool / Pre-Heat Offset** | 2°F / 1°F | How aggressively to move the target inside the comfort band |
-| **Outdoor Influence** | 0.15 | Weight applied to forecast heat/cold pressure |
+| **Outdoor Influence** | 0.10 | Weight applied to forecast heat/cold pressure |
+| **Forecast Trend Weight** | 0.75 | Extra weighting for the current-to-forecast warming trend so upcoming highs are less aggressive than immediate heat |
 | **Humidity Sensitivity** | 0.05 | Perceived heat added per humidity point above baseline |
 | **Fallback Activity Heat Gain** | 1°F | Heat gain per active entity before history learning has enough samples |
 | **Rain Cooling Adjustment** | 2°F | Cooling effect subtracted when precipitation is forecast |

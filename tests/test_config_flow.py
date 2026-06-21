@@ -16,9 +16,11 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_OPEN_TIMEOUT,
     CONF_PREDICTIVE_AUTO_ADJUST,
     CONF_PREDICTIVE_COMFORT_ENABLED,
+    CONF_PREDICTIVE_TREND_WEIGHT,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
     DEFAULT_OPEN_TIMEOUT,
+    DEFAULT_PREDICTIVE_TREND_WEIGHT,
     DOMAIN,
 )
 
@@ -175,6 +177,7 @@ async def test_config_flow_default_values(hass: HomeAssistant) -> None:
     assert result["options"][CONF_NOTIFY_SERVICE] == ""
     assert result["options"][CONF_PREDICTIVE_COMFORT_ENABLED] is False
     assert result["options"][CONF_PREDICTIVE_AUTO_ADJUST] is False
+    assert result["options"][CONF_PREDICTIVE_TREND_WEIGHT] == DEFAULT_PREDICTIVE_TREND_WEIGHT
 
     # Cleanup: unload the entry to stop timers
     await hass.config_entries.async_unload(result["result"].entry_id)

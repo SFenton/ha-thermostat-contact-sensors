@@ -66,6 +66,7 @@ from .const import (
     CONF_PREDICTIVE_RAIN_COOLING,
     CONF_PREDICTIVE_TEMPERATURE_SENSORS,
     CONF_PREDICTIVE_TRIGGER_MARGIN,
+    CONF_PREDICTIVE_TREND_WEIGHT,
     CONF_PREDICTIVE_WEATHER_ENTITY,
     CONF_GRACE_PERIOD_MINUTES,
     CONF_COOLING_BOOST_OFFSET,
@@ -127,6 +128,7 @@ from .const import (
     DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
     DEFAULT_PREDICTIVE_RAIN_COOLING,
     DEFAULT_PREDICTIVE_TRIGGER_MARGIN,
+    DEFAULT_PREDICTIVE_TREND_WEIGHT,
     DEFAULT_TEMPERATURE_DEADBAND,
     DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
     DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
@@ -1935,6 +1937,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             CONF_PREDICTIVE_OUTDOOR_INFLUENCE,
             DEFAULT_PREDICTIVE_OUTDOOR_INFLUENCE,
         )
+        trend_weight = self._option_float(
+            CONF_PREDICTIVE_TREND_WEIGHT,
+            DEFAULT_PREDICTIVE_TREND_WEIGHT,
+        )
         heat_pressure = 0.0
         cool_pressure = 0.0
         trend_pressure = 0.0
@@ -1946,7 +1952,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             trend_pressure = max(
                 0.0,
                 forecast_high - current_outdoor_temperature,
-            ) * outdoor_influence
+            ) * outdoor_influence * trend_weight
 
         predicted_temperature = (
             indoor_temperature
@@ -2011,6 +2017,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 f"Activity heat gain from {len(active_activity_entities)} active "
                 f"entity/entities: +{activity_effect:.1f}°F"
             )
+        if trend_pressure:
+            reasons.append(f"Outdoor warming trend effect: +{trend_pressure:.1f}°F")
 
         return {
             "mode": mode,
@@ -2032,6 +2040,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "humidity": self._round_optional(humidity),
             "humidity_effect": round(humidity_effect, 1),
             "activity_effect": round(activity_effect, 1),
+            "outdoor_influence": round(outdoor_influence, 2),
+            "trend_weight": round(trend_weight, 2),
+            "heat_pressure": round(heat_pressure, 1),
+            "cool_pressure": round(cool_pressure, 1),
+            "trend_pressure": round(trend_pressure, 1),
             "active_activity_entities": active_activity_entities,
             "learning": self.predictive_learning_result,
             "learned_activity_heat_gains": self._activity_heat_gains,

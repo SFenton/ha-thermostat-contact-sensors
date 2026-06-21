@@ -27,9 +27,11 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_PREDICTIVE_LEARNING_WINDOW_MINUTES,
     CONF_PREDICTIVE_MIN_LEARNING_SAMPLES,
     CONF_PREDICTIVE_TEMPERATURE_SENSORS,
+    CONF_PREDICTIVE_TREND_WEIGHT,
     CONF_PREDICTIVE_WEATHER_ENTITY,
     DOMAIN,
     PREDICTIVE_MODE_DISABLED,
+    PREDICTIVE_MODE_IDLE,
     PREDICTIVE_MODE_PRE_COOL,
 )
 from custom_components.thermostat_contact_sensors.coordinator import (
@@ -1295,6 +1297,54 @@ class TestPredictiveComfort:
         assert coordinator.predictive_result["forecast_high"] == 82.0
 
         await coordinator.async_shutdown()
+
+    async def test_predictive_trend_weight_dampens_far_ahead_heat(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test forecast trend weight reduces cavalier pre-cooling."""
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(
+            TEST_WEATHER,
+            "sunny",
+            {
+                "temperature": 65,
+                "forecast": [
+                    {
+                        "temperature": 82,
+                        "condition": "sunny",
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+
+        dampened_options = self.predictive_options()
+        dampened_options[CONF_PREDICTIVE_HUMIDITY_SENSORS] = []
+        dampened_options[CONF_PREDICTIVE_ACTIVITY_ENTITIES] = []
+        dampened_options[CONF_PREDICTIVE_TREND_WEIGHT] = 0.25
+        dampened = self.create_predictive_coordinator(hass, dampened_options)
+        eager = None
+
+        try:
+            await dampened.async_setup()
+
+            assert dampened.predictive_mode == PREDICTIVE_MODE_IDLE
+            assert dampened.predictive_result["trend_weight"] == 0.25
+            assert dampened.predictive_result["trend_pressure"] == 0.4
+
+            eager_options = dict(dampened_options)
+            eager_options[CONF_PREDICTIVE_TREND_WEIGHT] = 1.0
+            eager = self.create_predictive_coordinator(hass, eager_options)
+            await eager.async_setup()
+
+            assert eager.predictive_mode == PREDICTIVE_MODE_PRE_COOL
+            assert eager.predictive_result["trend_weight"] == 1.0
+            assert eager.predictive_result["trend_pressure"] == 1.7
+        finally:
+            await dampened.async_shutdown()
+            if eager is not None:
+                await eager.async_shutdown()
 
     async def test_predictive_comfort_resolves_global_weather_fallback(
         self,
