@@ -170,6 +170,7 @@
           "notify_message_resumed": "Resumed Notification Message",
           "notification_tag": "Notification Tag",
           "away_presence_entity": "Away Mode Presence Entity",
+          "vacation_mode_entity": "Vacation Mode Entity",
           "away_heat_temp_diff": "Away Heat Temperature Adjustment",
           "away_cool_temp_diff": "Away Cool Temperature Adjustment"
         },
@@ -195,6 +196,7 @@
           "notify_message_resumed": "Message when resumed. Available variables: {{ trigger_sensor_name }}, {{ close_timeout }}, {{ previous_mode }}, {{ thermostat_name }}",
           "notification_tag": "Tag for persistent/replaceable notifications (allows updates to same notification)",
           "away_presence_entity": "Select a person, group, or presence binary sensor. When the entity state is 'not_home', 'off', or 'false', away mode will activate and adjust temperatures.",
+          "vacation_mode_entity": "Select an input boolean, binary sensor, or switch that is on while vacation mode is active. Predictive Comfort automatic HVAC adjustments are skipped during vacation mode, even when away adjustments are allowed.",
           "away_heat_temp_diff": "Degrees to lower the heat target when away (negative value). For example, -3 means heat targets will be 3° lower when everyone is away.",
           "away_cool_temp_diff": "Degrees to raise the cool target when away (positive value). For example, 3 means cool targets will be 3° higher when everyone is away."
         }

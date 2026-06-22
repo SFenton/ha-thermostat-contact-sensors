@@ -30,6 +30,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
+    CONF_VACATION_MODE_ENTITY,
     DEFAULT_AWAY_COOL_TEMP_DIFF,
     DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
@@ -592,6 +593,10 @@ async def test_options_flow_away_mode_settings(
     assert result["step_id"] == "global_settings"
 
     # Update the settings with away mode configuration
+    vacation_entity = "input_boolean.vacation_mode"
+    hass.states.async_set(vacation_entity, "off", {"friendly_name": "Vacation Mode"})
+    await hass.async_block_till_done()
+
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
@@ -609,6 +614,7 @@ async def test_options_flow_away_mode_settings(
             CONF_NOTIFY_MESSAGE_RESUMED: DEFAULT_NOTIFY_MESSAGE_RESUMED,
             CONF_NOTIFICATION_TAG: DEFAULT_NOTIFICATION_TAG,
             CONF_AWAY_PRESENCE_ENTITY: "person.test_user",
+            CONF_VACATION_MODE_ENTITY: vacation_entity,
             CONF_AWAY_HEAT_TEMP_DIFF: -4.0,
             CONF_AWAY_COOL_TEMP_DIFF: 4.0,
         },
@@ -616,6 +622,7 @@ async def test_options_flow_away_mode_settings(
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_AWAY_PRESENCE_ENTITY] == "person.test_user"
+    assert result["data"][CONF_VACATION_MODE_ENTITY] == vacation_entity
     assert result["data"][CONF_AWAY_HEAT_TEMP_DIFF] == -4.0
     assert result["data"][CONF_AWAY_COOL_TEMP_DIFF] == 4.0
 

@@ -90,6 +90,7 @@ from .const import (
     CONF_VENT_DEBOUNCE_SECONDS,
     CONF_VENT_OPEN_DELAY_SECONDS,
     CONF_VENTS,
+    CONF_VACATION_MODE_ENTITY,
     DEFAULT_AWAY_COOL_TEMP_DIFF,
     DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
@@ -135,6 +136,7 @@ from .const import (
     DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
     DEFAULT_VENT_DEBOUNCE_SECONDS,
     DEFAULT_VENT_OPEN_DELAY_SECONDS,
+    DEFAULT_VACATION_MODE_ENTITY,
     DOMAIN,
     ECO_CRITICAL_ALL,
     ECO_CRITICAL_NONE,
@@ -174,6 +176,12 @@ ACTIVE_STATES = {
     "cool",
     "heat_cool",
     "auto",
+}
+VACATION_ACTIVE_STATES = {
+    STATE_ON,
+    "true",
+    "active",
+    "vacation",
 }
 RAINY_CONDITIONS = {
     "hail",
@@ -443,6 +451,29 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         return bool(self.away_presence_entity)
 
     @property
+    def vacation_mode_entity(self) -> str:
+        """Return the entity used to detect vacation mode."""
+        configured = self._options.get(CONF_VACATION_MODE_ENTITY, "")
+        if configured:
+            return configured
+        if self.hass.states.get(DEFAULT_VACATION_MODE_ENTITY):
+            return DEFAULT_VACATION_MODE_ENTITY
+        return ""
+
+    @property
+    def vacation_mode_active(self) -> bool:
+        """Return whether vacation mode is currently active."""
+        entity_id = self.vacation_mode_entity
+        if not entity_id:
+            return False
+
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False
+
+        return state.state.lower() in VACATION_ACTIVE_STATES
+
+    @property
     def predictive_comfort_enabled(self) -> bool:
         """Return whether predictive comfort evaluation is enabled."""
         return bool(
@@ -551,6 +582,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         if not self.predictive_auto_adjust:
             return {"eligible": False, "status": "auto_adjust_disabled"}
+
+        if self.vacation_mode_active:
+            return {"eligible": False, "status": "skipped_vacation_mode"}
 
         if self.away_mode_configured and self.is_away and not self.predictive_allow_away:
             return {"eligible": False, "status": "skipped_away_mode"}
@@ -1636,6 +1670,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         tracked_entities = set(self.predictive_temperature_sensors)
         tracked_entities.update(self.predictive_humidity_sensors)
         tracked_entities.update(self.predictive_activity_entities)
+        if vacation_entity := self.vacation_mode_entity:
+            tracked_entities.add(vacation_entity)
         if weather_entity := self._resolved_predictive_weather_entity():
             tracked_entities.add(weather_entity)
 
@@ -2084,6 +2120,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "allow_hvac_mode_change": self.predictive_allow_hvac_mode_change,
             "allow_away": self.predictive_allow_away,
             "away_mode_active": self.is_away,
+            "vacation_mode_active": self.vacation_mode_active,
+            "vacation_mode_entity": self.vacation_mode_entity,
             "comfort_low": round(comfort_low, 1),
             "comfort_high": round(comfort_high, 1),
             "indoor_temperature": round(indoor_temperature, 1),

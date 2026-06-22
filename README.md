@@ -107,7 +107,7 @@ After setup, access the integration options to configure:
 
 #### Predictive Comfort Mode
 
-Predictive Comfort Mode is disabled by default. When enabled, it evaluates current indoor temperature, configured comfort band, humidity, room heat-load entities, and weather forecast pressure to recommend `idle`, `pre_cool`, or `pre_heat`. It does not influence HVAC unless **Automatically Adjust Thermostat Setpoints** is also enabled. When automatic adjustment is enabled, Predictive Comfort contributes pre-heat/pre-cool demand to the main thermostat controller so normal cycle protection, room tracking, and vent coordination still decide how HVAC runs. Changing HVAC modes and applying adjustments while away are separate opt-in controls.
+Predictive Comfort Mode is disabled by default. When enabled, it evaluates current indoor temperature, configured comfort band, humidity, room heat-load entities, and weather forecast pressure to recommend `idle`, `pre_cool`, or `pre_heat`. It does not influence HVAC unless **Automatically Adjust Thermostat Setpoints** is also enabled. When automatic adjustment is enabled, Predictive Comfort contributes pre-heat/pre-cool demand to the main thermostat controller so normal cycle protection, room tracking, and vent coordination still decide how HVAC runs. Changing HVAC modes and applying adjustments while away are separate opt-in controls. If vacation mode is active, automatic Predictive Comfort HVAC control is skipped even when away adjustments are allowed.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -115,6 +115,7 @@ Predictive Comfort Mode is disabled by default. When enabled, it evaluates curre
 | **Automatically Adjust Thermostat Setpoints** | off | Allow Predictive Comfort recommendations to coordinate thermostat demand and proactive targets through the main controller |
 | **Allow HVAC Mode Changes** | off | Allow switching supported heat/cool modes before applying a proactive target |
 | **Enable Predictive Comfort While Away** | off | Allow automatic pre-heating/pre-cooling while Away Mode is active; recommendations are still calculated when off |
+| **Vacation Mode Entity** | `input_boolean.vacation_mode` if present | Entity whose active/on state blocks automatic Predictive Comfort HVAC adjustments |
 | **Global Weather Entity** | auto | Weather source shared by the house; blank falls back to another entry, `weather.pirate_weather`, `weather.forecast_home`, or the first weather entity |
 | **Global Temperature Sensors** | area sensors | Optional global indoor sensors; blank uses enabled area temperature sensors |
 | **Humidity Sensors** | none | Indoor humidity sensors used to add perceived heat pressure |
@@ -215,6 +216,7 @@ For each configuration, the integration creates:
   - `active_activity_entities`: Currently active heat-load entities
   - `learning`: History-learning status and learned gains
   - `target_temperature`, `target_hvac_mode`, and `adjustment_status`
+  - `away_mode_active`, `allow_away`, `vacation_mode_active`, and `vacation_mode_entity`
   - `coordinated_hvac_mode`, `coordinated_target_temperature`, `thermostat_control_action`, and `thermostat_control_reason` when automatic adjustment is coordinating with the main controller
 
 ### Switch: Respect User Off
@@ -277,7 +279,7 @@ Force recalculation of thermostat state and vent positions.
 2. The configured global weather entity supplies current conditions and forecast highs/lows within the lookahead window
 3. Humidity, active heat-load entities, outdoor forecast pressure, and rain cooling are combined into a predicted indoor temperature
 4. If the prediction exceeds the comfort band plus margin, the sensor recommends pre-cooling or pre-heating
-5. If automatic adjustment is enabled, contact sensors are closed, and the rate limit has elapsed, the thermostat setpoint is nudged proactively
+5. If automatic adjustment is enabled, vacation mode is inactive, contact sensors are closed, and the rate limit has elapsed, the thermostat setpoint is nudged proactively
 6. Recorder history periodically learns whether room-specific heat-load entities cause meaningful temperature swings and uses learned gains instead of the fallback
 
 ## Multiple Thermostats

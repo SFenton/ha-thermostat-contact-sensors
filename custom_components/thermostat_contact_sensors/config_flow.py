@@ -79,6 +79,7 @@ from .const import (
     CONF_THERMOSTAT,
     CONF_UNOCCUPIED_COOLING_THRESHOLD,
     CONF_UNOCCUPIED_HEATING_THRESHOLD,
+    CONF_VACATION_MODE_ENTITY,
     CONF_VENT_DEBOUNCE_SECONDS,
     CONF_VENT_OPEN_DELAY_SECONDS,
     CONF_VENTS,
@@ -125,6 +126,7 @@ from .const import (
     DEFAULT_TEMPERATURE_DEADBAND,
     DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
     DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
+    DEFAULT_VACATION_MODE_ENTITY,
     DEFAULT_VENT_DEBOUNCE_SECONDS,
     DEFAULT_VENT_OPEN_DELAY_SECONDS,
     DOMAIN,
@@ -781,6 +783,8 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
             # Remove empty entity values that entity selectors can't handle
             if CONF_AWAY_PRESENCE_ENTITY in user_input and not user_input[CONF_AWAY_PRESENCE_ENTITY]:
                 del user_input[CONF_AWAY_PRESENCE_ENTITY]
+            if CONF_VACATION_MODE_ENTITY in user_input and not user_input[CONF_VACATION_MODE_ENTITY]:
+                del user_input[CONF_VACATION_MODE_ENTITY]
             # Merge with existing options
             new_options = {**self.config_entry.options, **user_input}
             # If away presence entity was cleared, make sure to remove it from options
@@ -1047,6 +1051,14 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                     )
                 ),
                 vol.Optional(
+                    CONF_VACATION_MODE_ENTITY,
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["input_boolean", "binary_sensor", "switch"],
+                        multiple=False,
+                    )
+                ),
+                vol.Optional(
                     CONF_AWAY_HEAT_TEMP_DIFF,
                     default=options.get(
                         CONF_AWAY_HEAT_TEMP_DIFF, DEFAULT_AWAY_HEAT_TEMP_DIFF
@@ -1081,6 +1093,12 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
         suggested_values = {}
         if options.get(CONF_AWAY_PRESENCE_ENTITY):
             suggested_values[CONF_AWAY_PRESENCE_ENTITY] = options[CONF_AWAY_PRESENCE_ENTITY]
+        if options.get(CONF_VACATION_MODE_ENTITY):
+            suggested_values[CONF_VACATION_MODE_ENTITY] = options[
+                CONF_VACATION_MODE_ENTITY
+            ]
+        elif self.hass.states.get(DEFAULT_VACATION_MODE_ENTITY):
+            suggested_values[CONF_VACATION_MODE_ENTITY] = DEFAULT_VACATION_MODE_ENTITY
         
         if suggested_values:
             data_schema = self.add_suggested_values_to_schema(data_schema, suggested_values)

@@ -29,6 +29,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_PREDICTIVE_TEMPERATURE_SENSORS,
     CONF_PREDICTIVE_TREND_WEIGHT,
     CONF_PREDICTIVE_WEATHER_ENTITY,
+    CONF_VACATION_MODE_ENTITY,
     DOMAIN,
     PREDICTIVE_MODE_DISABLED,
     PREDICTIVE_MODE_IDLE,
@@ -1510,6 +1511,49 @@ class TestPredictiveComfort:
         assert coordinator.predictive_result["away_mode_active"] is True
         assert coordinator.predictive_result["allow_away"] is True
         assert coordinator.predictive_result["adjustment_status"] == "coordinated"
+
+        await coordinator.async_shutdown()
+
+    async def test_predictive_comfort_skips_auto_adjust_during_vacation(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test vacation mode blocks predictive auto adjustment while away is allowed."""
+        vacation_entity = "input_boolean.vacation_mode"
+        away_entity = "person.test_user"
+        hass.states.async_set(vacation_entity, STATE_ON)
+        hass.states.async_set(away_entity, "not_home")
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_AUTO_ADJUST] = True
+        options[CONF_PREDICTIVE_ALLOW_AWAY] = True
+        options[CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE] = True
+        options[CONF_AWAY_PRESENCE_ENTITY] = away_entity
+        options[CONF_VACATION_MODE_ENTITY] = vacation_entity
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        await coordinator.async_setup()
+        await hass.async_block_till_done()
+
+        thermostat_state = hass.states.get(TEST_THERMOSTAT)
+        assert thermostat_state.attributes["temperature"] == 22
+        assert coordinator.is_away is True
+        assert coordinator.vacation_mode_active is True
+        assert coordinator.predictive_result["mode"] == PREDICTIVE_MODE_PRE_COOL
+        assert coordinator.predictive_result["allow_away"] is True
+        assert coordinator.predictive_result["vacation_mode_active"] is True
+        assert (
+            coordinator.predictive_result["vacation_mode_entity"] == vacation_entity
+        )
+        assert (
+            coordinator.predictive_result["adjustment_status"]
+            == "skipped_vacation_mode"
+        )
 
         await coordinator.async_shutdown()
 

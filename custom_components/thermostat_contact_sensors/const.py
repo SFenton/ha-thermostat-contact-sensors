@@ -97,6 +97,7 @@ CONF_TRACKED_ROOMS = "tracked_rooms"  # Set of area_ids that are being tracked
 CONF_AWAY_PRESENCE_ENTITY = "away_presence_entity"
 CONF_AWAY_HEAT_TEMP_DIFF = "away_heat_temp_diff"
 CONF_AWAY_COOL_TEMP_DIFF = "away_cool_temp_diff"
+CONF_VACATION_MODE_ENTITY = "vacation_mode_entity"
 
 # Defaults
 DEFAULT_OPEN_TIMEOUT = 5  # minutes
@@ -115,6 +116,7 @@ DEFAULT_VENT_OPEN_DELAY_SECONDS = 30  # seconds after occupancy before vents ope
 DEFAULT_VENT_DEBOUNCE_SECONDS = 30  # seconds between vent state changes
 DEFAULT_AWAY_HEAT_TEMP_DIFF = -3.0  # degrees to lower heat target when away
 DEFAULT_AWAY_COOL_TEMP_DIFF = 3.0  # degrees to raise cool target when away
+DEFAULT_VACATION_MODE_ENTITY = "input_boolean.vacation_mode"
 DEFAULT_NOTIFY_TITLE_PAUSED = "Thermostat · Paused"
 DEFAULT_NOTIFY_MESSAGE_PAUSED = (
     "{{ trigger_sensor_name }} has been open for {{ open_timeout }} minutes. "
