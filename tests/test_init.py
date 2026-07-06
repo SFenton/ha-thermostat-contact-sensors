@@ -15,6 +15,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_BINARY_SENSORS,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_MAX_CLOSED_VENTS,
     CONF_NOTIFICATION_TAG,
     CONF_NOTIFY_MESSAGE_PAUSED,
     CONF_NOTIFY_MESSAGE_RESUMED,
@@ -25,6 +26,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_SENSORS,
     CONF_TEMPERATURE_SENSORS,
     CONF_THERMOSTAT,
+    DEFAULT_MAX_CLOSED_VENTS,
     DOMAIN,
 )
 
@@ -572,7 +574,41 @@ async def test_migrate_entry_moves_options_areas_and_drops_hidden_area_min_vents
     migrated_area = config_entry.data[CONF_AREAS]["living_room"]
     assert CONF_AREA_MIN_VENTS_OPEN not in migrated_area
     assert CONF_AREAS not in config_entry.options
-    assert config_entry.version == 3
+    assert config_entry.options[CONF_MAX_CLOSED_VENTS] == DEFAULT_MAX_CLOSED_VENTS
+    assert config_entry.version == 4
+
+
+async def test_migrate_entry_backfills_max_closed_vents_for_version_3_entries(
+    hass: HomeAssistant,
+) -> None:
+    """Test migration backfills max_closed_vents on already-v3 entries."""
+    from custom_components.thermostat_contact_sensors import async_migrate_entry
+
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Version 3 Thermostat",
+        version=3,
+        data={
+            "name": "Version 3 Thermostat",
+            CONF_THERMOSTAT: TEST_THERMOSTAT,
+            CONF_AREAS: {
+                "living_room": {
+                    CONF_AREA_ID: "living_room",
+                    CONF_AREA_ENABLED: True,
+                    CONF_CONTACT_SENSORS: [TEST_SENSOR_1],
+                    CONF_BINARY_SENSORS: [],
+                    CONF_TEMPERATURE_SENSORS: [],
+                },
+            },
+        },
+        options={CONF_OPEN_TIMEOUT: 5},
+    )
+    config_entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, config_entry) is True
+
+    assert config_entry.options[CONF_MAX_CLOSED_VENTS] == DEFAULT_MAX_CLOSED_VENTS
+    assert config_entry.version == 4
 
 
 async def test_service_with_invalid_entry_id(
@@ -675,4 +711,3 @@ async def test_cleanup_disabled_area_entities(
     assert disabled_entity is None
 
     await hass.config_entries.async_unload(config_entry.entry_id)
-

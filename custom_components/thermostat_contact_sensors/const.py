@@ -66,6 +66,7 @@ CONF_COOLING_BOOST_OFFSET = "cooling_boost_offset"
 
 # Vent control configuration keys (global)
 CONF_MIN_VENTS_OPEN = "min_vents_open"
+CONF_MAX_CLOSED_VENTS = "max_closed_vents"
 CONF_VENT_OPEN_DELAY_SECONDS = "vent_open_delay_seconds"
 CONF_VENT_DEBOUNCE_SECONDS = "vent_debounce_seconds"
 
@@ -112,6 +113,7 @@ DEFAULT_UNOCCUPIED_COOLING_THRESHOLD = 3.0  # degrees above cool target
 DEFAULT_HEATING_BOOST_OFFSET = 0.0  # degrees to boost heat setpoint
 DEFAULT_COOLING_BOOST_OFFSET = 0.0  # degrees to boost cool setpoint
 DEFAULT_MIN_VENTS_OPEN = 5  # minimum number of vents that must remain open
+DEFAULT_MAX_CLOSED_VENTS = 3  # maximum number of physical vents allowed closed
 DEFAULT_VENT_OPEN_DELAY_SECONDS = 30  # seconds after occupancy before vents open
 DEFAULT_VENT_DEBOUNCE_SECONDS = 30  # seconds between vent state changes
 DEFAULT_AWAY_HEAT_TEMP_DIFF = -3.0  # degrees to lower heat target when away

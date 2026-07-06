@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from .thermostat_control import RoomTemperatureState
 
 _LOGGER = logging.getLogger(__name__)
+IGNORED_ROOM_PRIORITY_PENALTY = 6000.0
 
 # Service names for tilt control
 SERVICE_OPEN_COVER_TILT = "open_cover_tilt"
@@ -72,6 +73,11 @@ class VentControlState:
     total_vents: int = 0
     open_vents: int = 0
     vents_should_be_open: int = 0
+    closed_vents: int = 0
+    ignored_closed_vents: int = 0
+    effective_min_vents_open: int = 0
+    max_closed_vents: int | None = None
+    safety_budget_exceeded: bool = False
     area_states: dict[str, AreaVentState] = field(default_factory=dict)
     pending_commands: list[tuple[str, bool, str]] = field(
         default_factory=list
@@ -233,6 +239,7 @@ class VentController:
         self,
         hass: HomeAssistant,
         min_vents_open: int = 5,
+        max_closed_vents: int | None = 3,
         vent_open_delay_seconds: int = 30,
         vent_debounce_seconds: int = 30,
     ) -> None:
@@ -241,11 +248,13 @@ class VentController:
         Args:
             hass: Home Assistant instance.
             min_vents_open: Minimum number of vents that must remain open.
+            max_closed_vents: Maximum number of physical vents that may be closed.
             vent_open_delay_seconds: Seconds after occupancy before vents open.
             vent_debounce_seconds: Minimum time between vent state changes.
         """
         self.hass = hass
-        self._min_vents_open = min_vents_open
+        self._min_vents_open = self._normalize_vent_count(min_vents_open)
+        self._max_closed_vents = self._normalize_optional_vent_count(max_closed_vents)
         self._vent_open_delay_seconds = vent_open_delay_seconds
         self._vent_debounce_seconds = vent_debounce_seconds
 
@@ -259,6 +268,22 @@ class VentController:
         # Track vent states
         self._vent_states: dict[str, VentState] = {}
 
+    @staticmethod
+    def _normalize_vent_count(value: Any, default: int = 0) -> int:
+        """Return a non-negative integer vent count."""
+        try:
+            normalized = int(round(float(value)))
+        except (TypeError, ValueError):
+            normalized = default
+        return max(0, normalized)
+
+    @classmethod
+    def _normalize_optional_vent_count(cls, value: Any) -> int | None:
+        """Return an optional non-negative integer vent count."""
+        if value is None:
+            return None
+        return cls._normalize_vent_count(value)
+
     @property
     def min_vents_open(self) -> int:
         """Return minimum vents that must remain open."""
@@ -267,7 +292,64 @@ class VentController:
     @min_vents_open.setter
     def min_vents_open(self, value: int) -> None:
         """Set minimum vents that must remain open."""
-        self._min_vents_open = value
+        self._min_vents_open = self._normalize_vent_count(value)
+
+    @property
+    def max_closed_vents(self) -> int | None:
+        """Return maximum vents that may be closed."""
+        return self._max_closed_vents
+
+    @max_closed_vents.setter
+    def max_closed_vents(self, value: int | None) -> None:
+        """Set maximum vents that may be closed."""
+        self._max_closed_vents = self._normalize_optional_vent_count(value)
+
+    def effective_min_vents_open(self, total_vents: int) -> int:
+        """Return the effective open-vent minimum for the current total."""
+        total_vents = self._normalize_vent_count(total_vents)
+        min_required = self._min_vents_open
+        if self._max_closed_vents is not None:
+            min_required = max(min_required, total_vents - self._max_closed_vents)
+        return min(total_vents, max(0, min_required))
+
+    @classmethod
+    def two_thirds_min_vents_open(cls, total_vents: int) -> int:
+        """Return the conservative two-thirds open smart-vent recommendation."""
+        total_vents = cls._normalize_vent_count(total_vents)
+        return min(total_vents, (total_vents * 2 + 2) // 3)
+
+    def max_closed_min_vents_open(self, total_vents: int) -> int | None:
+        """Return the minimum implied by max_closed_vents, if configured."""
+        total_vents = self._normalize_vent_count(total_vents)
+        if self._max_closed_vents is None:
+            return None
+        return min(total_vents, max(0, total_vents - self._max_closed_vents))
+
+    def get_safety_warnings(self, control_state: VentControlState) -> list[str]:
+        """Return live vent safety warnings for diagnostics."""
+        warnings: list[str] = []
+        total_vents = self._normalize_vent_count(control_state.total_vents)
+        if total_vents <= 0:
+            return warnings
+
+        max_closed_min = self.max_closed_min_vents_open(total_vents)
+        if (
+            max_closed_min is not None
+            and control_state.open_vents < max_closed_min
+        ):
+            warnings.append(
+                f"Only {control_state.open_vents} of {total_vents} physical vents are open; "
+                f"max_closed_vents={self._max_closed_vents} requires at least {max_closed_min} open."
+            )
+
+        two_thirds_min = self.two_thirds_min_vents_open(total_vents)
+        if control_state.open_vents < two_thirds_min:
+            warnings.append(
+                f"Only {control_state.open_vents} of {total_vents} physical vents are open; "
+                f"two-thirds smart-vent guidance recommends at least {two_thirds_min} open."
+            )
+
+        return warnings
 
     @property
     def vent_open_delay_seconds(self) -> int:
@@ -531,7 +613,8 @@ class VentController:
             only_track_selected_rooms: Whether TSR is enabled.
             tracked_area_ids: Set of tracked room area_ids (when TSR enabled).
             force_track_when_critical_area_ids: Set of rooms with FTCR enabled.
-            excluded_area_ids: Rooms excluded from minimum-vent selection.
+            excluded_area_ids: Rooms that should close first unless the safety
+                budget requires them to stay open.
 
         Returns:
             List of (area_id, vent_entity_id, member_count, priority_score).
@@ -560,12 +643,13 @@ class VentController:
                 )
 
         for area_id, area_state in area_states.items():
-            if area_id in excluded_area_ids:
-                continue
+            is_excluded = area_id in excluded_area_ids
 
             for vent in area_state.vents:
                 priority_score = 0.0
-                priority_score: float = 0.0
+
+                if is_excluded:
+                    priority_score -= IGNORED_ROOM_PRIORITY_PENALTY
 
                 # Critical-tracking priority. When Eco+TSR is on, we want critical tracked
                 # and FTCR rooms to win, then critical untracked, then everything else.
@@ -625,6 +709,87 @@ class VentController:
         # Sort by priority score descending
         priority_list.sort(key=lambda x: x[3], reverse=True)
         return priority_list
+
+    def _apply_closed_vent_budget(
+        self,
+        *,
+        control_state: VentControlState,
+        priority_list: list[tuple[str, str, int, float]],
+        unresponsive_vents: set[str],
+        excluded_area_ids: set[str],
+    ) -> None:
+        """Apply the global closed-vent safety budget to all non-forced vents."""
+        effective_min = self.effective_min_vents_open(control_state.total_vents)
+        control_state.max_closed_vents = self._max_closed_vents
+        control_state.effective_min_vents_open = effective_min
+
+        if control_state.total_vents <= 0:
+            return
+
+        allowed_closed_vents = max(control_state.total_vents - effective_min, 0)
+        priority_by_entity = {
+            vent_entity_id: priority_score
+            for _, vent_entity_id, _, priority_score in priority_list
+        }
+
+        forced_open: set[str] = set()
+        selected_closed: set[str] = set()
+        candidates: list[tuple[float, int, int, str, str, VentState]] = []
+        closed_used = 0
+
+        for area_id, area_state in control_state.area_states.items():
+            for vent in area_state.vents:
+                if vent.should_be_open:
+                    forced_open.add(vent.entity_id)
+                    continue
+
+                if vent.entity_id in unresponsive_vents:
+                    selected_closed.add(vent.entity_id)
+                    closed_used += vent.member_count
+                    continue
+
+                is_excluded = area_id in excluded_area_ids
+                priority_score = priority_by_entity.get(vent.entity_id, 0.0)
+                candidates.append(
+                    (
+                        priority_score,
+                        0 if is_excluded else 1,
+                        vent.member_count,
+                        area_id,
+                        vent.entity_id,
+                        vent,
+                    )
+                )
+
+        candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4]))
+
+        for _, _, member_count, _, vent_entity_id, _ in candidates:
+            if closed_used + member_count > allowed_closed_vents:
+                continue
+            selected_closed.add(vent_entity_id)
+            closed_used += member_count
+
+        closed_budget_minimum = (
+            control_state.total_vents - self._max_closed_vents
+            if self._max_closed_vents is not None
+            else None
+        )
+        safety_reason = (
+            f"Closed vent budget (max {self._max_closed_vents} closed)"
+            if (
+                closed_budget_minimum is not None
+                and closed_budget_minimum > self._min_vents_open
+            )
+            else f"Minimum vents (need {effective_min})"
+        )
+        for area_state in control_state.area_states.values():
+            for vent in area_state.vents:
+                if vent.entity_id in forced_open:
+                    continue
+                if vent.entity_id in selected_closed:
+                    continue
+                vent.should_be_open = True
+                vent.open_reason = safety_reason
 
     def evaluate_all_vents(
         self,
@@ -712,8 +877,9 @@ class VentController:
             if area_delay and occupancy_start_time is not None:
                 vent_open_delay_elapsed = (now - occupancy_start_time).total_seconds() >= area_delay
 
-            # Get temperature state for this area
-            temp_state = None if is_excluded else room_temp_states.get(area_id)
+            # Get temperature state for this area. Ignored rooms still keep their
+            # temperature data for closure-safety ranking, but cannot force open.
+            temp_state = room_temp_states.get(area_id)
             is_satiated = temp_state.is_satiated if temp_state else False
             is_critical = temp_state.is_critical if temp_state else False
             distance_from_target = None
@@ -805,80 +971,40 @@ class VentController:
             control_state.total_vents += area_state.total_vent_count
             control_state.open_vents += area_state.open_vent_count
 
-        # Now apply minimum vents open logic
-        # First count how many vents should be open based on rules (active/critical rooms)
-        vents_needed_by_rules = 0
-        vents_marked_for_closure: list[VentState] = []
-
-        for area_state in control_state.area_states.values():
-            for vent in area_state.vents:
-                if vent.should_be_open:
-                    # Don't count unresponsive vents toward the target
-                    if vent.entity_id not in unresponsive_vents:
-                        vents_needed_by_rules += vent.member_count
-                else:
-                    vents_marked_for_closure.append(vent)
-
-        # If we need to enforce minimum vents, intelligently select which vents to keep open
-        if vents_needed_by_rules < self._min_vents_open:
-            # Get priority list for ALL vents (to potentially reorder which are open)
-            priority_list = self.calculate_minimum_vents_priority(
-                control_state.area_states,
-                hvac_mode=effective_mode,
-                room_temp_states=room_temp_states,
-                target_temp_low=target_temp_low,
-                target_temp_high=target_temp_high,
-                eco_mode=eco_mode,
-                only_track_selected_rooms=only_track_selected_rooms,
-                tracked_area_ids=tracked_area_ids,
-                force_track_when_critical_area_ids=force_track_when_critical_area_ids,
-                excluded_area_ids=excluded_area_ids,
-            )
-
-            # Select the best vents to reach minimum count
-            # Priority list is sorted by priority score (higher = better to keep open)
-            # Skip unresponsive vents and select alternates
-            vents_to_keep_for_minimum: set[str] = set()
-            needed = self._min_vents_open - vents_needed_by_rules
-
-            for area_id, vent_entity_id, member_count, priority_score in priority_list:
-                if needed <= 0:
-                    break
-                
-                # Skip unresponsive vents
-                if vent_entity_id in unresponsive_vents:
-                    _LOGGER.debug(
-                        "Skipping unresponsive vent %s for minimum enforcement, selecting next best",
-                        vent_entity_id
-                    )
-                    continue
-                
-                # Find this vent - it might already be marked should_be_open
-                area_state = control_state.area_states.get(area_id)
-                if area_state:
-                    for vent in area_state.vents:
-                        if vent.entity_id == vent_entity_id:
-                            # Only count vents not already needed by rules
-                            if not vent.should_be_open:
-                                vents_to_keep_for_minimum.add(vent_entity_id)
-                                needed -= member_count
-                            break
-
-            # Now apply the minimum vent selections
-            for area_state in control_state.area_states.values():
-                for vent in area_state.vents:
-                    if vent.entity_id in vents_to_keep_for_minimum:
-                        vent.should_be_open = True
-                        vent.open_reason = f"Minimum vents (need {self._min_vents_open})"
-                    # Vents not selected for minimum that are currently open will be closed
-                    # (unless they were already marked should_be_open by rules)
+        priority_list = self.calculate_minimum_vents_priority(
+            control_state.area_states,
+            hvac_mode=effective_mode,
+            room_temp_states=room_temp_states,
+            target_temp_low=target_temp_low,
+            target_temp_high=target_temp_high,
+            eco_mode=eco_mode,
+            only_track_selected_rooms=only_track_selected_rooms,
+            tracked_area_ids=tracked_area_ids,
+            force_track_when_critical_area_ids=force_track_when_critical_area_ids,
+            excluded_area_ids=excluded_area_ids,
+        )
+        self._apply_closed_vent_budget(
+            control_state=control_state,
+            priority_list=priority_list,
+            unresponsive_vents=unresponsive_vents,
+            excluded_area_ids=excluded_area_ids,
+        )
 
         # Calculate final count
         control_state.vents_should_be_open = 0
+        control_state.closed_vents = 0
+        control_state.ignored_closed_vents = 0
         for area_state in control_state.area_states.values():
             for vent in area_state.vents:
                 if vent.should_be_open:
                     control_state.vents_should_be_open += vent.member_count
+                else:
+                    control_state.closed_vents += vent.member_count
+                    if area_state.area_id in excluded_area_ids:
+                        control_state.ignored_closed_vents += vent.member_count
+        control_state.safety_budget_exceeded = (
+            control_state.vents_should_be_open < control_state.effective_min_vents_open
+        )
 
         # Generate pending commands
         for area_state in control_state.area_states.values():
@@ -1038,7 +1164,19 @@ class VentController:
             "total_vents": control_state.total_vents,
             "open_vents": control_state.open_vents,
             "vents_should_be_open": control_state.vents_should_be_open,
+            "closed_vents": control_state.closed_vents,
+            "ignored_closed_vents": control_state.ignored_closed_vents,
             "min_vents_required": self._min_vents_open,
+            "effective_min_vents_open": control_state.effective_min_vents_open,
+            "max_closed_min_vents_open": self.max_closed_min_vents_open(
+                control_state.total_vents
+            ),
+            "two_thirds_min_vents_open": self.two_thirds_min_vents_open(
+                control_state.total_vents
+            ),
+            "max_closed_vents": control_state.max_closed_vents,
+            "safety_budget_exceeded": control_state.safety_budget_exceeded,
+            "safety_warnings": self.get_safety_warnings(control_state),
             "pending_commands": len(control_state.pending_commands),
             "areas": areas_summary,
         }

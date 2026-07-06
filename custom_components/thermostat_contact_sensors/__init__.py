@@ -16,15 +16,13 @@ except ImportError:
 
 from .const import (
     CONF_AREA_ENABLED,
-    CONF_AREA_ID,
     CONF_AREA_MIN_VENTS_OPEN,
     CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
     CONF_AREAS,
-    CONF_BINARY_SENSORS,
     CONF_CONTACT_SENSORS,
-    CONF_SENSORS,
-    CONF_TEMPERATURE_SENSORS,
+    CONF_MAX_CLOSED_VENTS,
     CONF_THERMOSTAT,
+    DEFAULT_MAX_CLOSED_VENTS,
     DOMAIN,
     PLATFORMS,
 )
@@ -78,12 +76,16 @@ async def async_migrate_entry(
             migrated_areas[area_id] = migrated_area
         data[CONF_AREAS] = migrated_areas
 
-    if changed or entry.version < 3:
+    if CONF_MAX_CLOSED_VENTS not in options:
+        options[CONF_MAX_CLOSED_VENTS] = DEFAULT_MAX_CLOSED_VENTS
+        changed = True
+
+    if changed or entry.version < 4:
         hass.config_entries.async_update_entry(
             entry,
             data=data,
             options=options,
-            version=3,
+            version=4,
         )
 
     return True

@@ -34,6 +34,7 @@ from .const import (
     CONF_COOLING_BOOST_OFFSET,
     CONF_GRACE_PERIOD_MINUTES,
     CONF_HEATING_BOOST_OFFSET,
+    CONF_MAX_CLOSED_VENTS,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
@@ -89,6 +90,7 @@ from .const import (
     DEFAULT_COOLING_BOOST_OFFSET,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_HEATING_BOOST_OFFSET,
+    DEFAULT_MAX_CLOSED_VENTS,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
@@ -271,7 +273,7 @@ class ThermostatContactSensorsConfigFlow(
 ):
     """Handle a config flow for Thermostat Contact Sensors."""
 
-    VERSION = 3
+    VERSION = 4
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -318,6 +320,7 @@ class ThermostatContactSensorsConfigFlow(
                         CONF_NOTIFICATION_TAG: user_input.get(
                             CONF_NOTIFICATION_TAG, DEFAULT_NOTIFICATION_TAG
                         ),
+                        CONF_MAX_CLOSED_VENTS: DEFAULT_MAX_CLOSED_VENTS,
                     }
                 )
 
@@ -1005,6 +1008,19 @@ class ThermostatContactSensorsOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_MIN_VENTS_OPEN,
                     default=options.get(CONF_MIN_VENTS_OPEN, DEFAULT_MIN_VENTS_OPEN),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=20,
+                        step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_MAX_CLOSED_VENTS,
+                    default=options.get(
+                        CONF_MAX_CLOSED_VENTS, DEFAULT_MAX_CLOSED_VENTS
+                    ),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0,

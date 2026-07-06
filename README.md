@@ -30,6 +30,7 @@ A comprehensive Home Assistant custom integration that provides intelligent HVAC
 ### Smart Vent Control
 - **Automatic vent management**: Controls cover entities (vents) based on occupancy and temperature
 - **Minimum vents open**: Safety feature to prevent HVAC back-pressure by keeping a minimum number of vents open
+- **Maximum closed vents**: Safety budget that limits how many physical vents can be closed at once
 - **Priority-based selection**: Critical rooms > Active rooms > Occupied rooms > Rooms furthest from target
 - **Per-area delays**: Configure custom vent open delays for specific areas
 - **Debounce protection**: Prevents rapid open/close cycling of vents
@@ -97,6 +98,7 @@ After setup, access the integration options to configure:
 | **Unoccupied Heating Threshold** | 3.0° | Degrees below heat target that triggers heating in unoccupied rooms |
 | **Unoccupied Cooling Threshold** | 3.0° | Degrees above cool target that triggers cooling in unoccupied rooms |
 | **Minimum Vents Open** | 5 | Minimum number of vents that must remain open to prevent HVAC back-pressure |
+| **Maximum Closed Vents** | 3 | Maximum number of physical vents that may be closed at the same time; vent groups count by member vents |
 | **Vent Open Delay** | 30 sec | Seconds after occupancy before vents open (prevents false triggers) |
 | **Vent Debounce Time** | 30 sec | Minimum time between vent state changes |
 

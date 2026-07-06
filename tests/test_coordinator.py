@@ -566,6 +566,73 @@ class TestVentOnlyTemperatureSensors:
         assert merged["kitchen"].determining_sensor == kitchen_temp_2
         assert merged["kitchen"].determining_temperature == 65.0
 
+    async def test_track_only_rooms_still_feed_vent_safety_ranking(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ) -> None:
+        """Track-only rooms are ignored for thermostat demand but ranked for vent safety."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
+            CONF_TEMPERATURE_SENSORS,
+            CONF_VENTS,
+        )
+        from custom_components.thermostat_contact_sensors.thermostat_control import ThermostatState
+
+        guest_bath_temp = "sensor.guest_bath_temp"
+        guest_bath_vent = "cover.guest_bath_vent"
+        hass.states.async_set(guest_bath_temp, "84.0", {"unit_of_measurement": "°F"})
+        hass.states.async_set(guest_bath_vent, "closed", {"current_tilt_position": 0})
+        await hass.async_block_till_done()
+
+        areas_config = {
+            "guest_bathroom": {
+                CONF_AREA_ID: "guest_bathroom",
+                CONF_AREA_ENABLED: True,
+                CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED: True,
+                CONF_TEMPERATURE_SENSORS: [guest_bath_temp],
+                CONF_VENTS: [guest_bath_vent],
+            }
+        }
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry_ignored_vent_safety_temps",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config=areas_config,
+        )
+        coordinator.area_thermostats = {"guest_bathroom": object()}
+        coordinator.thermostat_controller.unoccupied_cooling_threshold = 2.0
+        coordinator.thermostat_controller.get_area_target_temperatures = MagicMock(
+            return_value=(75.0, 68.0, 75.0)
+        )
+
+        await coordinator.async_setup()
+
+        coordinator._last_thermostat_state = ThermostatState(
+            thermostat_entity_id=TEST_THERMOSTAT,
+            hvac_mode=HVACMode.COOL,
+            target_temperature=75.0,
+            target_temp_low=68.0,
+            target_temp_high=75.0,
+            room_states={},
+        )
+
+        merged = coordinator._get_room_temp_states_for_vent_control()
+
+        assert "guest_bathroom" in merged
+        assert merged["guest_bathroom"].determining_temperature == 84.0
+        assert merged["guest_bathroom"].target_temperature == 75.0
+        assert merged["guest_bathroom"].is_critical is True
+        coordinator.thermostat_controller.get_area_target_temperatures.assert_called_with(
+            "guest_bathroom",
+            hvac_mode_override=HVACMode.COOL,
+        )
+
     async def test_thermostat_stores_previous_mode(
         self,
         hass: HomeAssistant,

@@ -13,6 +13,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
+    CONF_MAX_CLOSED_VENTS,
     CONF_NOTIFY_SERVICE,
     CONF_OPEN_TIMEOUT,
     CONF_PREDICTIVE_AUTO_ADJUST,
@@ -20,6 +21,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_PREDICTIVE_TREND_WEIGHT,
     CONF_THERMOSTAT,
     DEFAULT_CLOSE_TIMEOUT,
+    DEFAULT_MAX_CLOSED_VENTS,
     DEFAULT_OPEN_TIMEOUT,
     DEFAULT_PREDICTIVE_TREND_WEIGHT,
     DOMAIN,
@@ -175,6 +177,7 @@ async def test_config_flow_default_values(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["options"][CONF_OPEN_TIMEOUT] == DEFAULT_OPEN_TIMEOUT
     assert result["options"][CONF_CLOSE_TIMEOUT] == DEFAULT_CLOSE_TIMEOUT
+    assert result["options"][CONF_MAX_CLOSED_VENTS] == DEFAULT_MAX_CLOSED_VENTS
     assert result["options"][CONF_NOTIFY_SERVICE] == ""
     assert result["options"][CONF_PREDICTIVE_COMFORT_ENABLED] is False
     assert result["options"][CONF_PREDICTIVE_AUTO_ADJUST] is False

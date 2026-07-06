@@ -72,6 +72,7 @@ from .const import (
     CONF_GRACE_PERIOD_MINUTES,
     CONF_COOLING_BOOST_OFFSET,
     CONF_HEATING_BOOST_OFFSET,
+    CONF_MAX_CLOSED_VENTS,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
@@ -98,6 +99,7 @@ from .const import (
     DEFAULT_ECO_MODE_CRITICAL_TRACKING,
     DEFAULT_GRACE_PERIOD_MINUTES,
     DEFAULT_HEATING_BOOST_OFFSET,
+    DEFAULT_MAX_CLOSED_VENTS,
     DEFAULT_MIN_CYCLE_OFF_MINUTES,
     DEFAULT_MIN_CYCLE_ON_MINUTES,
     DEFAULT_MIN_OCCUPANCY_MINUTES,
@@ -205,6 +207,7 @@ class VentOnlyRoomTemperatureState:
     determining_sensor: str | None = None
     is_satiated: bool = False
     is_critical: bool = False
+    critical_reason: str | None = None
     target_temperature: float | None = None
 
 
@@ -342,6 +345,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             hass=hass,
             min_vents_open=self._options.get(
                 CONF_MIN_VENTS_OPEN, DEFAULT_MIN_VENTS_OPEN
+            ),
+            max_closed_vents=self._options.get(
+                CONF_MAX_CLOSED_VENTS, DEFAULT_MAX_CLOSED_VENTS
             ),
             vent_open_delay_seconds=self._options.get(
                 CONF_VENT_OPEN_DELAY_SECONDS, DEFAULT_VENT_OPEN_DELAY_SECONDS
@@ -929,8 +935,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         This is intentionally independent of TSR and thermostat decision-making.
         It reads the configured per-area temperature sensors directly from HA
-        so *inactive/untracked* rooms can still influence vent prioritization,
-        unless the room is configured to track only while occupied.
+        so *inactive/untracked* rooms can still influence vent prioritization.
+        Track-only-when-occupied rooms are still included here so the vent
+        safety budget can choose the safest ignored rooms to keep closed.
         """
         state_for_mode = state or self._last_thermostat_state
         mode_for_eval = None
@@ -956,13 +963,47 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         result: dict[str, VentOnlyRoomTemperatureState] = {}
         for area_id, sensors in self.get_area_temp_sensors().items():
-            if not self._area_available_for_tracking(area_id):
-                continue
+            area_target_temp = None
+            area_target_temp_low = None
+            area_target_temp_high = None
+            area_target_unit = target_unit
+            if state_for_mode is not None:
+                area_target_temp = state_for_mode.target_temperature
+                area_target_temp_low = state_for_mode.target_temp_low
+                area_target_temp_high = state_for_mode.target_temp_high
+                if area_target_temp is None:
+                    if mode_for_eval == HVACMode.HEAT:
+                        area_target_temp = area_target_temp_low
+                    elif mode_for_eval == HVACMode.COOL:
+                        area_target_temp = area_target_temp_high
+                    elif (
+                        mode_for_eval == HVACMode.HEAT_COOL
+                        and area_target_temp_low is not None
+                        and area_target_temp_high is not None
+                    ):
+                        area_target_temp = (area_target_temp_low + area_target_temp_high) / 2
+
+                area_thermostats = getattr(self, "area_thermostats", {})
+                if area_id in area_thermostats:
+                    (
+                        area_target_temp,
+                        area_target_temp_low,
+                        area_target_temp_high,
+                    ) = self.thermostat_controller.get_area_target_temperatures(
+                        area_id,
+                        hvac_mode_override=mode_for_eval,
+                    )
+                area_target_unit = infer_temperature_unit_from_targets(
+                    area_target_temp,
+                    area_target_temp_low,
+                    area_target_temp_high,
+                    fallback=self.temperature_unit,
+                )
 
             readings: dict[str, float] = {}
             for entity_id in sensors:
                 state = self.hass.states.get(entity_id)
-                temp = get_temperature_from_state(state, target_unit)
+                temp = get_temperature_from_state(state, area_target_unit)
                 if temp is None:
                     continue
                 readings[entity_id] = temp
@@ -980,9 +1021,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             is_satiated: bool
 
             if state_for_mode is not None and mode_for_eval == HVACMode.HEAT:
-                target = state_for_mode.target_temperature
+                target = area_target_temp
                 if target is None:
-                    target = state_for_mode.target_temp_low
+                    target = area_target_temp_low
                 if target is not None:
                     is_satiated, determining_sensor, determining_temp = is_room_satiated_for_heat(
                         readings, target, deadband
@@ -994,9 +1035,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                         readings.items(), key=lambda x: abs(x[1] - avg)
                     )
             elif state_for_mode is not None and mode_for_eval == HVACMode.COOL:
-                target = state_for_mode.target_temperature
+                target = area_target_temp
                 if target is None:
-                    target = state_for_mode.target_temp_high
+                    target = area_target_temp_high
                 if target is not None:
                     is_satiated, determining_sensor, determining_temp = is_room_satiated_for_cool(
                         readings, target, deadband
@@ -1009,8 +1050,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                     )
             elif state_for_mode is not None and mode_for_eval == HVACMode.HEAT_COOL:
                 if (
-                    state_for_mode.target_temp_low is not None
-                    and state_for_mode.target_temp_high is not None
+                    area_target_temp_low is not None
+                    and area_target_temp_high is not None
                 ):
                     (
                         is_satiated,
@@ -1018,8 +1059,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                         determining_temp,
                     ) = is_room_satiated_for_heat_cool(
                         readings,
-                        state_for_mode.target_temp_low,
-                        state_for_mode.target_temp_high,
+                        area_target_temp_low,
+                        area_target_temp_high,
                         deadband,
                     )
                 else:
@@ -1037,11 +1078,64 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                     readings.items(), key=lambda x: abs(x[1] - avg)
                 )
 
+            is_critical = False
+            critical_reason = None
+            target_temperature = area_target_temp
+            if mode_for_eval == HVACMode.HEAT:
+                target = area_target_temp if area_target_temp is not None else area_target_temp_low
+                target_temperature = target
+                if target is not None:
+                    _, hottest_temp = max(readings.items(), key=lambda x: x[1])
+                    threshold = self.thermostat_controller.unoccupied_heating_threshold
+                    if hottest_temp < target - threshold:
+                        is_critical = True
+                        critical_reason = (
+                            f"Temperature {hottest_temp:.1f}° is {target - hottest_temp:.1f}° "
+                            f"below heat target {target:.1f}° (threshold: {threshold:.1f}°)"
+                        )
+            elif mode_for_eval == HVACMode.COOL:
+                target = area_target_temp if area_target_temp is not None else area_target_temp_high
+                target_temperature = target
+                if target is not None:
+                    _, coldest_temp = min(readings.items(), key=lambda x: x[1])
+                    threshold = self.thermostat_controller.unoccupied_cooling_threshold
+                    if coldest_temp > target + threshold:
+                        is_critical = True
+                        critical_reason = (
+                            f"Temperature {coldest_temp:.1f}° is {coldest_temp - target:.1f}° "
+                            f"above cool target {target:.1f}° (threshold: {threshold:.1f}°)"
+                        )
+            elif (
+                mode_for_eval == HVACMode.HEAT_COOL
+                and area_target_temp_low is not None
+                and area_target_temp_high is not None
+            ):
+                target_temperature = (area_target_temp_low + area_target_temp_high) / 2
+                _, coldest_temp = min(readings.items(), key=lambda x: x[1])
+                _, warmest_temp = max(readings.items(), key=lambda x: x[1])
+                heat_threshold = self.thermostat_controller.unoccupied_heating_threshold
+                cool_threshold = self.thermostat_controller.unoccupied_cooling_threshold
+                if coldest_temp < area_target_temp_low - heat_threshold:
+                    is_critical = True
+                    critical_reason = (
+                        f"Temperature {coldest_temp:.1f}° is {area_target_temp_low - coldest_temp:.1f}° "
+                        f"below heat target {area_target_temp_low:.1f}° (threshold: {heat_threshold:.1f}°)"
+                    )
+                elif warmest_temp > area_target_temp_high + cool_threshold:
+                    is_critical = True
+                    critical_reason = (
+                        f"Temperature {warmest_temp:.1f}° is {warmest_temp - area_target_temp_high:.1f}° "
+                        f"above cool target {area_target_temp_high:.1f}° (threshold: {cool_threshold:.1f}°)"
+                    )
+
             result[area_id] = VentOnlyRoomTemperatureState(
                 determining_temperature=determining_temp,
                 determining_sensor=determining_sensor,
                 sensor_readings=readings,
                 is_satiated=is_satiated,
+                is_critical=is_critical,
+                critical_reason=critical_reason,
+                target_temperature=target_temperature,
             )
 
         return result
@@ -1055,10 +1149,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         room_temp_states: dict[str, Any] = {}
         if self._last_thermostat_state:
             room_temp_states.update(self._last_thermostat_state.room_states)
-
-        for area_id in list(room_temp_states):
-            if not self._area_available_for_tracking(area_id):
-                room_temp_states.pop(area_id, None)
 
         # Only add vent-only states for areas not already represented by the
         # thermostat controller.
@@ -1382,6 +1472,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Update vent controller
         self.vent_controller.min_vents_open = options.get(
             CONF_MIN_VENTS_OPEN, DEFAULT_MIN_VENTS_OPEN
+        )
+        self.vent_controller.max_closed_vents = options.get(
+            CONF_MAX_CLOSED_VENTS, DEFAULT_MAX_CLOSED_VENTS
         )
         self.vent_controller.vent_open_delay_seconds = options.get(
             CONF_VENT_OPEN_DELAY_SECONDS, DEFAULT_VENT_OPEN_DELAY_SECONDS

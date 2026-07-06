@@ -153,6 +153,18 @@ async def async_get_config_entry_diagnostics(
             "total_vents": vcs.total_vents,
             "open_vents": vcs.open_vents,
             "vents_should_be_open": vcs.vents_should_be_open,
+            "closed_vents": vcs.closed_vents,
+            "ignored_closed_vents": vcs.ignored_closed_vents,
+            "effective_min_vents_open": vcs.effective_min_vents_open,
+            "max_closed_min_vents_open": coordinator.vent_controller.max_closed_min_vents_open(
+                vcs.total_vents
+            ),
+            "two_thirds_min_vents_open": coordinator.vent_controller.two_thirds_min_vents_open(
+                vcs.total_vents
+            ),
+            "max_closed_vents": vcs.max_closed_vents,
+            "safety_budget_exceeded": vcs.safety_budget_exceeded,
+            "safety_warnings": coordinator.vent_controller.get_safety_warnings(vcs),
             "pending_commands": [
                 {"entity_id": cmd[0], "should_open": cmd[1], "reason": cmd[2]}
                 for cmd in vcs.pending_commands

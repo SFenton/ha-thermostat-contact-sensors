@@ -57,6 +57,7 @@ class TestVentControllerInit:
         controller = VentController(hass)
 
         assert controller.min_vents_open == 5
+        assert controller.max_closed_vents == 3
         assert controller.vent_open_delay_seconds == 30
         assert controller.vent_debounce_seconds == 30
 
@@ -66,11 +67,13 @@ class TestVentControllerInit:
         controller = VentController(
             hass,
             min_vents_open=3,
+            max_closed_vents=2,
             vent_open_delay_seconds=60,
             vent_debounce_seconds=45,
         )
 
         assert controller.min_vents_open == 3
+        assert controller.max_closed_vents == 2
         assert controller.vent_open_delay_seconds == 60
         assert controller.vent_debounce_seconds == 45
 
@@ -80,10 +83,12 @@ class TestVentControllerInit:
         controller = VentController(hass)
 
         controller.min_vents_open = 10
+        controller.max_closed_vents = 4
         controller.vent_open_delay_seconds = 120
         controller.vent_debounce_seconds = 90
 
         assert controller.min_vents_open == 10
+        assert controller.max_closed_vents == 4
         assert controller.vent_open_delay_seconds == 120
         assert controller.vent_debounce_seconds == 90
 
@@ -728,7 +733,12 @@ class TestGetSummary:
         assert "total_vents" in summary
         assert "open_vents" in summary
         assert "vents_should_be_open" in summary
+        assert "closed_vents" in summary
+        assert "ignored_closed_vents" in summary
         assert "min_vents_required" in summary
+        assert "effective_min_vents_open" in summary
+        assert "max_closed_vents" in summary
+        assert "safety_budget_exceeded" in summary
         assert "pending_commands" in summary
         assert "areas" in summary
         assert TEST_AREA_BEDROOM in summary["areas"]
@@ -1816,8 +1826,8 @@ class TestIntelligentMinimumVentSelection:
         assert control_state.area_states["room_b"].vents[0].should_be_open is True
         assert control_state.area_states["room_c"].vents[0].should_be_open is False
 
-    def test_excluded_room_closes_and_loses_minimum_vent_priority(self, controller):
-        """Track-only-when-occupied rooms are closed and skipped for minimum vents."""
+    def test_excluded_critical_room_can_stay_open_for_minimum_vent_safety(self, controller):
+        """Ignored rooms still use critical state when choosing safe vents to close."""
         controller.min_vents_open = 1
         now = datetime.now()
 
@@ -1862,11 +1872,319 @@ class TestIntelligentMinimumVentSelection:
             now=now,
         )
 
+        assert control_state.area_states["guest_bathroom"].vents[0].should_be_open is True
+        assert control_state.area_states["office"].vents[0].should_be_open is False
+
+    def test_closed_budget_prevents_two_two_vent_rooms_closing(self, controller):
+        """A two-vent room is skipped when only one closed slot remains."""
+        controller.min_vents_open = 4
+        controller.max_closed_vents = 3
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_OPEN
+            state.attributes = {"current_tilt_position": 100}
+            if entity_id in {"cover.theater_vents", "cover.master_vents"}:
+                state.attributes[ATTR_ENTITY_ID] = [
+                    f"{entity_id}_1",
+                    f"{entity_id}_2",
+                ]
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {
+            "theater": ["cover.theater_vents"],
+            "master": ["cover.master_vents"],
+            "guest": ["cover.guest_vent"],
+            "office": ["cover.office_vent"],
+            "kitchen": ["cover.kitchen_vent"],
+        }
+        room_temp_states = {
+            "theater": RoomTemperatureState(
+                area_id="theater",
+                area_name="Theater",
+                determining_temperature=80.0,
+            ),
+            "master": RoomTemperatureState(
+                area_id="master",
+                area_name="Master",
+                determining_temperature=79.0,
+            ),
+            "guest": RoomTemperatureState(
+                area_id="guest",
+                area_name="Guest",
+                determining_temperature=78.0,
+            ),
+            "office": RoomTemperatureState(
+                area_id="office",
+                area_name="Office",
+                determining_temperature=65.0,
+            ),
+            "kitchen": RoomTemperatureState(
+                area_id="kitchen",
+                area_name="Kitchen",
+                determining_temperature=64.0,
+            ),
+        }
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            now=now,
+        )
+
+        assert control_state.total_vents == 7
+        assert control_state.effective_min_vents_open == 4
+        assert control_state.closed_vents == 3
+        assert control_state.safety_budget_exceeded is False
+        assert control_state.area_states["theater"].vents[0].should_be_open is False
+        assert control_state.area_states["master"].vents[0].should_be_open is True
+        assert control_state.area_states["guest"].vents[0].should_be_open is False
+
+    def test_ignored_rooms_consume_closed_budget(self, controller):
+        """Ignored empty rooms close first and leave only one extra closed slot."""
+        controller.min_vents_open = 4
+        controller.max_closed_vents = 3
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_OPEN
+            state.attributes = {"current_tilt_position": 100}
+            if entity_id == "cover.master_vents":
+                state.attributes[ATTR_ENTITY_ID] = ["cover.master_1", "cover.master_2"]
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {
+            "guest_bathroom": ["cover.guest_bath_vent"],
+            "master_bathroom": ["cover.master_bath_vent"],
+            "master": ["cover.master_vents"],
+            "guest": ["cover.guest_vent"],
+            "office": ["cover.office_vent"],
+            "kitchen": ["cover.kitchen_vent"],
+        }
+        room_temp_states = {
+            "master": RoomTemperatureState(
+                area_id="master",
+                area_name="Master",
+                determining_temperature=80.0,
+            ),
+            "guest": RoomTemperatureState(
+                area_id="guest",
+                area_name="Guest",
+                determining_temperature=79.0,
+            ),
+            "office": RoomTemperatureState(
+                area_id="office",
+                area_name="Office",
+                determining_temperature=65.0,
+            ),
+            "kitchen": RoomTemperatureState(
+                area_id="kitchen",
+                area_name="Kitchen",
+                determining_temperature=64.0,
+            ),
+        }
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.HEAT,
+            target_temp_low=70.0,
+            excluded_area_ids={"guest_bathroom", "master_bathroom"},
+            now=now,
+        )
+
+        assert control_state.total_vents == 7
+        assert control_state.closed_vents == 3
+        assert control_state.ignored_closed_vents == 2
         assert (
             control_state.area_states["guest_bathroom"].vents[0].should_be_open
             is False
         )
+        assert (
+            control_state.area_states["master_bathroom"].vents[0].should_be_open
+            is False
+        )
+        assert control_state.area_states["guest"].vents[0].should_be_open is False
+        assert control_state.area_states["master"].vents[0].should_be_open is True
+
+    def test_ignored_rooms_rank_by_safety_before_closing(self, controller):
+        """A critical ignored room stays open while safer ignored rooms consume budget."""
+        controller.min_vents_open = 3
+        controller.max_closed_vents = 3
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_OPEN
+            state.attributes = {"current_tilt_position": 100}
+            if entity_id == "cover.living_room_vents":
+                state.attributes[ATTR_ENTITY_ID] = [
+                    "cover.living_room_vent_1",
+                    "cover.living_room_vent_2",
+                ]
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {
+            "guest_bathroom": ["cover.guest_bath_vent"],
+            "master_bathroom": ["cover.master_bath_vent"],
+            "living_room": ["cover.living_room_vents"],
+            "office": ["cover.office_vent"],
+            "kitchen": ["cover.kitchen_vent"],
+        }
+        room_temp_states = {
+            "guest_bathroom": RoomTemperatureState(
+                area_id="guest_bathroom",
+                area_name="Guest Bathroom",
+                determining_temperature=84.0,
+                target_temperature=75.0,
+                is_satiated=False,
+                is_critical=True,
+            ),
+            "master_bathroom": RoomTemperatureState(
+                area_id="master_bathroom",
+                area_name="Master Bathroom",
+                determining_temperature=70.0,
+                target_temperature=75.0,
+                is_satiated=True,
+            ),
+            "living_room": RoomTemperatureState(
+                area_id="living_room",
+                area_name="Living Room",
+                determining_temperature=68.0,
+                target_temperature=75.0,
+                is_satiated=True,
+            ),
+            "office": RoomTemperatureState(
+                area_id="office",
+                area_name="Office",
+                determining_temperature=76.0,
+                target_temperature=75.0,
+            ),
+            "kitchen": RoomTemperatureState(
+                area_id="kitchen",
+                area_name="Kitchen",
+                determining_temperature=77.0,
+                target_temperature=75.0,
+            ),
+        }
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.COOL,
+            target_temp_high=75.0,
+            excluded_area_ids={"guest_bathroom", "master_bathroom", "living_room"},
+            now=now,
+        )
+
+        assert control_state.total_vents == 6
+        assert control_state.closed_vents == 3
+        assert control_state.ignored_closed_vents == 3
+        assert control_state.area_states["guest_bathroom"].vents[0].should_be_open is True
+        assert control_state.area_states["master_bathroom"].vents[0].should_be_open is False
+        assert control_state.area_states["living_room"].vents[0].should_be_open is False
         assert control_state.area_states["office"].vents[0].should_be_open is True
+        assert control_state.area_states["kitchen"].vents[0].should_be_open is True
+
+    def test_fourteen_physical_vents_requires_eleven_open_with_default_budget(self, controller):
+        """Fourteen physical vents with max three closed keeps eleven vents open."""
+        controller.min_vents_open = 5
+        controller.max_closed_vents = 3
+        now = datetime.now()
+
+        grouped_vents = {
+            "cover.living_room_vents",
+            "cover.master_bedroom_vents",
+            "cover.theater_room_vents",
+        }
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_OPEN
+            state.attributes = {"current_tilt_position": 100}
+            if entity_id in grouped_vents:
+                state.attributes[ATTR_ENTITY_ID] = [
+                    f"{entity_id}_1",
+                    f"{entity_id}_2",
+                ]
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {
+            "dining_room": ["cover.dining_room_vent"],
+            "guest_bathroom": ["cover.guest_bathroom_vent"],
+            "guest_room": ["cover.guest_room_vent"],
+            "gym": ["cover.gym_vent"],
+            "kitchen": ["cover.kitchen_vent"],
+            "living_room": ["cover.living_room_vents"],
+            "master_bathroom": ["cover.master_bathroom_vent"],
+            "master_bedroom": ["cover.master_bedroom_vents"],
+            "music_room": ["cover.music_room_vent"],
+            "office": ["cover.office_vent"],
+            "theater_room": ["cover.theater_room_vents"],
+        }
+        room_temp_states = {
+            area_id: RoomTemperatureState(
+                area_id=area_id,
+                area_name=area_id.replace("_", " ").title(),
+                determining_temperature=72.0 + index,
+                target_temperature=74.0,
+            )
+            for index, area_id in enumerate(area_vents)
+        }
+
+        control_state = controller.evaluate_all_vents(
+            area_vent_configs=area_vents,
+            active_areas=[],
+            occupied_areas=[],
+            room_temp_states=room_temp_states,
+            hvac_mode=HVACMode.COOL,
+            target_temp_high=74.0,
+            now=now,
+        )
+
+        assert control_state.total_vents == 14
+        assert control_state.effective_min_vents_open == 11
+        assert control_state.vents_should_be_open == 11
+        assert control_state.closed_vents == 3
+        assert control_state.safety_budget_exceeded is False
+
+    def test_summary_warns_when_live_open_vents_below_safety_floor(self, controller):
+        """Summary exposes live warnings when current open vents are unsafe."""
+        controller.min_vents_open = 5
+        controller.max_closed_vents = 3
+        control_state = VentControlState(
+            total_vents=14,
+            open_vents=7,
+            vents_should_be_open=11,
+            closed_vents=3,
+            effective_min_vents_open=11,
+            max_closed_vents=3,
+        )
+
+        summary = controller.get_summary(control_state)
+
+        assert summary["max_closed_min_vents_open"] == 11
+        assert summary["two_thirds_min_vents_open"] == 10
+        assert len(summary["safety_warnings"]) == 2
+        assert "requires at least 11 open" in summary["safety_warnings"][0]
 
 
 # =============================================================================

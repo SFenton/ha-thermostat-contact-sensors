@@ -39,6 +39,7 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_CLOSE_TIMEOUT,
     CONF_CONTACT_SENSORS,
     CONF_GRACE_PERIOD_MINUTES,
+    CONF_MAX_CLOSED_VENTS,
     CONF_MIN_CYCLE_OFF_MINUTES,
     CONF_MIN_CYCLE_ON_MINUTES,
     CONF_MIN_OCCUPANCY_MINUTES,
@@ -204,6 +205,7 @@ def integration_config_entry() -> MockConfigEntry:
             CONF_CLOSE_TIMEOUT: 2,  # 2 min before resuming
             CONF_NOTIFY_SERVICE: "",  # No notifications for tests
             CONF_MIN_VENTS_OPEN: 3,  # Minimum 3 vents must stay open
+            CONF_MAX_CLOSED_VENTS: 3,  # No more than 3 physical vents closed
             CONF_VENT_OPEN_DELAY_SECONDS: 30,  # 30s before vents open for occupancy
             CONF_VENT_DEBOUNCE_SECONDS: 0,  # No debounce for faster testing
             CONF_UNOCCUPIED_HEATING_THRESHOLD: 5.0,  # 5 degrees below target
@@ -541,6 +543,7 @@ class TestOccupancyVentEffects:
         # validating the open-delay behavior.
         options = dict(integration_config_entry.options)
         options[CONF_MIN_VENTS_OPEN] = 0
+        options[CONF_MAX_CLOSED_VENTS] = 20
         integration_config_entry.add_to_hass(hass)
 
         # Close all vents initially
@@ -597,6 +600,7 @@ class TestOccupancyVentEffects:
         # Use min_vents_open=0 for this test to avoid minimum keeping them open
         options = dict(integration_config_entry.options)
         options[CONF_MIN_VENTS_OPEN] = 0
+        options[CONF_MAX_CLOSED_VENTS] = 20
         integration_config_entry.add_to_hass(hass)
 
         coordinator = ThermostatContactSensorsCoordinator(
@@ -616,7 +620,7 @@ class TestOccupancyVentEffects:
         # Check final vent state - should be closed for inactive rooms
         # (Commands may have been issued during setup or update)
         vent_state = coordinator.last_vent_control_state
-        
+
         # All areas should have should_open = False (since no occupancy)
         for area_id in [AREA_KITCHEN, AREA_BASEMENT, AREA_HALLWAY]:
             area_state = vent_state.area_states.get(area_id)
@@ -646,6 +650,7 @@ class TestTemperatureEffects:
         """Test that satiated rooms (at target temp) close vents."""
         options = dict(integration_config_entry.options)
         options[CONF_MIN_VENTS_OPEN] = 0
+        options[CONF_MAX_CLOSED_VENTS] = 20
         integration_config_entry.add_to_hass(hass)
 
         # Set living room temperature to target (22°C) - satiated
@@ -763,7 +768,7 @@ class TestContactSensorPausePrecedence:
         mock_cover_service: dict,
     ):
         """Test that thermostat stays off when paused, even if rooms need heating.
-        
+
         Scenario: Rooms are cold (unsatiated), thermostat would normally turn on,
         but a door is open so thermostat should stay paused/off.
         """
@@ -808,7 +813,7 @@ class TestContactSensorPausePrecedence:
         await hass.async_block_till_done()
 
         # Thermostat should stay off (no turn-on calls while paused)
-        turn_on_calls = [c for c in mock_climate_service_integration["set_hvac_mode"] 
+        turn_on_calls = [c for c in mock_climate_service_integration["set_hvac_mode"]
                          if c["hvac_mode"] != HVACMode.OFF]
         assert len(turn_on_calls) == 0, "Thermostat should not turn on while paused"
 
@@ -824,7 +829,7 @@ class TestContactSensorPausePrecedence:
         mock_cover_service: dict,
     ):
         """Test that resume from pause immediately evaluates thermostat state.
-        
+
         When doors close and resume happens, we should immediately evaluate
         whether the thermostat should be on or off based on current satiation.
         """
@@ -891,7 +896,7 @@ class TestContactSensorPausePrecedence:
         mock_cover_service: dict,
     ):
         """Test that if all rooms are satiated on resume, thermostat may turn off.
-        
+
         Scenario: Door opens, thermostat pauses. While door is open, the room
         reaches target temperature (satiated). Door closes, resume happens.
         Thermostat should evaluate and potentially stay off or turn off if satiated.
@@ -973,11 +978,11 @@ class TestTimerRecalculationIntegration:
         mock_cover_service: dict,
     ):
         """Test the exact scenario from the bug report.
-        
+
         T=0: Garage (living_room) opens - timer starts
         T=2: Theater (bedroom) opens
         T=3: Garage closes - timer should recalculate based on theater
-        
+
         Timer should NOT fire at original T=5, should fire at T=7 (5 min after theater opened)
         """
         options = dict(integration_config_entry.options)
@@ -1422,6 +1427,7 @@ class TestFullSystemIntegration:
         """Test scenario: All active rooms reach target temperature."""
         options = dict(integration_config_entry.options)
         options[CONF_MIN_VENTS_OPEN] = 0  # Disable minimum for clearer test
+        options[CONF_MAX_CLOSED_VENTS] = 20
         integration_config_entry.add_to_hass(hass)
 
         # Set all temps to target (22°C) + deadband (0.5) = satiated
