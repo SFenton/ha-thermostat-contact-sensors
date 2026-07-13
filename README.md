@@ -117,7 +117,7 @@ Predictive Comfort Mode is disabled by default. When enabled, it evaluates curre
 | **Automatically Adjust Thermostat Setpoints** | off | Allow Predictive Comfort recommendations to coordinate thermostat demand and proactive targets through the main controller |
 | **Allow HVAC Mode Changes** | off | Allow switching supported heat/cool modes before applying a proactive target |
 | **Enable Predictive Comfort While Away** | off | Allow automatic pre-heating/pre-cooling while Away Mode is active; recommendations are still calculated when off |
-| **Vacation Mode Entity** | `input_boolean.vacation_mode` if present | Entity whose active/on state blocks automatic Predictive Comfort HVAC adjustments |
+| **Vacation Mode Entity** | `input_boolean.vacation_mode` if present | Entity whose active/on state forces Away Mode regardless of presence and blocks automatic Predictive Comfort HVAC adjustments |
 | **Global Weather Entity** | auto | Weather source shared by the house; blank falls back to another entry, `weather.pirate_weather`, `weather.forecast_home`, or the first weather entity |
 | **Global Temperature Sensors** | area sensors | Optional global indoor sensors; blank uses enabled area temperature sensors |
 | **Humidity Sensors** | none | Indoor humidity sensors used to add perceived heat pressure |

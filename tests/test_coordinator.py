@@ -1624,6 +1624,83 @@ class TestPredictiveComfort:
 
         await coordinator.async_shutdown()
 
+    @pytest.mark.parametrize("configure_away_presence", [False, True])
+    async def test_vacation_toggle_refreshes_predictive_status(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+        configure_away_presence: bool,
+    ) -> None:
+        """Test Vacation changes refresh predictive state even if Away is unchanged."""
+        vacation_entity = "input_boolean.vacation_mode"
+        away_entity = "person.test_user"
+        hass.states.async_set(vacation_entity, STATE_OFF)
+        hass.states.async_set(away_entity, "not_home")
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_AUTO_ADJUST] = True
+        options[CONF_PREDICTIVE_ALLOW_AWAY] = True
+        options[CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE] = True
+        options[CONF_VACATION_MODE_ENTITY] = vacation_entity
+        if configure_away_presence:
+            options[CONF_AWAY_PRESENCE_ENTITY] = away_entity
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        await coordinator.async_setup()
+        await hass.async_block_till_done()
+        assert coordinator.predictive_result["adjustment_status"] != (
+            "skipped_vacation_mode"
+        )
+
+        hass.states.async_set(vacation_entity, STATE_ON)
+        await hass.async_block_till_done()
+
+        assert coordinator.vacation_mode_active is True
+        assert coordinator.predictive_result["vacation_mode_active"] is True
+        assert (
+            coordinator.predictive_result["adjustment_status"]
+            == "skipped_vacation_mode"
+        )
+
+        await coordinator.async_shutdown()
+
+    async def test_vacation_toggle_runs_one_predictive_evaluation_when_inputs_overlap(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test Vacation is not also subscribed as a generic predictive input."""
+        vacation_entity = "input_boolean.vacation_mode"
+        hass.states.async_set(vacation_entity, STATE_OFF)
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options[CONF_VACATION_MODE_ENTITY] = vacation_entity
+        options[CONF_PREDICTIVE_ACTIVITY_ENTITIES] = [
+            TEST_ACTIVITY_ENTITY,
+            vacation_entity,
+        ]
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        await coordinator.async_setup()
+        await hass.async_block_till_done()
+
+        evaluate = AsyncMock()
+        with patch.object(coordinator, "async_evaluate_predictive_comfort", evaluate):
+            hass.states.async_set(vacation_entity, STATE_ON)
+            await hass.async_block_till_done()
+
+        assert evaluate.await_count == 1
+
+        await coordinator.async_shutdown()
+
     async def test_predictive_comfort_skips_adjustment_when_contact_open(
         self,
         hass: HomeAssistant,
@@ -2394,11 +2471,28 @@ class TestAwayModeCoordinator:
         coordinator: ThermostatContactSensorsCoordinator,
     ) -> None:
         """Test that away mode is not configured when no presence entity is set."""
+        from custom_components.thermostat_contact_sensors.const import (
+            DEFAULT_VACATION_MODE_ENTITY,
+        )
+
+        hass.states.async_set(DEFAULT_VACATION_MODE_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
         await coordinator.async_setup()
         
         assert coordinator.away_mode_configured is False
         assert coordinator.is_away is False
         assert coordinator.away_presence_entity == ""
+        assert coordinator.vacation_mode_active is True
+
+        hass.states.async_set(DEFAULT_VACATION_MODE_ENTITY, STATE_OFF)
+        await hass.async_block_till_done()
+        assert coordinator.vacation_mode_active is False
+        assert coordinator.is_away is False
+
+        hass.states.async_set(DEFAULT_VACATION_MODE_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+        assert coordinator.vacation_mode_active is True
+        assert coordinator.is_away is False
         
         await coordinator.async_shutdown()
 
@@ -2518,6 +2612,162 @@ class TestAwayModeCoordinator:
         
         assert coordinator.is_away is False
         
+        await coordinator.async_shutdown()
+
+    async def test_vacation_mode_overrides_home_presence_until_disabled(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test Vacation Mode keeps Away active when a resident comes home."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_VACATION_MODE_ENTITY,
+        )
+
+        presence_entity = "person.test_user"
+        vacation_entity = "input_boolean.vacation_mode"
+        hass.states.async_set(presence_entity, "home", {"friendly_name": "Test User"})
+        hass.states.async_set(vacation_entity, STATE_OFF, {"friendly_name": "Vacation Mode"})
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = presence_entity
+        options[CONF_VACATION_MODE_ENTITY] = vacation_entity
+
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        assert coordinator.is_away is False
+
+        hass.states.async_set(vacation_entity, STATE_ON)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+
+        hass.states.async_set(presence_entity, "not_home")
+        await hass.async_block_till_done()
+        hass.states.async_set(presence_entity, "home")
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+
+        hass.states.async_set(vacation_entity, STATE_OFF)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is False
+
+        await coordinator.async_shutdown()
+
+    async def test_away_mode_preserves_last_valid_state_during_entity_outages(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test transient unavailable states do not clear the active Away state."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_VACATION_MODE_ENTITY,
+        )
+
+        presence_entity = "person.test_user"
+        vacation_entity = "input_boolean.vacation_mode"
+        hass.states.async_set(presence_entity, "not_home")
+        hass.states.async_set(vacation_entity, STATE_OFF)
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = presence_entity
+        options[CONF_VACATION_MODE_ENTITY] = vacation_entity
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        assert coordinator.is_away is True
+
+        hass.states.async_set(presence_entity, STATE_UNAVAILABLE)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+
+        hass.states.async_set(presence_entity, "unknown")
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+
+        hass.states.async_set(vacation_entity, STATE_ON)
+        await hass.async_block_till_done()
+        hass.states.async_set(vacation_entity, STATE_OFF)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+
+        hass.states.async_set(presence_entity, "home")
+        await hass.async_block_till_done()
+        assert coordinator.is_away is False
+
+        hass.states.async_set(vacation_entity, STATE_ON)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+
+        hass.states.async_set(vacation_entity, STATE_UNAVAILABLE)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+        assert coordinator.vacation_mode_active is True
+
+        hass.states.async_set(vacation_entity, "unknown")
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+        assert coordinator.vacation_mode_active is True
+
+        hass.states.async_set(vacation_entity, STATE_OFF)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is False
+        assert coordinator.vacation_mode_active is False
+
+        await coordinator.async_shutdown()
+
+    async def test_default_vacation_entity_created_after_setup_forces_away(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test the default Vacation helper is tracked before it exists."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AWAY_PRESENCE_ENTITY,
+            CONF_VACATION_MODE_ENTITY,
+            DEFAULT_VACATION_MODE_ENTITY,
+        )
+
+        presence_entity = "person.test_user"
+        hass.states.async_set(presence_entity, "home")
+        await hass.async_block_till_done()
+
+        options = get_test_config_options()
+        options[CONF_AWAY_PRESENCE_ENTITY] = presence_entity
+        options.pop(CONF_VACATION_MODE_ENTITY, None)
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+        )
+
+        await coordinator.async_setup()
+        assert coordinator.vacation_mode_entity == DEFAULT_VACATION_MODE_ENTITY
+        assert coordinator.is_away is False
+
+        hass.states.async_set(DEFAULT_VACATION_MODE_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is True
+
+        hass.states.async_set(DEFAULT_VACATION_MODE_ENTITY, STATE_OFF)
+        await hass.async_block_till_done()
+        assert coordinator.is_away is False
+
         await coordinator.async_shutdown()
 
     async def test_away_mode_with_binary_sensor(

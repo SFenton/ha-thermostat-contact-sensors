@@ -288,6 +288,8 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._unsub_predictive_interval: callable | None = None
 
         # Away mode tracking
+        self._presence_is_away: bool = False
+        self._vacation_mode_is_active: bool = False
         self._is_away: bool = False
 
         # Eco away behavior: controls eco mode behavior when away.
@@ -460,24 +462,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
     def vacation_mode_entity(self) -> str:
         """Return the entity used to detect vacation mode."""
         configured = self._options.get(CONF_VACATION_MODE_ENTITY, "")
-        if configured:
-            return configured
-        if self.hass.states.get(DEFAULT_VACATION_MODE_ENTITY):
-            return DEFAULT_VACATION_MODE_ENTITY
-        return ""
+        return configured or DEFAULT_VACATION_MODE_ENTITY
 
     @property
     def vacation_mode_active(self) -> bool:
         """Return whether vacation mode is currently active."""
-        entity_id = self.vacation_mode_entity
-        if not entity_id:
-            return False
-
-        state = self.hass.states.get(entity_id)
-        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return False
-
-        return state.state.lower() in VACATION_ACTIVE_STATES
+        return getattr(self, "_vacation_mode_is_active", False)
 
     @property
     def predictive_comfort_enabled(self) -> bool:
@@ -726,32 +716,60 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         except ValueError:
             return None
 
-    def _check_presence_entity_state(self) -> bool:
-        """Check if the presence entity indicates 'away' state."""
-        entity_id = self.away_presence_entity
-        if not entity_id:
-            return False
-
-        state = self.hass.states.get(entity_id)
+    @staticmethod
+    def _presence_state_value(state: State | None) -> bool | None:
+        """Convert a presence state to Away, Home, or no valid update."""
         if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return False
+            return None
 
         state_value = state.state.lower()
         return state_value in (STATE_NOT_HOME, STATE_OFF, "false", "away")
 
+    @staticmethod
+    def _vacation_state_value(state: State | None) -> bool | None:
+        """Convert a Vacation state to active, inactive, or no valid update."""
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return None
+        return state.state.lower() in VACATION_ACTIVE_STATES
+
+    def _combined_away_state(self) -> bool:
+        """Combine the last valid Vacation and presence states."""
+        return self.away_mode_configured and (
+            self._vacation_mode_is_active or self._presence_is_away
+        )
+
     @callback
-    def _async_presence_state_changed(self, event) -> None:
-        """Handle presence entity state changes."""
+    def _async_away_state_changed(self, event) -> None:
+        """Handle presence or Vacation Mode state changes."""
+        entity_id: str | None = event.data.get("entity_id")
         new_state: State | None = event.data.get("new_state")
-        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        if not entity_id or new_state is None:
+            return
+
+        updated = False
+        vacation_updated = False
+        if entity_id == self.away_presence_entity:
+            presence_is_away = self._presence_state_value(new_state)
+            if presence_is_away is not None:
+                self._presence_is_away = presence_is_away
+                updated = True
+        if entity_id == self.vacation_mode_entity:
+            vacation_mode_is_active = self._vacation_state_value(new_state)
+            if vacation_mode_is_active is not None:
+                self._vacation_mode_is_active = vacation_mode_is_active
+                updated = True
+                vacation_updated = True
+        if not updated:
             return
 
         was_away = self._is_away
-        self._is_away = self._check_presence_entity_state()
+        self._is_away = self._combined_away_state()
 
         if was_away != self._is_away:
             _LOGGER.info("Away mode changed: is_away=%s", self._is_away)
             self.hass.async_create_task(self._async_occupancy_changed())
+        if vacation_updated and self.predictive_comfort_enabled:
+            self.hass.async_create_task(self.async_evaluate_predictive_comfort())
 
     @property
     def open_timeout(self) -> int:
@@ -1502,13 +1520,31 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # If sensors are already open on startup, start the timer (unless integration paused).
         self._check_initial_open_sensors()
 
-        # Initialize away state and subscribe to presence entity changes if configured
-        self._is_away = self._check_presence_entity_state()
-        if self.away_presence_entity:
+        # Vacation Mode overrides presence while active. Presence resumes control
+        # immediately after Vacation Mode turns off.
+        self._presence_is_away = False
+        self._vacation_mode_is_active = False
+        presence_is_away = self._presence_state_value(
+            self.hass.states.get(self.away_presence_entity)
+        )
+        if presence_is_away is not None:
+            self._presence_is_away = presence_is_away
+        vacation_mode_is_active = self._vacation_state_value(
+            self.hass.states.get(self.vacation_mode_entity)
+        )
+        if vacation_mode_is_active is not None:
+            self._vacation_mode_is_active = vacation_mode_is_active
+        self._is_away = self._combined_away_state()
+        away_state_entities = {
+            self.away_presence_entity,
+            self.vacation_mode_entity,
+        }
+        away_state_entities.discard("")
+        if away_state_entities:
             self._unsub_presence_state_change = async_track_state_change_event(
                 self.hass,
-                [self.away_presence_entity],
-                self._async_presence_state_changed,
+                sorted(away_state_entities),
+                self._async_away_state_changed,
             )
 
         # Initialize last known HVAC mode from current thermostat state
@@ -1763,8 +1799,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         tracked_entities = set(self.predictive_temperature_sensors)
         tracked_entities.update(self.predictive_humidity_sensors)
         tracked_entities.update(self.predictive_activity_entities)
-        if vacation_entity := self.vacation_mode_entity:
-            tracked_entities.add(vacation_entity)
+        tracked_entities.discard(self.vacation_mode_entity)
         if weather_entity := self._resolved_predictive_weather_entity():
             tracked_entities.add(weather_entity)
 
