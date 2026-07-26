@@ -591,7 +591,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         ):
             return {"eligible": False, "status": "no_adjustment_needed"}
 
-        if self.is_paused or self.open_count > 0:
+        # Gate on the debounced pause state only. Checking `open_count` directly
+        # would revoke the predictive demand the instant a door is opened, which
+        # can turn the thermostat off (and trip the min-cycle lockout) for an
+        # open lasting only seconds. The room-demand path uses the same debounced
+        # `is_paused` signal via `set_paused_by_contact_sensors`.
+        if self.is_paused:
             return {"eligible": False, "status": "skipped_contact_sensor_open"}
 
         target_temperature = predictive_result.get("target_temperature")

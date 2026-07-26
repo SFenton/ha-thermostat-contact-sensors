@@ -1701,12 +1701,12 @@ class TestPredictiveComfort:
 
         await coordinator.async_shutdown()
 
-    async def test_predictive_comfort_skips_adjustment_when_contact_open(
+    async def test_predictive_comfort_skips_adjustment_when_paused_by_contact_sensors(
         self,
         hass: HomeAssistant,
         mock_climate_service: AsyncMock,
     ) -> None:
-        """Test predictive comfort does not adjust while a contact sensor is open."""
+        """Test predictive comfort does not adjust once contact sensors pause control."""
         hass.states.async_set(TEST_SENSOR_1, STATE_ON)
         hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
         hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
@@ -1720,12 +1720,50 @@ class TestPredictiveComfort:
         await coordinator.async_setup()
         await hass.async_block_till_done()
 
+        # The open timeout has expired, so the integration is paused.
+        coordinator.is_paused = True
+        await coordinator.async_evaluate_predictive_comfort()
+        await hass.async_block_till_done()
+
         thermostat_state = hass.states.get(TEST_THERMOSTAT)
         assert thermostat_state.attributes["temperature"] == 22
         assert (
             coordinator.predictive_result["adjustment_status"]
             == "skipped_contact_sensor_open"
         )
+
+        await coordinator.async_shutdown()
+
+    async def test_predictive_comfort_survives_momentary_contact_open(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Test a brief contact open does not revoke the predictive demand.
+
+        A door open lasting seconds must not drop the Predictive Comfort demand,
+        because that can turn the thermostat off and trip the min-cycle lockout.
+        Only the debounced pause state (open timeout expired) should skip.
+        """
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON)
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, "73")
+        hass.states.async_set(TEST_HUMIDITY_SENSOR, "60")
+        hass.states.async_set(TEST_ACTIVITY_ENTITY, STATE_ON)
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_AUTO_ADJUST] = True
+        coordinator = self.create_predictive_coordinator(hass, options)
+
+        await coordinator.async_setup()
+        await hass.async_block_till_done()
+
+        # Contact is open but the open timeout has not expired yet.
+        assert coordinator.open_count > 0
+        assert coordinator.is_paused is False
+
+        request = coordinator._predictive_control_request()
+        assert request["status"] != "skipped_contact_sensor_open"
 
         await coordinator.async_shutdown()
 

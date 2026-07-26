@@ -274,6 +274,78 @@ async def test_thermostat_control_sensor_shows_off_when_turn_off_recommended(
     await hass.config_entries.async_unload(mock_config_entry.entry_id)
 
 
+async def test_thermostat_control_sensor_shows_pre_cooling_when_predictive_drives(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """Predictive Comfort demand must not be masked as 'idle'.
+
+    With no tracked active rooms, Predictive Comfort can still be the only thing
+    keeping the thermostat running, so the sensor should report that phase.
+    """
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = mock_config_entry.runtime_data
+    coordinator._last_thermostat_state = ThermostatState(
+        thermostat_entity_id=TEST_THERMOSTAT,
+        hvac_mode=HVACMode.COOL,
+        is_on=True,
+        active_room_count=0,
+        predictive_hvac_mode=HVACMode.COOL,
+        recommended_action=ThermostatAction.NONE,
+        action_reason="Already on, Predictive Comfort recommends pre-cooling",
+    )
+    coordinator.async_set_updated_data(None)
+    await hass.async_block_till_done()
+
+    entity_id = _entity_id_for_unique_id(
+        hass, f"{mock_config_entry.entry_id}_thermostat_control"
+    )
+    state = hass.states.get(entity_id)
+
+    assert state is not None
+    assert state.state == "pre_cooling"
+    assert state.attributes["active_room_count"] == 0
+
+    await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+
+async def test_thermostat_control_sensor_idle_without_predictive_demand(
+    hass: HomeAssistant,
+    mock_config_entry: ConfigEntry,
+    mock_climate_service,
+) -> None:
+    """No active rooms and no predictive demand still reports 'idle'."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = mock_config_entry.runtime_data
+    coordinator._last_thermostat_state = ThermostatState(
+        thermostat_entity_id=TEST_THERMOSTAT,
+        hvac_mode=HVACMode.COOL,
+        is_on=True,
+        active_room_count=0,
+        recommended_action=ThermostatAction.NONE,
+        action_reason="No rooms configured",
+    )
+    coordinator.async_set_updated_data(None)
+    await hass.async_block_till_done()
+
+    entity_id = _entity_id_for_unique_id(
+        hass, f"{mock_config_entry.entry_id}_thermostat_control"
+    )
+    state = hass.states.get(entity_id)
+
+    assert state is not None
+    assert state.state == "idle"
+
+    await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+
 def _entity_id_for_unique_id(hass: HomeAssistant, unique_id: str) -> str:
     entity_registry = er.async_get(hass)
     for entry in entity_registry.entities.values():

@@ -359,8 +359,14 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
         if self.coordinator.is_paused:
             return "paused"
 
-        # Check if no active rooms
+        # No tracked active rooms. Predictive Comfort can still be driving the
+        # thermostat here, so report the pre-conditioning phase rather than
+        # masking it as "idle".
         if state.active_room_count == 0:
+            if state.is_on and state.predictive_hvac_mode == HVACMode.COOL:
+                return "pre_cooling"
+            if state.is_on and state.predictive_hvac_mode == HVACMode.HEAT:
+                return "pre_heating"
             return "idle"
 
         if state.recommended_action == ThermostatAction.TURN_OFF:
@@ -396,6 +402,8 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
             "satiated": "mdi:thermostat-check",
             "heating_needed": "mdi:fire",
             "cooling_needed": "mdi:snowflake",
+            "pre_heating": "mdi:fire-clock",
+            "pre_cooling": "mdi:snowflake-thermometer",
             "conditioning_needed": "mdi:thermostat-auto",
             "thermostat_unavailable": "mdi:thermostat-alert",
             "unknown": "mdi:thermostat",
