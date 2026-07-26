@@ -1826,6 +1826,95 @@ class TestIntelligentMinimumVentSelection:
         assert control_state.area_states["room_b"].vents[0].should_be_open is True
         assert control_state.area_states["room_c"].vents[0].should_be_open is False
 
+    def test_predictive_comfort_force_opens_untracked_active_unsatiated_room(
+        self, controller
+    ):
+        """Predictive Comfort must not be limited to the tracked-room subset.
+
+        Predictive Comfort evaluates whole-home sensors, so while it is driving
+        the thermostat an untracked but active/unsatiated room still needs to
+        receive the conditioned air it is helping to call for.
+        """
+        controller.min_vents_open = 1
+        now = datetime.now()
+
+        def get_vent_state(entity_id):
+            state = MagicMock()
+            state.state = STATE_CLOSED
+            state.attributes = {"current_tilt_position": 0}
+            return state
+
+        controller.hass.states.get.side_effect = get_vent_state
+
+        area_vents = {
+            "room_a": ["cover.room_a_vent"],
+            "room_b": ["cover.room_b_vent"],
+        }
+
+        room_temp_states = {
+            # Tracked, already satiated.
+            "room_a": RoomTemperatureState(
+                area_id="room_a",
+                area_name="Room A",
+                determining_temperature=70.0,
+                is_satiated=True,
+            ),
+            # Untracked, active and hot: this is the room driving the pre-cool.
+            "room_b": RoomTemperatureState(
+                area_id="room_b",
+                area_name="Room B",
+                determining_temperature=79.0,
+                is_satiated=False,
+            ),
+        }
+
+        active_b = [
+            AreaOccupancyState(
+                area_id="room_b",
+                area_name="Room B",
+                binary_sensors=[],
+                sensors=[],
+                is_active=True,
+                occupancy_start_time=now - timedelta(minutes=30),
+            )
+        ]
+
+        kwargs = {
+            "area_vent_configs": area_vents,
+            "active_areas": active_b,
+            "occupied_areas": active_b,
+            "room_temp_states": room_temp_states,
+            "hvac_mode": HVACMode.COOL,
+            "target_temp_low": 68.0,
+            "target_temp_high": 71.0,
+            "eco_mode": True,
+            "only_track_selected_rooms": True,
+            "tracked_area_ids": {"room_a"},
+            "now": now,
+        }
+
+        # Without a predictive demand, TSR still restricts force-open.
+        without_predictive = controller.evaluate_all_vents(**kwargs)
+        room_b_unforced = without_predictive.area_states["room_b"]
+        assert room_b_unforced.should_open is False
+        assert room_b_unforced.open_reason is None
+
+        # While Predictive Comfort drives the same mode, the room is force-opened.
+        with_predictive = controller.evaluate_all_vents(
+            **kwargs, predictive_hvac_mode=HVACMode.COOL
+        )
+        room_b_forced = with_predictive.area_states["room_b"]
+        assert room_b_forced.should_open is True
+        assert room_b_forced.open_reason == "Active unsatiated (Predictive Comfort)"
+        assert room_b_forced.vents[0].should_be_open is True
+
+        # A predictive demand for the opposite mode must not widen force-open;
+        # only a demand matching the mode being delivered counts as driving.
+        conflicting = controller.evaluate_all_vents(
+            **kwargs, predictive_hvac_mode=HVACMode.HEAT
+        )
+        assert conflicting.area_states["room_b"].should_open is False
+
     def test_excluded_critical_room_can_stay_open_for_minimum_vent_safety(self, controller):
         """Ignored rooms still use critical state when choosing safe vents to close."""
         controller.min_vents_open = 1

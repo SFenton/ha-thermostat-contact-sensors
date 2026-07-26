@@ -806,6 +806,7 @@ class VentController:
         tracked_area_ids: set[str] | None = None,
         force_track_when_critical_area_ids: set[str] | None = None,
         excluded_area_ids: set[str] | None = None,
+        predictive_hvac_mode: HVACMode | None = None,
         now: datetime | None = None,
     ) -> VentControlState:
         """Evaluate all vents and determine which should be open.
@@ -819,6 +820,10 @@ class VentController:
             hvac_mode: Current HVAC mode for temperature-aware vent priority.
             target_temp_low: Heating target temperature (for inferring mode when HVAC off).
             target_temp_high: Cooling target temperature (for inferring mode when HVAC off).
+            predictive_hvac_mode: Predictive Comfort demand currently driving the
+                thermostat, if any. Predictive Comfort evaluates the whole home
+                rather than the tracked-room subset, so while it is driving we do
+                not let Track Selected Rooms restrict which rooms are force-opened.
             now: Current time (optional, for testing).
 
         Returns:
@@ -851,6 +856,20 @@ class VentController:
         tracked_area_ids = tracked_area_ids or set()
         force_track_when_critical_area_ids = force_track_when_critical_area_ids or set()
         excluded_area_ids = excluded_area_ids or set()
+
+        # Predictive Comfort derives its recommendation from whole-home sensors,
+        # not the tracked-room subset, so while it is driving the thermostat the
+        # rooms creating the predicted discomfort must be able to receive airflow
+        # even when Track Selected Rooms would otherwise exclude them. Require the
+        # predictive demand to match the mode the vents are being positioned for,
+        # so a demand that lost to conflicting room demand cannot widen force-open.
+        predictive_driving = (
+            predictive_hvac_mode in (HVACMode.HEAT, HVACMode.COOL)
+            and predictive_hvac_mode == effective_mode
+        )
+        restrict_force_open_to_tracked = (
+            eco_mode and only_track_selected_rooms and not predictive_driving
+        )
 
         # Build occupancy start time lookup
         occupancy_times: dict[str, datetime | None] = {}
@@ -909,9 +928,10 @@ class VentController:
             # - Eco OFF: force-open all critical rooms.
             # - Eco ON + TSR OFF: force-open all critical rooms.
             # - Eco ON + TSR ON: force-open critical tracked rooms + critical FTCR rooms.
+            # - Predictive Comfort driving: force-open all critical rooms.
             is_force_open_critical = False
             if is_critical and not is_excluded:
-                if eco_mode and only_track_selected_rooms:
+                if restrict_force_open_to_tracked:
                     is_force_open_critical = (
                         area_id in tracked_area_ids
                         or area_id in force_track_when_critical_area_ids
@@ -923,6 +943,8 @@ class VentController:
             # - Eco OFF: any active unsatiated room.
             # - Eco ON + TSR OFF: any active unsatiated room.
             # - Eco ON + TSR ON: active unsatiated rooms that are tracked by TSR.
+            # - Predictive Comfort driving: any active unsatiated room, so the
+            #   rooms driving the prediction actually receive the conditioned air.
             is_force_open_active_unsatiated = False
             if (
                 is_active
@@ -932,7 +954,7 @@ class VentController:
                 and determining_temperature is not None
                 and vent_open_delay_elapsed
             ):
-                if eco_mode and only_track_selected_rooms:
+                if restrict_force_open_to_tracked:
                     is_force_open_active_unsatiated = area_id in tracked_area_ids
                 else:
                     is_force_open_active_unsatiated = True
@@ -942,7 +964,9 @@ class VentController:
             if force_open:
                 if is_force_open_critical:
                     force_open_reason = "Critical temperature"
-                elif eco_mode and only_track_selected_rooms:
+                elif predictive_driving and eco_mode and only_track_selected_rooms:
+                    force_open_reason = "Active unsatiated (Predictive Comfort)"
+                elif restrict_force_open_to_tracked:
                     force_open_reason = "Active (tracked) unsatiated"
                 else:
                     force_open_reason = "Active unsatiated"

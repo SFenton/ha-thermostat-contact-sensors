@@ -1754,6 +1754,17 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Get per-area vent delay overrides
         area_vent_delays = self.get_area_vent_delays()
 
+        # Only let Predictive Comfort relax vent gating when the mode it asked for
+        # is the mode actually being delivered. A predictive demand that was vetoed
+        # by conflicting room demand must not widen force-open.
+        predictive_hvac_mode = None
+        if (
+            self._last_thermostat_state is not None
+            and self._last_thermostat_state.predictive_hvac_mode is not None
+            and self._last_thermostat_state.predictive_hvac_mode == hvac_mode
+        ):
+            predictive_hvac_mode = self._last_thermostat_state.predictive_hvac_mode
+
         tracked_area_ids = self.tracked_rooms if self.only_track_selected_rooms else set()
         force_track_when_critical_area_ids = {
             area_id
@@ -1776,6 +1787,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             tracked_area_ids=tracked_area_ids,
             force_track_when_critical_area_ids=force_track_when_critical_area_ids,
             excluded_area_ids=excluded_area_ids,
+            predictive_hvac_mode=predictive_hvac_mode,
         )
 
         # Execute pending commands
