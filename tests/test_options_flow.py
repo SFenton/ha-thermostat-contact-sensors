@@ -67,6 +67,20 @@ async def setup_ha(hass: HomeAssistant, setup_test_entities, setup_entity_regist
     pass
 
 
+def test_default_notification_copy_is_generic_and_reports_confirmed_states() -> None:
+    """Test that default notification copy stays generic and state-accurate."""
+    assert DEFAULT_NOTIFY_TITLE_PAUSED == "Thermostat · Paused"
+    assert DEFAULT_NOTIFY_MESSAGE_PAUSED == (
+        "{{ trigger_sensor_name }} has been open for {{ open_timeout }} minutes. "
+        "The thermostat is paused. Close every door and window to restore normal operation."
+    )
+    assert DEFAULT_NOTIFY_TITLE_RESUMED == "Thermostat · Resumed"
+    assert DEFAULT_NOTIFY_MESSAGE_RESUMED == (
+        "Every door and window has remained closed for {{ close_timeout }} minutes. "
+        "The thermostat has resumed normal operation."
+    )
+
+
 async def test_options_flow_shows_menu(
     hass: HomeAssistant,
     mock_config_entry: ConfigEntry,

@@ -122,12 +122,12 @@ DEFAULT_VACATION_MODE_ENTITY = "input_boolean.vacation_mode"
 DEFAULT_NOTIFY_TITLE_PAUSED = "Thermostat · Paused"
 DEFAULT_NOTIFY_MESSAGE_PAUSED = (
     "{{ trigger_sensor_name }} has been open for {{ open_timeout }} minutes. "
-    "Thermostat will shut down until all doors and windows have been closed."
+    "The thermostat is paused. Close every door and window to restore normal operation."
 )
 DEFAULT_NOTIFY_TITLE_RESUMED = "Thermostat · Resumed"
 DEFAULT_NOTIFY_MESSAGE_RESUMED = (
-    "All doors and windows have been closed for {{ close_timeout }} minutes. "
-    "Thermostat will resume normal operation (restored to {{ previous_mode }} mode)."
+    "Every door and window has remained closed for {{ close_timeout }} minutes. "
+    "The thermostat has resumed normal operation."
 )
 DEFAULT_NOTIFICATION_TAG = "thermostat_contact_sensors_notification"
 DEFAULT_RESPECT_USER_OFF = False  # Default: integration will always resume thermostat

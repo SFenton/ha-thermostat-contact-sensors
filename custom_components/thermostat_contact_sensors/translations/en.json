@@ -183,7 +183,7 @@
           "min_cycle_off_minutes": "Minimum time the thermostat must stay OFF before it can be turned on. Protects HVAC equipment from rapid cycling.",
           "unoccupied_heating_threshold": "Degrees below heat target that triggers heating even in unoccupied rooms. Protects rooms from getting too cold when no one is there.",
           "unoccupied_cooling_threshold": "Degrees above cool target that triggers cooling even in unoccupied rooms. Protects rooms from getting too hot when no one is there.",
-          "heating_boost_offset": "Degrees to add to the heat setpoint when turning on the thermostat. This overcomes the thermostat's internal deadband to ensure it actually calls for heat. For example, if your ecobee isn't heating because it thinks it's already at temperature, set this to 2-3°.",
+          "heating_boost_offset": "This setting adds degrees to the heat setpoint to overcome the thermostat's internal deadband and prompt a call for heat. If the thermostat already considers the room at temperature, use a 2–3 degree boost.",
           "cooling_boost_offset": "Degrees to subtract from the cool setpoint when turning on the thermostat. This overcomes the thermostat's internal deadband to ensure it actually calls for cooling.",
           "min_vents_open": "Minimum number of vents that must remain open to prevent HVAC back pressure. The effective minimum also respects the maximum closed-vent budget.",
           "max_closed_vents": "Maximum number of physical vents that may be closed at the same time. Vent groups count by their member vents, so a two-vent room consumes two closed slots.",
