@@ -1425,6 +1425,22 @@ class TestPredictiveComfort:
 
         assert coordinator._resolved_predictive_weather_entity() == TEST_WEATHER
 
+    async def test_predictive_comfort_prefers_apple_weather_over_met(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test removing Pirate Weather falls back to Apple Weather, not Met.no."""
+        options = self.predictive_options()
+        options[CONF_PREDICTIVE_WEATHER_ENTITY] = ""
+        coordinator = self.create_predictive_coordinator(hass, options)
+        hass.states.async_set("weather.forecast_home", "sunny")
+        hass.states.async_set("weather.apple_weather", "sunny")
+
+        assert coordinator._resolved_predictive_weather_entity() == "weather.apple_weather"
+
+        hass.states.async_set("weather.pirate_weather", "sunny")
+        assert coordinator._resolved_predictive_weather_entity() == "weather.pirate_weather"
+
     async def test_predictive_learning_marks_meaningful_room_heat_load(
         self,
         hass: HomeAssistant,
