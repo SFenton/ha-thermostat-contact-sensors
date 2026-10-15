@@ -168,7 +168,12 @@ WEATHER_DOMAIN = "weather"
 SERVICE_GET_FORECASTS = "get_forecasts"
 FORECAST_TYPE_HOURLY = "hourly"
 HUMIDITY_COMFORT_BASELINE = 45.0
-GLOBAL_WEATHER_ENTITY_PRIORITY = ("weather.pirate_weather", "weather.forecast_home")
+# Apple Weather (fenton_weatherkit) replaces Pirate Weather; Met.no stays the last resort.
+GLOBAL_WEATHER_ENTITY_PRIORITY = (
+    "weather.pirate_weather",
+    "weather.apple_weather",
+    "weather.forecast_home",
+)
 ACTIVE_STATES = {
     "on",
     "home",
