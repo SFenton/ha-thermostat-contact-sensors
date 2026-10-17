@@ -102,20 +102,22 @@ class EcoAwayBehaviorSelect(CoordinatorEntity, RestoreEntity, SelectEntity):
         await super().async_added_to_hass()
 
         # Try to restore previous state
-        if (last_state := await self.async_get_last_state()) is not None:
-            if last_state.state in self._attr_options:
-                # Convert label back to enum value
-                if last_state.state in ECO_AWAY_BEHAVIOR_BY_LABEL:
-                    behavior = ECO_AWAY_BEHAVIOR_BY_LABEL[last_state.state]
-                    self.coordinator.eco_away_behavior = behavior
-                    _LOGGER.info(
-                        "Restored eco_away_behavior state: %s", behavior
-                    )
-                else:
-                    _LOGGER.debug(
-                        "Could not restore eco_away_behavior, using default: %s",
-                        last_state.state
-                    )
+        if (
+            (last_state := await self.async_get_last_state()) is not None
+            and last_state.state in self._attr_options
+        ):
+            # Convert label back to enum value
+            if last_state.state in ECO_AWAY_BEHAVIOR_BY_LABEL:
+                behavior = ECO_AWAY_BEHAVIOR_BY_LABEL[last_state.state]
+                self.coordinator.eco_away_behavior = behavior
+                _LOGGER.info(
+                    "Restored eco_away_behavior state: %s", behavior
+                )
+            else:
+                _LOGGER.debug(
+                    "Could not restore eco_away_behavior, using default: %s",
+                    last_state.state
+                )
 
     @property
     def device_info(self):
@@ -185,20 +187,22 @@ class EcoModeCriticalTrackingSelect(CoordinatorEntity, RestoreEntity, SelectEnti
         await super().async_added_to_hass()
 
         # Try to restore previous state
-        if (last_state := await self.async_get_last_state()) is not None:
-            if last_state.state in self._attr_options:
-                # Convert label back to value
-                if last_state.state in ECO_CRITICAL_TRACKING_BY_LABEL:
-                    value = ECO_CRITICAL_TRACKING_BY_LABEL[last_state.state]
-                    self.coordinator.eco_mode_critical_tracking = value
-                    _LOGGER.info(
-                        "Restored eco_mode_critical_tracking state: %s", value
-                    )
-                else:
-                    _LOGGER.debug(
-                        "Could not restore eco_mode_critical_tracking, using default: %s",
-                        last_state.state
-                    )
+        if (
+            (last_state := await self.async_get_last_state()) is not None
+            and last_state.state in self._attr_options
+        ):
+            # Convert label back to value
+            if last_state.state in ECO_CRITICAL_TRACKING_BY_LABEL:
+                value = ECO_CRITICAL_TRACKING_BY_LABEL[last_state.state]
+                self.coordinator.eco_mode_critical_tracking = value
+                _LOGGER.info(
+                    "Restored eco_mode_critical_tracking state: %s", value
+                )
+            else:
+                _LOGGER.debug(
+                    "Could not restore eco_mode_critical_tracking, using default: %s",
+                    last_state.state
+                )
 
     @property
     def device_info(self):

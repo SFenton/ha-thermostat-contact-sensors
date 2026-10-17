@@ -5,17 +5,18 @@ airflow to individual rooms based on occupancy and temperature conditions.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.climate import HVACMode
-from homeassistant.components.cover import DOMAIN as COVER_DOMAIN, CoverEntityFeature
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
+from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.const import (
     ATTR_ENTITY_ID,
-    STATE_OPEN,
     STATE_CLOSED,
+    STATE_OPEN,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
@@ -124,7 +125,7 @@ class VentController:
 
     @staticmethod
     def infer_effective_hvac_mode(
-        room_temp_states: dict[str, "RoomTemperatureState"],
+        room_temp_states: dict[str, RoomTemperatureState],
         target_temp_low: float | None,
         target_temp_high: float | None,
     ) -> HVACMode | None:
@@ -272,7 +273,7 @@ class VentController:
     def _normalize_vent_count(value: Any, default: int = 0) -> int:
         """Return a non-negative integer vent count."""
         try:
-            normalized = int(round(float(value)))
+            normalized = round(float(value))
         except (TypeError, ValueError):
             normalized = default
         return max(0, normalized)
@@ -580,7 +581,7 @@ class VentController:
         self,
         area_states: dict[str, AreaVentState],
         hvac_mode: HVACMode | None = None,
-        room_temp_states: dict[str, "RoomTemperatureState"] | None = None,
+        room_temp_states: dict[str, RoomTemperatureState] | None = None,
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
         eco_mode: bool = False,
@@ -794,9 +795,9 @@ class VentController:
     def evaluate_all_vents(
         self,
         area_vent_configs: dict[str, list[str]],
-        active_areas: list["AreaOccupancyState"],
-        occupied_areas: list["AreaOccupancyState"],
-        room_temp_states: dict[str, "RoomTemperatureState"] | None = None,
+        active_areas: list[AreaOccupancyState],
+        occupied_areas: list[AreaOccupancyState],
+        room_temp_states: dict[str, RoomTemperatureState] | None = None,
         area_vent_delays: dict[str, int] | None = None,
         hvac_mode: HVACMode | None = None,
         target_temp_low: float | None = None,
@@ -1142,7 +1143,7 @@ class VentController:
                 self._pending_confirmations[entity_id] = (should_open, now, retry_count + 1)
                 
                 executed += 1
-            except Exception as ex:
+            except Exception as ex:  # noqa: BLE001 - one failed vent must not stop the rest
                 _LOGGER.error(
                     "Failed to execute %s on %s: %s",
                     service,

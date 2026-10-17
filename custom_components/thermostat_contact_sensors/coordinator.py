@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
-import logging
-import time
 from typing import Any
 
-from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
-from homeassistant.components.climate import ClimateEntityFeature
+from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
+from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 from homeassistant.components.recorder import get_instance as get_recorder_instance
 from homeassistant.components.recorder.history import get_significant_states
 from homeassistant.const import (
@@ -23,7 +23,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
@@ -43,7 +44,22 @@ from .const import (
     CONF_AWAY_HEAT_TEMP_DIFF,
     CONF_AWAY_PRESENCE_ENTITY,
     CONF_CLOSE_TIMEOUT,
+    CONF_COOLING_BOOST_OFFSET,
     CONF_ECO_MODE_CRITICAL_TRACKING,
+    CONF_GRACE_PERIOD_MINUTES,
+    CONF_HEATING_BOOST_OFFSET,
+    CONF_MAX_CLOSED_VENTS,
+    CONF_MIN_CYCLE_OFF_MINUTES,
+    CONF_MIN_CYCLE_ON_MINUTES,
+    CONF_MIN_OCCUPANCY_MINUTES,
+    CONF_MIN_VENTS_OPEN,
+    CONF_NOTIFICATION_TAG,
+    CONF_NOTIFY_MESSAGE_PAUSED,
+    CONF_NOTIFY_MESSAGE_RESUMED,
+    CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_TITLE_PAUSED,
+    CONF_NOTIFY_TITLE_RESUMED,
+    CONF_OPEN_TIMEOUT,
     CONF_PREDICTIVE_ACTIVITY_ENTITIES,
     CONF_PREDICTIVE_ACTIVITY_HEAT_GAIN,
     CONF_PREDICTIVE_ALLOW_AWAY,
@@ -68,32 +84,17 @@ from .const import (
     CONF_PREDICTIVE_PREHEAT_OFFSET,
     CONF_PREDICTIVE_RAIN_COOLING,
     CONF_PREDICTIVE_TEMPERATURE_SENSORS,
-    CONF_PREDICTIVE_TRIGGER_MARGIN,
     CONF_PREDICTIVE_TREND_WEIGHT,
+    CONF_PREDICTIVE_TRIGGER_MARGIN,
     CONF_PREDICTIVE_WEATHER_ENTITY,
-    CONF_GRACE_PERIOD_MINUTES,
-    CONF_COOLING_BOOST_OFFSET,
-    CONF_HEATING_BOOST_OFFSET,
-    CONF_MAX_CLOSED_VENTS,
-    CONF_MIN_CYCLE_OFF_MINUTES,
-    CONF_MIN_CYCLE_ON_MINUTES,
-    CONF_MIN_OCCUPANCY_MINUTES,
-    CONF_MIN_VENTS_OPEN,
-    CONF_NOTIFICATION_TAG,
-    CONF_NOTIFY_MESSAGE_PAUSED,
-    CONF_NOTIFY_MESSAGE_RESUMED,
-    CONF_NOTIFY_SERVICE,
-    CONF_NOTIFY_TITLE_PAUSED,
-    CONF_NOTIFY_TITLE_RESUMED,
-    CONF_OPEN_TIMEOUT,
     CONF_TEMPERATURE_DEADBAND,
     CONF_TEMPERATURE_SENSORS,
     CONF_UNOCCUPIED_COOLING_THRESHOLD,
     CONF_UNOCCUPIED_HEATING_THRESHOLD,
+    CONF_VACATION_MODE_ENTITY,
     CONF_VENT_DEBOUNCE_SECONDS,
     CONF_VENT_OPEN_DELAY_SECONDS,
     CONF_VENTS,
-    CONF_VACATION_MODE_ENTITY,
     DEFAULT_AWAY_COOL_TEMP_DIFF,
     DEFAULT_AWAY_HEAT_TEMP_DIFF,
     DEFAULT_CLOSE_TIMEOUT,
@@ -133,23 +134,23 @@ from .const import (
     DEFAULT_PREDICTIVE_PRECOOL_OFFSET,
     DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
     DEFAULT_PREDICTIVE_RAIN_COOLING,
-    DEFAULT_PREDICTIVE_TRIGGER_MARGIN,
     DEFAULT_PREDICTIVE_TREND_WEIGHT,
+    DEFAULT_PREDICTIVE_TRIGGER_MARGIN,
     DEFAULT_TEMPERATURE_DEADBAND,
     DEFAULT_UNOCCUPIED_COOLING_THRESHOLD,
     DEFAULT_UNOCCUPIED_HEATING_THRESHOLD,
+    DEFAULT_VACATION_MODE_ENTITY,
     DEFAULT_VENT_DEBOUNCE_SECONDS,
     DEFAULT_VENT_OPEN_DELAY_SECONDS,
-    DEFAULT_VACATION_MODE_ENTITY,
     DOMAIN,
+    ECO_CRITICAL_ALL,
+    ECO_CRITICAL_NONE,
+    ECO_CRITICAL_SELECT,
     HEAT_LOAD_COOLDOWN_MARGIN_C,
     HEAT_LOAD_COOLDOWN_MARGIN_F,
     HEAT_LOAD_COOLDOWN_MAX_MINUTES,
     HEAT_LOAD_SAVE_INTERVAL_SECONDS,
     HEAT_LOAD_STORAGE_VERSION,
-    ECO_CRITICAL_ALL,
-    ECO_CRITICAL_NONE,
-    ECO_CRITICAL_SELECT,
     PREDICTIVE_MODE_DISABLED,
     PREDICTIVE_MODE_IDLE,
     PREDICTIVE_MODE_INSUFFICIENT_DATA,
@@ -901,7 +902,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     def _option_int(self, key: str, default: int) -> int:
         """Return a numeric option as an int."""
-        return int(round(self._option_float(key, float(default))))
+        return round(self._option_float(key, float(default)))
 
     def _predictive_disabled_result(self) -> dict[str, Any]:
         """Return a disabled predictive comfort result."""
@@ -1498,7 +1499,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         force_critical_area_ids = {
             area_id
-            for area_id in self._areas_config.keys()
+            for area_id in self._areas_config
             if self._area_has_critical_override(area_id)
         }
 
@@ -1996,7 +1997,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         tracked_area_ids = self.tracked_rooms if self.only_track_selected_rooms else set()
         force_track_when_critical_area_ids = {
             area_id
-            for area_id in self._areas_config.keys()
+            for area_id in self._areas_config
             if self._area_has_critical_override(area_id)
         }
 
@@ -2872,8 +2873,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                     opened_at = getattr(state, "last_changed", None)
                     if opened_at is not None:
                         age_seconds = (now_utc - opened_at).total_seconds()
-                        if age_seconds < 0:
-                            age_seconds = 0
+                        age_seconds = max(age_seconds, 0)
                         new_open_sensors[sensor] = current_time - age_seconds
                     else:
                         new_open_sensors[sensor] = current_time
@@ -3471,7 +3471,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
                 blocking=True,
             )
             _LOGGER.debug("Notification sent: %s", title)
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001 - a notify failure must not break control
             _LOGGER.error("Failed to send notification: %s", ex)
 
     async def _async_render_template(
@@ -3481,10 +3481,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         try:
             template = Template(template_str, self.hass)
             return template.async_render(variables)
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001 - fall back to the raw template
             _LOGGER.error("Failed to render template: %s", ex)
             return template_str
 
     async def _async_update_data(self) -> None:
         """Update data - not used as we're event-driven."""
-        return None
+        return
