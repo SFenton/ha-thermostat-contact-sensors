@@ -23,6 +23,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
@@ -549,6 +550,66 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         entities = self._entity_list_option(CONF_PREDICTIVE_ACTIVITY_ENTITIES)
         entities.extend(self._area_entity_list(CONF_PREDICTIVE_ACTIVITY_ENTITIES))
         return list(dict.fromkeys(entities))
+
+    def _activity_entity_area_ids(self) -> dict[str, str]:
+        """Map activity entities to the configured room they heat.
+
+        An entity listed in an area's own activity entities belongs to that area.
+        Otherwise the entity's registry area (or its device's area) is used.
+        Entities without a configured room are treated as whole-house loads.
+        """
+        return self._entity_area_ids(
+            self.predictive_activity_entities,
+            CONF_PREDICTIVE_ACTIVITY_ENTITIES,
+        )
+
+    def _entity_area_ids(self, entity_ids: list[str], area_key: str) -> dict[str, str]:
+        """Map entities to enabled configured areas via area config, then registry."""
+        enabled_area_ids = {
+            area_id
+            for area_id, area_config in self._areas_config.items()
+            if area_config.get(CONF_AREA_ENABLED, True)
+        }
+        mapping: dict[str, str] = {}
+        for area_id in enabled_area_ids:
+            value = self._areas_config[area_id].get(area_key, [])
+            for entity_id in [value] if isinstance(value, str) else value or []:
+                if isinstance(entity_id, str) and entity_id:
+                    mapping.setdefault(entity_id, area_id)
+
+        unmapped = [entity_id for entity_id in entity_ids if entity_id not in mapping]
+        if not unmapped:
+            return mapping
+
+        try:
+            entity_registry = er.async_get(self.hass)
+            device_registry = dr.async_get(self.hass)
+        except (AttributeError, KeyError):
+            return mapping
+
+        for entity_id in unmapped:
+            entry = entity_registry.async_get(entity_id)
+            if entry is None:
+                continue
+            area_id = entry.area_id
+            if area_id is None and entry.device_id:
+                device = device_registry.async_get(entry.device_id)
+                area_id = device.area_id if device is not None else None
+            if isinstance(area_id, str) and area_id in enabled_area_ids:
+                mapping[entity_id] = area_id
+        return mapping
+
+    @property
+    def heat_load_area_ids(self) -> set[str]:
+        """Return configured rooms currently warmed by an active heat load."""
+        if not self.predictive_comfort_enabled:
+            return set()
+        area_by_entity = self._activity_entity_area_ids()
+        return {
+            area_by_entity[entity_id]
+            for entity_id in self._active_activity_entities()
+            if entity_id in area_by_entity
+        }
 
     @property
     def predictive_mode(self) -> str:
@@ -1378,6 +1439,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             predictive_hvac_mode=predictive_request.get("hvac_mode"),
             predictive_target_temperature=predictive_request.get("target_temperature"),
             predictive_reason=predictive_request.get("reason"),
+            heat_load_area_ids=self.heat_load_area_ids,
         )
 
         self._refresh_vent_effective_mode_if_needed(self._last_thermostat_state)
@@ -1403,10 +1465,19 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             if area_id not in merged_room_states:
                 merged_room_states[area_id] = vent_state
 
+        # Match the thermostat trend: rooms warmed by an active heat load do not
+        # represent whether the house needs heat or cooling.
+        heat_load_area_ids = set(state.heat_load_area_ids)
+        trend_room_states = {
+            area_id: room_state
+            for area_id, room_state in merged_room_states.items()
+            if area_id not in heat_load_area_ids
+        } or merged_room_states
+
         new_targets = (state.target_temp_low, state.target_temp_high)
         new_determining: dict[str, float | None] = {
             area_id: getattr(room_state, "determining_temperature", None)
-            for area_id, room_state in merged_room_states.items()
+            for area_id, room_state in trend_room_states.items()
         }
 
         if (
@@ -1418,7 +1489,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         self._last_vent_infer_targets = new_targets
         self._last_room_determining_temperatures = new_determining
         self._last_vent_effective_mode = VentController.infer_effective_hvac_mode(
-            merged_room_states,
+            trend_room_states,
             state.target_temp_low,
             state.target_temp_high,
         )
@@ -2166,6 +2237,42 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         humidity_effect = self._humidity_effect(humidity)
         activity_effect = self._activity_effect(active_activity_entities)
+
+        # Room-scoped heat loads (an office PC, a theater projector) warm their own
+        # room, not the house. They still count toward pre-cooling, but pre-heat is
+        # judged on the rooms that are not self-heating, without that room heat.
+        activity_area_ids = self._activity_entity_area_ids()
+        room_scoped_active_entities = [
+            entity_id
+            for entity_id in active_activity_entities
+            if entity_id in activity_area_ids
+        ]
+        heat_load_area_ids = sorted(
+            {activity_area_ids[entity_id] for entity_id in room_scoped_active_entities}
+        )
+        heating_activity_effect = self._activity_effect(
+            [
+                entity_id
+                for entity_id in active_activity_entities
+                if entity_id not in activity_area_ids
+            ]
+        )
+        heating_indoor_temperature = indoor_temperature
+        if heat_load_area_ids:
+            sensor_area_ids = self._entity_area_ids(
+                self.predictive_temperature_sensors,
+                CONF_TEMPERATURE_SENSORS,
+            )
+            unloaded_temperature = self._average_numeric_states(
+                [
+                    sensor_id
+                    for sensor_id in self.predictive_temperature_sensors
+                    if sensor_area_ids.get(sensor_id) not in heat_load_area_ids
+                ]
+            )
+            if unloaded_temperature is not None:
+                heating_indoor_temperature = unloaded_temperature
+
         rain_cooling = (
             self._option_float(
                 CONF_PREDICTIVE_RAIN_COOLING,
@@ -2205,6 +2312,15 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             - cool_pressure
             - rain_cooling
         )
+        heating_predicted_temperature = (
+            heating_indoor_temperature
+            + heat_pressure
+            + trend_pressure
+            + humidity_effect
+            + heating_activity_effect
+            - cool_pressure
+            - rain_cooling
+        )
 
         trigger_margin = self._option_float(
             CONF_PREDICTIVE_TRIGGER_MARGIN,
@@ -2215,7 +2331,24 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         target_hvac_mode: str | None = None
         reasons: list[str] = []
 
-        if predicted_temperature > comfort_high + trigger_margin:
+        # Pre-heat is checked first: when the house outside self-heating rooms is
+        # cold, room-scoped heat must not trigger whole-house cooling instead.
+        if heating_predicted_temperature < comfort_low - trigger_margin:
+            mode = PREDICTIVE_MODE_PRE_HEAT
+            target_temperature = min(
+                comfort_high,
+                comfort_low
+                + self._option_float(
+                    CONF_PREDICTIVE_PREHEAT_OFFSET,
+                    DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
+                ),
+            )
+            target_hvac_mode = HVACMode.HEAT
+            reasons.append(
+                f"Predicted indoor temperature {heating_predicted_temperature:.1f}°F is below "
+                f"comfort low {comfort_low:.1f}°F"
+            )
+        elif predicted_temperature > comfort_high + trigger_margin:
             mode = PREDICTIVE_MODE_PRE_COOL
             target_temperature = max(
                 comfort_low,
@@ -2229,21 +2362,6 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             reasons.append(
                 f"Predicted indoor temperature {predicted_temperature:.1f}°F exceeds "
                 f"comfort high {comfort_high:.1f}°F"
-            )
-        elif predicted_temperature < comfort_low - trigger_margin:
-            mode = PREDICTIVE_MODE_PRE_HEAT
-            target_temperature = min(
-                comfort_high,
-                comfort_low
-                + self._option_float(
-                    CONF_PREDICTIVE_PREHEAT_OFFSET,
-                    DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
-                ),
-            )
-            target_hvac_mode = HVACMode.HEAT
-            reasons.append(
-                f"Predicted indoor temperature {predicted_temperature:.1f}°F is below "
-                f"comfort low {comfort_low:.1f}°F"
             )
         else:
             reasons.append("Predicted indoor temperature remains within comfort band")
@@ -2290,6 +2408,9 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "cool_pressure": round(cool_pressure, 1),
             "trend_pressure": round(trend_pressure, 1),
             "active_activity_entities": active_activity_entities,
+            "heat_load_areas": heat_load_area_ids,
+            "heating_indoor_temperature": round(heating_indoor_temperature, 1),
+            "heating_predicted_temperature": round(heating_predicted_temperature, 1),
             "learning": self.predictive_learning_result,
             "learned_activity_heat_gains": self._activity_heat_gains,
             "rainy_forecast": rainy_forecast,
