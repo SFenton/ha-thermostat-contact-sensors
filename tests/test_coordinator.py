@@ -33,6 +33,8 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_VACATION_MODE_ENTITY,
     DOMAIN,
+    HEAT_LOAD_COOLDOWN_MAX_MINUTES,
+    HEAT_LOAD_STORAGE_VERSION,
     PREDICTIVE_MODE_DISABLED,
     PREDICTIVE_MODE_IDLE,
     PREDICTIVE_MODE_PRE_COOL,
@@ -1568,6 +1570,181 @@ class TestPredictiveComfort:
         assert result["heat_load_areas"] == ["office"]
         assert coordinator.predictive_mode == PREDICTIVE_MODE_PRE_HEAT
         assert coordinator.heat_load_area_ids == {"office"}
+
+        await coordinator.async_shutdown()
+
+    async def create_office_load_coordinator(
+        self,
+        hass: HomeAssistant,
+        office_temperature: str = "80",
+    ) -> tuple[ThermostatContactSensorsCoordinator, str]:
+        """Create a coordinator with an office heat load and a cold living room."""
+        office_load = er.async_get(hass).async_get_or_create(
+            "binary_sensor",
+            "template",
+            "office_heat_load",
+            suggested_object_id="office_heat_load",
+        )
+        er.async_get(hass).async_update_entity(office_load.entity_id, area_id="office")
+        hass.states.async_set(office_load.entity_id, STATE_ON)
+        hass.states.async_set("sensor.office_temperature", office_temperature)
+        hass.states.async_set("sensor.living_room_temperature", "69")
+        hass.states.async_set(
+            TEST_WEATHER,
+            "cloudy",
+            {"temperature": 72, "forecast": [{"temperature": 72, "condition": "cloudy"}]},
+        )
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options.pop(CONF_PREDICTIVE_TEMPERATURE_SENSORS)
+        options.pop(CONF_PREDICTIVE_HUMIDITY_SENSORS)
+        options[CONF_PREDICTIVE_ACTIVITY_ENTITIES] = [office_load.entity_id]
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="predictive_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+            areas_config={
+                "office": {CONF_TEMPERATURE_SENSORS: ["sensor.office_temperature"]},
+                "living_room": {
+                    CONF_TEMPERATURE_SENSORS: ["sensor.living_room_temperature"]
+                },
+            },
+        )
+        return coordinator, office_load.entity_id
+
+    async def test_heat_load_cooldown_holds_warm_room_until_converged(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """A warm office stays heat-loaded after its PCs turn off until it cools."""
+        coordinator, office_load = await self.create_office_load_coordinator(hass)
+        await coordinator.async_setup()
+        assert coordinator._heat_load_states == {"office": "active"}
+
+        hass.states.async_set(office_load, STATE_OFF)
+        await hass.async_block_till_done()
+        await coordinator.async_evaluate_predictive_comfort()
+
+        result = coordinator.predictive_result
+        assert result["heat_load_areas"] == ["office"]
+        assert result["heat_load_cooldown_areas"] == ["office"]
+        assert result["heating_predicted_temperature"] == 69.0
+        assert coordinator.predictive_mode == PREDICTIVE_MODE_PRE_HEAT
+
+        # 71 is within the 2F margin of the 69F living room: residual heat is gone.
+        hass.states.async_set("sensor.office_temperature", "71")
+        await hass.async_block_till_done()
+        assert coordinator.heat_load_area_ids == set()
+        assert coordinator.heat_load_cooldown_area_ids == set()
+        assert coordinator._heat_load_last_active == {}
+
+        await coordinator.async_shutdown()
+
+    async def test_heat_load_cooldown_expires_after_max_hold(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """A room that never converges is released after the maximum hold."""
+        coordinator, office_load = await self.create_office_load_coordinator(hass)
+        await coordinator.async_setup()
+        hass.states.async_set(office_load, STATE_OFF)
+        await hass.async_block_till_done()
+        assert coordinator.heat_load_cooldown_area_ids == {"office"}
+
+        coordinator._heat_load_last_active["office"] = dt_util.utcnow() - timedelta(
+            minutes=HEAT_LOAD_COOLDOWN_MAX_MINUTES
+        )
+        assert coordinator.heat_load_area_ids == set()
+
+        await coordinator.async_shutdown()
+
+    async def test_heat_load_cooldown_skips_room_that_was_not_warmed(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """A load that never warmed its room clears as soon as it turns off."""
+        coordinator, office_load = await self.create_office_load_coordinator(
+            hass, office_temperature="70"
+        )
+        await coordinator.async_setup()
+        hass.states.async_set(office_load, STATE_OFF)
+        await hass.async_block_till_done()
+
+        assert coordinator.heat_load_area_ids == set()
+
+        await coordinator.async_shutdown()
+
+    async def test_heat_load_flap_keeps_room_heat_loaded(
+        self,
+        hass: HomeAssistant,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """A load that briefly drops out never leaves the heat-loaded set."""
+        coordinator, office_load = await self.create_office_load_coordinator(hass)
+        await coordinator.async_setup()
+
+        hass.states.async_set(office_load, STATE_UNAVAILABLE)
+        await hass.async_block_till_done()
+        assert coordinator._refresh_heat_load_states() == {"office": "cooldown"}
+        hass.states.async_set(office_load, STATE_ON)
+        await hass.async_block_till_done()
+        assert coordinator._refresh_heat_load_states() == {"office": "active"}
+
+        await coordinator.async_shutdown()
+
+    async def test_heat_load_cooldown_survives_restart(
+        self,
+        hass: HomeAssistant,
+        hass_storage: dict,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """A restart during a cooldown restores the room's last active time."""
+        last_active = dt_util.utcnow() - timedelta(minutes=30)
+        hass_storage[f"{DOMAIN}.predictive_entry.heat_load"] = {
+            "version": HEAT_LOAD_STORAGE_VERSION,
+            "minor_version": 1,
+            "key": f"{DOMAIN}.predictive_entry.heat_load",
+            "data": {
+                "last_active": {
+                    "office": last_active.isoformat(),
+                    "garage": last_active.isoformat(),
+                }
+            },
+        }
+        coordinator, office_load = await self.create_office_load_coordinator(hass)
+        hass.states.async_set(office_load, STATE_OFF)
+        await hass.async_block_till_done()
+
+        await coordinator.async_setup()
+
+        assert coordinator.predictive_result["heat_load_cooldown_areas"] == ["office"]
+        assert coordinator._heat_load_last_active == {"office": last_active}
+
+        await coordinator.async_shutdown()
+
+    async def test_heat_load_change_reruns_thermostat_control(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """A heat-load lifecycle change re-runs thermostat control."""
+        coordinator, _office_load = await self.create_office_load_coordinator(hass)
+        await coordinator.async_setup()
+        coordinator._last_thermostat_state = MagicMock(heat_load_area_ids=[])
+        coordinator.async_update_thermostat_and_vents = AsyncMock()
+
+        await coordinator.async_evaluate_predictive_comfort()
+        coordinator.async_update_thermostat_and_vents.assert_awaited_once()
+
+        coordinator._last_thermostat_state = MagicMock(heat_load_area_ids=["office"])
+        coordinator.async_update_thermostat_and_vents.reset_mock()
+        await coordinator.async_evaluate_predictive_comfort()
+        coordinator.async_update_thermostat_and_vents.assert_not_awaited()
 
         await coordinator.async_shutdown()
 

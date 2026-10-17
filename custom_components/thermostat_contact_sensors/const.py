@@ -147,6 +147,16 @@ DEFAULT_PREDICTIVE_HUMIDITY_SENSITIVITY = 0.05
 DEFAULT_PREDICTIVE_ACTIVITY_HEAT_GAIN = 1.0
 DEFAULT_PREDICTIVE_RAIN_COOLING = 2.0
 DEFAULT_PREDICTIVE_EVALUATION_INTERVAL = 15
+
+# Heat-load cooldown: after a room's heat load turns off, the room keeps being
+# treated as heat-loaded until it is back within this margin of the rest of the
+# house, or until the maximum hold elapses. Values come from measured office
+# cooldowns (normally ~0.9°F above the house; 60-320 min to converge).
+HEAT_LOAD_COOLDOWN_MAX_MINUTES = 360
+HEAT_LOAD_COOLDOWN_MARGIN_F = 2.0
+HEAT_LOAD_COOLDOWN_MARGIN_C = 1.1
+HEAT_LOAD_STORAGE_VERSION = 1
+HEAT_LOAD_SAVE_INTERVAL_SECONDS = 300
 DEFAULT_PREDICTIVE_MIN_ADJUSTMENT_INTERVAL = 45
 DEFAULT_PREDICTIVE_HISTORY_LEARNING_ENABLED = True
 DEFAULT_PREDICTIVE_HISTORY_LOOKBACK_DAYS = 7
