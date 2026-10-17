@@ -437,7 +437,7 @@ def infer_effective_hvac_mode(
 
 
 def determine_rooms_need_mode(
-    room_states: dict[str, "RoomTemperatureState"],
+    room_states: dict[str, RoomTemperatureState],
     target_temp_low: float,
     target_temp_high: float,
     deadband: float,
@@ -1171,7 +1171,7 @@ class ThermostatController:
         # - When trending HEAT: use the hottest sensor
         # - When trending COOL: use the coldest sensor
         if hvac_mode == HVACMode.HEAT and target_temp is not None:
-            hottest_sensor, hottest_temp = max(
+            _hottest_sensor, hottest_temp = max(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp - self._unoccupied_heating_threshold
@@ -1182,7 +1182,7 @@ class ThermostatController:
                     f"below heat target {target_temp:.1f}° (threshold: {self._unoccupied_heating_threshold:.1f}°)"
                 )
         elif hvac_mode == HVACMode.COOL and target_temp is not None:
-            coldest_sensor, coldest_temp = min(
+            _coldest_sensor, coldest_temp = min(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             critical_threshold = target_temp + self._unoccupied_cooling_threshold
@@ -1193,10 +1193,10 @@ class ThermostatController:
                     f"above cool target {target_temp:.1f}° (threshold: {self._unoccupied_cooling_threshold:.1f}°)"
                 )
         elif hvac_mode == HVACMode.HEAT_COOL and target_temp_low is not None and target_temp_high is not None:
-            coldest_sensor, coldest_temp = min(
+            _coldest_sensor, coldest_temp = min(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
-            warmest_sensor, warmest_temp = max(
+            _warmest_sensor, warmest_temp = max(
                 room_state.sensor_readings.items(), key=lambda x: x[1]
             )
             heat_critical_threshold = target_temp_low - self._unoccupied_heating_threshold
@@ -1914,20 +1914,22 @@ class ThermostatController:
         # A room can need heat even if critical_count=0 (e.g., cold basement when trend=COOL)
         has_mode_independent_critical = main_rooms_need_heat or main_rooms_need_cool
         
-        if len(active_areas) == 0 and critical_count == 0 and not has_mode_independent_critical:
-            # No active rooms and no critical rooms (either mode-dependent or mode-independent)
-            if not rooms_configured and not predictive_needs_conditioning:
-                # No rooms configured at all - don't control thermostat
-                thermostat_state.recommended_action = ThermostatAction.NONE
-                thermostat_state.action_reason = "No rooms configured"
-                return thermostat_state
+        # No active rooms and no critical rooms (either mode-dependent or mode-independent)
+        if (
+            len(active_areas) == 0
+            and critical_count == 0
+            and not has_mode_independent_critical
+            and not rooms_configured
+            and not predictive_needs_conditioning
+        ):
+            # No rooms configured at all - don't control thermostat
+            thermostat_state.recommended_action = ThermostatAction.NONE
+            thermostat_state.action_reason = "No rooms configured"
+            return thermostat_state
 
-            # Rooms are configured but none are currently active/critical.
-            # Treat this the same as "all rooms satiated": recommend turning the
-            # thermostat off (subject to min-cycle timers) so it doesn't keep
-            # running on its own schedule/setpoint.
-            pass
-
+        # Rooms configured but none currently active/critical are treated the same
+        # as "all rooms satiated": recommend turning the thermostat off (subject to
+        # min-cycle timers) so it doesn't keep running on its own schedule/setpoint.
         if not needs_conditioning:
             # All active rooms satiated and no critical rooms - should turn off
             if is_on:
@@ -2319,7 +2321,10 @@ class ThermostatController:
         if thermostat_state.recommended_action == ThermostatAction.TURN_ON:
             # Use the inferred HVAC mode from consensus logic
             # This is set during evaluate_thermostat_action based on global trend
-            if thermostat_state.inferred_hvac_mode and thermostat_state.inferred_hvac_mode != HVACMode.OFF:
+            if (
+                thermostat_state.inferred_hvac_mode
+                and thermostat_state.inferred_hvac_mode != HVACMode.OFF
+            ):
                 target_mode = thermostat_state.inferred_hvac_mode
             elif self._previous_hvac_mode and self._previous_hvac_mode != HVACMode.OFF:
                 # Fall back to previous mode if no inferred mode

@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import logging
-import voluptuous as vol
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
@@ -115,7 +115,7 @@ async def async_setup_entry(
     # Gather contact sensors from enabled areas (door/window sensors for pause feature)
     contact_sensors = []
     if areas_config:
-        for area_id, area_config in areas_config.items():
+        for area_config in areas_config.values():
             if area_config.get(CONF_AREA_ENABLED, True):
                 # Use CONF_CONTACT_SENSORS if available, fall back to legacy CONF_BINARY_SENSORS
                 area_contact_sensors = area_config.get(CONF_CONTACT_SENSORS)
@@ -147,7 +147,7 @@ async def async_setup_entry(
 
         # Set up platforms
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    except Exception:
+    except Exception:  # noqa: BLE001 - cleans up, then re-raises
         # Avoid leaking listeners/timers if setup fails part-way through.
         try:
             await coordinator.async_shutdown()

@@ -7,16 +7,16 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers import area_registry as ar
 
 from .const import (
-    CONF_AREAS,
     CONF_AREA_ENABLED,
     CONF_AREA_FORCE_TRACK_WHEN_CRITICAL,
     CONF_AREA_TRACK_ONLY_WHEN_OCCUPIED,
+    CONF_AREAS,
     CONF_PREDICTIVE_ALLOW_AWAY,
     CONF_PREDICTIVE_ALLOW_HVAC_MODE_CHANGE,
     CONF_PREDICTIVE_AUTO_ADJUST,

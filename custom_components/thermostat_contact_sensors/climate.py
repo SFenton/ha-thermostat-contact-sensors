@@ -109,7 +109,6 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_hvac_modes = [HVACMode.HEAT_COOL]
     _attr_hvac_mode = HVACMode.HEAT_COOL
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
@@ -127,6 +126,7 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     ) -> None:
         """Initialize the virtual thermostat."""
         super().__init__(coordinator)
+        self._attr_hvac_modes = [HVACMode.HEAT_COOL]
         self._entry = entry
         self._area_id = area_id
 
@@ -148,52 +148,53 @@ class AreaVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         restored = False
 
         # Try to restore from extra stored data first (more reliable)
-        if (extra_data := await self.async_get_last_extra_data()) is not None:
-            if (stored := VirtualThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None:
-                self._target_temp_low = stored.target_temp_low
-                self._target_temp_high = stored.target_temp_high
-                restored = True
-                _LOGGER.info(
-                    "Restored virtual thermostat %s from extra data: heat=%s, cool=%s",
-                    self.entity_id, self._target_temp_low, self._target_temp_high
-                )
+        if (
+            (extra_data := await self.async_get_last_extra_data()) is not None
+            and (stored := VirtualThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None
+        ):
+            self._target_temp_low = stored.target_temp_low
+            self._target_temp_high = stored.target_temp_high
+            restored = True
+            _LOGGER.info(
+                "Restored virtual thermostat %s from extra data: heat=%s, cool=%s",
+                self.entity_id, self._target_temp_low, self._target_temp_high
+            )
 
         # Fall back to restoring from state attributes
-        if not restored:
-            if (last_state := await self.async_get_last_state()) is not None:
-                _LOGGER.debug(
-                    "Restoring state for %s: %s", self.entity_id, last_state.state
+        if not restored and (last_state := await self.async_get_last_state()) is not None:
+            _LOGGER.debug(
+                "Restoring state for %s: %s", self.entity_id, last_state.state
+            )
+
+            # Restore target temperatures from attributes
+            if last_state.attributes:
+                if (low := last_state.attributes.get("target_temp_low")) is not None:
+                    try:
+                        self._target_temp_low = float(low)
+                        restored = True
+                        _LOGGER.debug(
+                            "Restored target_temp_low for %s: %s",
+                            self.entity_id, self._target_temp_low
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+                if (high := last_state.attributes.get("target_temp_high")) is not None:
+                    try:
+                        self._target_temp_high = float(high)
+                        restored = True
+                        _LOGGER.debug(
+                            "Restored target_temp_high for %s: %s",
+                            self.entity_id, self._target_temp_high
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+            if restored:
+                _LOGGER.info(
+                    "Restored virtual thermostat %s from state: heat=%s, cool=%s",
+                    self.entity_id, self._target_temp_low, self._target_temp_high
                 )
-
-                # Restore target temperatures from attributes
-                if last_state.attributes:
-                    if (low := last_state.attributes.get("target_temp_low")) is not None:
-                        try:
-                            self._target_temp_low = float(low)
-                            restored = True
-                            _LOGGER.debug(
-                                "Restored target_temp_low for %s: %s",
-                                self.entity_id, self._target_temp_low
-                            )
-                        except (ValueError, TypeError):
-                            pass
-
-                    if (high := last_state.attributes.get("target_temp_high")) is not None:
-                        try:
-                            self._target_temp_high = float(high)
-                            restored = True
-                            _LOGGER.debug(
-                                "Restored target_temp_high for %s: %s",
-                                self.entity_id, self._target_temp_high
-                            )
-                        except (ValueError, TypeError):
-                            pass
-
-                if restored:
-                    _LOGGER.info(
-                        "Restored virtual thermostat %s from state: heat=%s, cool=%s",
-                        self.entity_id, self._target_temp_low, self._target_temp_high
-                    )
 
         # Register this thermostat with the coordinator
         self._register_with_coordinator()
@@ -467,7 +468,6 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
     )
@@ -483,6 +483,7 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     ) -> None:
         """Initialize the global virtual thermostat."""
         super().__init__(coordinator)
+        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
         self._entry = entry
 
         self._attr_unique_id = f"{entry.entry_id}_global_thermostat"
@@ -500,42 +501,43 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         restored = False
 
         # Try to restore from extra stored data first
-        if (extra_data := await self.async_get_last_extra_data()) is not None:
-            if (stored := GlobalThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None:
-                self._target_temp_low = stored.target_temp_low
-                self._target_temp_high = stored.target_temp_high
-                self._hvac_mode = HVACMode(stored.hvac_mode)
-                restored = True
-                _LOGGER.info(
-                    "Restored global thermostat from extra data: mode=%s, heat=%s, cool=%s",
-                    self._hvac_mode, self._target_temp_low, self._target_temp_high
-                )
+        if (
+            (extra_data := await self.async_get_last_extra_data()) is not None
+            and (stored := GlobalThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None
+        ):
+            self._target_temp_low = stored.target_temp_low
+            self._target_temp_high = stored.target_temp_high
+            self._hvac_mode = HVACMode(stored.hvac_mode)
+            restored = True
+            _LOGGER.info(
+                "Restored global thermostat from extra data: mode=%s, heat=%s, cool=%s",
+                self._hvac_mode, self._target_temp_low, self._target_temp_high
+            )
 
         # Fall back to restoring from state attributes
-        if not restored:
-            if (last_state := await self.async_get_last_state()) is not None:
-                # Restore hvac_mode from state
-                if last_state.state in [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]:
-                    self._hvac_mode = HVACMode(last_state.state)
-                    restored = True
-                if last_state.attributes:
-                    if (low := last_state.attributes.get("target_temp_low")) is not None:
-                        try:
-                            self._target_temp_low = float(low)
-                            restored = True
-                        except (ValueError, TypeError):
-                            pass
-                    if (high := last_state.attributes.get("target_temp_high")) is not None:
-                        try:
-                            self._target_temp_high = float(high)
-                            restored = True
-                        except (ValueError, TypeError):
-                            pass
-                if restored:
-                    _LOGGER.info(
-                        "Restored global thermostat from state: mode=%s, heat=%s, cool=%s",
-                        self._hvac_mode, self._target_temp_low, self._target_temp_high
-                    )
+        if not restored and (last_state := await self.async_get_last_state()) is not None:
+            # Restore hvac_mode from state
+            if last_state.state in [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]:
+                self._hvac_mode = HVACMode(last_state.state)
+                restored = True
+            if last_state.attributes:
+                if (low := last_state.attributes.get("target_temp_low")) is not None:
+                    try:
+                        self._target_temp_low = float(low)
+                        restored = True
+                    except (ValueError, TypeError):
+                        pass
+                if (high := last_state.attributes.get("target_temp_high")) is not None:
+                    try:
+                        self._target_temp_high = float(high)
+                        restored = True
+                    except (ValueError, TypeError):
+                        pass
+            if restored:
+                _LOGGER.info(
+                    "Restored global thermostat from state: mode=%s, heat=%s, cool=%s",
+                    self._hvac_mode, self._target_temp_low, self._target_temp_high
+                )
 
         # Register this thermostat with the coordinator
         self._register_with_coordinator()
@@ -591,12 +593,14 @@ class GlobalVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         # Get the physical thermostat's hvac_action
         physical_action = coordinator.get_physical_thermostat_hvac_action()
         
-        if physical_action in (HVACAction.HEATING, HVACAction.COOLING):
-            # Check if any area thermostat is actively conditioning
-            if hasattr(coordinator, "area_thermostats"):
-                for area_thermostat in coordinator.area_thermostats.values():
-                    if area_thermostat.hvac_action == physical_action:
-                        return physical_action
+        # Check if any area thermostat is actively conditioning
+        if (
+            physical_action in (HVACAction.HEATING, HVACAction.COOLING)
+            and hasattr(coordinator, "area_thermostats")
+        ):
+            for area_thermostat in coordinator.area_thermostats.values():
+                if area_thermostat.hvac_action == physical_action:
+                    return physical_action
         
         return HVACAction.IDLE
 
@@ -868,7 +872,6 @@ class EcoAwayVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_hvac_modes = [HVACMode.HEAT_COOL]
     _attr_hvac_mode = HVACMode.HEAT_COOL
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
@@ -886,6 +889,7 @@ class EcoAwayVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
     ) -> None:
         """Initialize the eco away virtual thermostat."""
         super().__init__(coordinator)
+        self._attr_hvac_modes = [HVACMode.HEAT_COOL]
         self._entry = entry
 
         self._attr_unique_id = f"{entry.entry_id}_eco_away_thermostat"
@@ -902,37 +906,38 @@ class EcoAwayVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
         restored = False
 
         # Try to restore from extra stored data first
-        if (extra_data := await self.async_get_last_extra_data()) is not None:
-            if (stored := EcoAwayThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None:
-                self._target_temp_low = stored.target_temp_low
-                self._target_temp_high = stored.target_temp_high
-                restored = True
-                _LOGGER.info(
-                    "Restored eco away thermostat from extra data: heat=%s, cool=%s",
-                    self._target_temp_low, self._target_temp_high
-                )
+        if (
+            (extra_data := await self.async_get_last_extra_data()) is not None
+            and (stored := EcoAwayThermostatExtraStoredData.from_dict(extra_data.as_dict())) is not None
+        ):
+            self._target_temp_low = stored.target_temp_low
+            self._target_temp_high = stored.target_temp_high
+            restored = True
+            _LOGGER.info(
+                "Restored eco away thermostat from extra data: heat=%s, cool=%s",
+                self._target_temp_low, self._target_temp_high
+            )
 
         # Fall back to restoring from state attributes
-        if not restored:
-            if (last_state := await self.async_get_last_state()) is not None:
-                if last_state.attributes:
-                    if (low := last_state.attributes.get("target_temp_low")) is not None:
-                        try:
-                            self._target_temp_low = float(low)
-                            restored = True
-                        except (ValueError, TypeError):
-                            pass
-                    if (high := last_state.attributes.get("target_temp_high")) is not None:
-                        try:
-                            self._target_temp_high = float(high)
-                            restored = True
-                        except (ValueError, TypeError):
-                            pass
-                if restored:
-                    _LOGGER.info(
-                        "Restored eco away thermostat from state: heat=%s, cool=%s",
-                        self._target_temp_low, self._target_temp_high
-                    )
+        if not restored and (last_state := await self.async_get_last_state()) is not None:
+            if last_state.attributes:
+                if (low := last_state.attributes.get("target_temp_low")) is not None:
+                    try:
+                        self._target_temp_low = float(low)
+                        restored = True
+                    except (ValueError, TypeError):
+                        pass
+                if (high := last_state.attributes.get("target_temp_high")) is not None:
+                    try:
+                        self._target_temp_high = float(high)
+                        restored = True
+                    except (ValueError, TypeError):
+                        pass
+            if restored:
+                _LOGGER.info(
+                    "Restored eco away thermostat from state: heat=%s, cool=%s",
+                    self._target_temp_low, self._target_temp_high
+                )
 
         # Register this thermostat with the coordinator
         self._register_with_coordinator()
@@ -1043,9 +1048,12 @@ class EcoAwayVirtualThermostat(CoordinatorEntity, RestoreEntity, ClimateEntity):
 
         # Trigger a thermostat update if eco away mode is active
         coordinator: ThermostatContactSensorsCoordinator = self.coordinator
-        if coordinator.eco_mode and coordinator.is_away:
-            if coordinator.eco_away_behavior == "use_eco_away_targets":
-                await coordinator.async_update_thermostat_and_vents()
+        if (
+            coordinator.eco_mode
+            and coordinator.is_away
+            and coordinator.eco_away_behavior == "use_eco_away_targets"
+        ):
+            await coordinator.async_update_thermostat_and_vents()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

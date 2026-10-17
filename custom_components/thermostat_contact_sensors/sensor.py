@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from homeassistant.components.climate import HVACMode
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -32,8 +33,6 @@ from .thermostat_control import (
     ThermostatState,
     get_temperature_from_state,
 )
-
-from homeassistant.components.climate import HVACMode
 
 _LOGGER = logging.getLogger(__name__)
 
