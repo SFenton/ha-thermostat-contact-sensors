@@ -750,7 +750,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """Restore heat-load timestamps so a restart does not end a cooldown."""
         try:
             stored = await self._heat_load_store.async_load()
-        except Exception:  # noqa: BLE001 - corrupt storage must not block setup
+        except Exception:  # Corrupt storage must not block setup.
             _LOGGER.warning("Could not restore heat-load cooldown state", exc_info=True)
             return
         if not isinstance(stored, dict):
