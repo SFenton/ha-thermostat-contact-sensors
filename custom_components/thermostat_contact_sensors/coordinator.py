@@ -29,6 +29,7 @@ from homeassistant.helpers.event import (
     async_track_time_interval,
 )
 from homeassistant.helpers.recorder import DATA_INSTANCE as RECORDER_DATA_INSTANCE
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -141,6 +142,11 @@ from .const import (
     DEFAULT_VENT_OPEN_DELAY_SECONDS,
     DEFAULT_VACATION_MODE_ENTITY,
     DOMAIN,
+    HEAT_LOAD_COOLDOWN_MARGIN_C,
+    HEAT_LOAD_COOLDOWN_MARGIN_F,
+    HEAT_LOAD_COOLDOWN_MAX_MINUTES,
+    HEAT_LOAD_SAVE_INTERVAL_SECONDS,
+    HEAT_LOAD_STORAGE_VERSION,
     ECO_CRITICAL_ALL,
     ECO_CRITICAL_NONE,
     ECO_CRITICAL_SELECT,
@@ -284,6 +290,16 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         )
         self._activity_heat_gains: dict[str, float] = {}
         self._last_predictive_learning_update: datetime | None = None
+
+        # Heat-load lifecycle: last time each room's heat load was seen active.
+        self._heat_load_last_active: dict[str, datetime] = {}
+        self._heat_load_saved: dict[str, datetime] = {}
+        self._heat_load_states: dict[str, str] = {}
+        self._heat_load_store: Store = Store(
+            hass,
+            HEAT_LOAD_STORAGE_VERSION,
+            f"{DOMAIN}.{config_entry_id}.heat_load",
+        )
 
         # Listener cleanup
         self._unsub_state_change: callable | None = None
@@ -601,15 +617,150 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
     @property
     def heat_load_area_ids(self) -> set[str]:
-        """Return configured rooms currently warmed by an active heat load."""
-        if not self.predictive_comfort_enabled:
-            return set()
-        area_by_entity = self._activity_entity_area_ids()
+        """Return rooms warmed by a heat load that is on or still cooling down."""
+        return set(self._refresh_heat_load_states())
+
+    @property
+    def heat_load_cooldown_area_ids(self) -> set[str]:
+        """Return rooms whose heat load is off but whose residual heat remains."""
         return {
+            area_id
+            for area_id, status in self._heat_load_states.items()
+            if status == "cooldown"
+        }
+
+    def _area_average_temperatures(self) -> dict[str, float]:
+        """Return the average configured temperature for each enabled area."""
+        averages: dict[str, float] = {}
+        for area_id, area_config in self._areas_config.items():
+            if not area_config.get(CONF_AREA_ENABLED, True):
+                continue
+            readings = [
+                temperature
+                for sensor_id in area_config.get(CONF_TEMPERATURE_SENSORS, []) or []
+                if (
+                    temperature := get_temperature_from_state(
+                        self.hass.states.get(sensor_id),
+                        self.temperature_unit,
+                    )
+                )
+                is not None
+            ]
+            if readings:
+                averages[area_id] = sum(readings) / len(readings)
+        return averages
+
+    def _refresh_heat_load_states(self) -> dict[str, str]:
+        """Update and return each heat-loaded room's lifecycle status.
+
+        A room is ``active`` while any of its heat-load entities is on. When the
+        load turns off (or becomes unavailable) the room enters ``cooldown`` and
+        keeps being treated as heat-loaded until its average temperature is back
+        within the cooldown margin of the other rooms, or the maximum hold
+        elapses. Loads that flicker off and back on never leave the heat-loaded
+        set, and rooms that were not actually warmed clear immediately.
+        """
+        if not self.predictive_comfort_enabled:
+            if self._heat_load_last_active:
+                self._heat_load_last_active.clear()
+                self._schedule_heat_load_save(force=True)
+            self._heat_load_states = {}
+            return self._heat_load_states
+
+        now = dt_util.utcnow()
+        area_by_entity = self._activity_entity_area_ids()
+        active_area_ids = {
             area_by_entity[entity_id]
             for entity_id in self._active_activity_entities()
             if entity_id in area_by_entity
         }
+        states = {area_id: "active" for area_id in active_area_ids}
+        for area_id in active_area_ids:
+            self._heat_load_last_active[area_id] = now
+
+        candidates = {
+            area_id: last_active
+            for area_id, last_active in self._heat_load_last_active.items()
+            if area_id not in active_area_ids
+        }
+        if candidates:
+            averages = self._area_average_temperatures()
+            reference_readings = [
+                temperature
+                for area_id, temperature in averages.items()
+                if area_id not in active_area_ids and area_id not in candidates
+            ]
+            reference = (
+                sum(reference_readings) / len(reference_readings)
+                if reference_readings
+                else None
+            )
+            margin = (
+                HEAT_LOAD_COOLDOWN_MARGIN_C
+                if self.temperature_unit == UnitOfTemperature.CELSIUS
+                else HEAT_LOAD_COOLDOWN_MARGIN_F
+            )
+            max_hold = timedelta(minutes=HEAT_LOAD_COOLDOWN_MAX_MINUTES)
+            for area_id, last_active in candidates.items():
+                room_temperature = averages.get(area_id)
+                expired = now - last_active >= max_hold
+                converged = (
+                    room_temperature is not None
+                    and reference is not None
+                    and room_temperature <= reference + margin
+                )
+                if expired or converged or area_id not in self._areas_config:
+                    del self._heat_load_last_active[area_id]
+                    _LOGGER.debug(
+                        "Heat-load cooldown for %s ended (%s)",
+                        area_id,
+                        "expired" if expired else "converged",
+                    )
+                else:
+                    states[area_id] = "cooldown"
+
+        self._heat_load_states = states
+        self._schedule_heat_load_save()
+        return states
+
+    def _schedule_heat_load_save(self, *, force: bool = False) -> None:
+        """Persist heat-load timestamps, throttled while a load stays on."""
+        saved = self._heat_load_saved
+        current = self._heat_load_last_active
+        stale = force or set(saved) != set(current) or any(
+            (current[area_id] - saved[area_id]).total_seconds()
+            >= HEAT_LOAD_SAVE_INTERVAL_SECONDS
+            for area_id in current
+        )
+        if not stale:
+            return
+        self._heat_load_saved = dict(current)
+        self._heat_load_store.async_delay_save(self._heat_load_storage_data, 5)
+
+    def _heat_load_storage_data(self) -> dict[str, Any]:
+        """Return heat-load lifecycle data for storage."""
+        return {
+            "last_active": {
+                area_id: timestamp.isoformat()
+                for area_id, timestamp in self._heat_load_saved.items()
+            }
+        }
+
+    async def _async_restore_heat_load_state(self) -> None:
+        """Restore heat-load timestamps so a restart does not end a cooldown."""
+        try:
+            stored = await self._heat_load_store.async_load()
+        except Exception:  # Corrupt storage must not block setup.
+            _LOGGER.warning("Could not restore heat-load cooldown state", exc_info=True)
+            return
+        if not isinstance(stored, dict):
+            return
+        cutoff = dt_util.utcnow() - timedelta(minutes=HEAT_LOAD_COOLDOWN_MAX_MINUTES)
+        for area_id, value in (stored.get("last_active") or {}).items():
+            timestamp = dt_util.parse_datetime(value) if isinstance(value, str) else None
+            if timestamp is not None and timestamp > cutoff and area_id in self._areas_config:
+                self._heat_load_last_active[area_id] = timestamp
+        self._heat_load_saved = dict(self._heat_load_last_active)
 
     @property
     def predictive_mode(self) -> str:
@@ -1598,6 +1749,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         """
         # Initial scan of sensor states
         self._update_open_sensors()
+        await self._async_restore_heat_load_state()
         # If sensors are already open on startup, start the timer (unless integration paused).
         self._check_initial_open_sensors()
 
@@ -1974,6 +2126,15 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         result = await self._async_build_predictive_result()
         self.predictive_result = result
         await self._async_apply_predictive_result(result)
+        # A heat load turning on, off, or finishing its cooldown changes the
+        # trend and room demand, so re-run thermostat control even when
+        # Predictive Comfort itself has nothing to coordinate.
+        last_state = self._last_thermostat_state
+        if (
+            last_state is not None
+            and set(last_state.heat_load_area_ids) != set(self._heat_load_states)
+        ):
+            await self.async_update_thermostat_and_vents()
         self.async_set_updated_data(None)
 
     async def _async_update_predictive_learning(self, *, force: bool = False) -> None:
@@ -2241,15 +2402,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         # Room-scoped heat loads (an office PC, a theater projector) warm their own
         # room, not the house. They still count toward pre-cooling, but pre-heat is
         # judged on the rooms that are not self-heating, without that room heat.
+        # Rooms still shedding heat after their load turned off are excluded too.
         activity_area_ids = self._activity_entity_area_ids()
-        room_scoped_active_entities = [
-            entity_id
-            for entity_id in active_activity_entities
-            if entity_id in activity_area_ids
-        ]
-        heat_load_area_ids = sorted(
-            {activity_area_ids[entity_id] for entity_id in room_scoped_active_entities}
-        )
+        heat_load_area_ids = sorted(self.heat_load_area_ids)
+        heat_load_cooldown_area_ids = sorted(self.heat_load_cooldown_area_ids)
         heating_activity_effect = self._activity_effect(
             [
                 entity_id
@@ -2409,6 +2565,7 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             "trend_pressure": round(trend_pressure, 1),
             "active_activity_entities": active_activity_entities,
             "heat_load_areas": heat_load_area_ids,
+            "heat_load_cooldown_areas": heat_load_cooldown_area_ids,
             "heating_indoor_temperature": round(heating_indoor_temperature, 1),
             "heating_predicted_temperature": round(heating_predicted_temperature, 1),
             "learning": self.predictive_learning_result,

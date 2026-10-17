@@ -444,6 +444,9 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
         attrs["inferred_hvac_mode"] = state.inferred_hvac_mode.value if state.inferred_hvac_mode else None
         attrs["heat_load_areas"] = state.heat_load_area_ids
         attrs["heat_load_cooling_ignored_areas"] = state.heat_load_cooling_ignored_area_ids
+        attrs["heat_load_cooldown_areas"] = sorted(
+            self.coordinator.heat_load_cooldown_area_ids
+        )
 
         # Room counts
         attrs["active_room_count"] = state.active_room_count

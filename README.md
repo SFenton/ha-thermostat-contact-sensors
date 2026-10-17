@@ -208,7 +208,8 @@ For each configuration, the integration creates:
 ### Sensor: Thermostat Control
 - **State**: Current thermostat control status
 - **Attributes**: Details about satiation state, active rooms, and recommended actions
-  - `heat_load_areas`: Rooms currently warmed by an active Predictive Comfort heat load
+  - `heat_load_areas`: Rooms currently warmed by a Predictive Comfort heat load that is on or still cooling down
+  - `heat_load_cooldown_areas`: Heat-loaded rooms whose load is off but whose residual heat has not dissipated
   - `heat_load_cooling_ignored_areas`: Heat-loaded rooms whose cooling demand was ignored because the rest of the house trends toward heat
   - `room_summary.<area>.heat_load_active`: Whether a heat load is warming that room
 
@@ -219,7 +220,8 @@ For each configuration, the integration creates:
   - `indoor_temperature` and `predicted_temperature`: Current and modeled temperatures
   - `forecast_high`, `forecast_low`, `weather_entity`, and rain/humidity effects
   - `active_activity_entities`: Currently active heat-load entities
-  - `heat_load_areas`: Rooms with an active room-scoped heat load
+  - `heat_load_areas`: Rooms with a room-scoped heat load that is on or still cooling down
+  - `heat_load_cooldown_areas`: Rooms whose room-scoped heat load is off but still cooling down
   - `heating_indoor_temperature` and `heating_predicted_temperature`: The temperatures used for the pre-heat decision, excluding heat-loaded rooms and their room-scoped heat
   - `learning`: History-learning status and learned gains
   - `target_temperature`, `target_hvac_mode`, and `adjustment_status`
@@ -287,12 +289,25 @@ Heat-load entities that belong to a configured room are treated as warming that 
 1. Rooms with an active heat load are left out of the house temperature trend (heat vs. cool) used by the thermostat and vents
 2. While the rest of the house trends toward heat, a heat-loaded room's cooling demand is ignored, so a warm office cannot run whole-house cooling or block heating; the room still asks for heat if it is actually cold
 3. When the rest of the house trends toward cooling, heat-loaded rooms keep their normal cooling demand
+4. A room stays heat-loaded after its load turns off (or becomes unavailable) while it sheds residual heat:
+
+   | Room state | Treatment |
+   |---|---|
+   | Load on | **Active**: heat-loaded |
+   | Load off, room still more than 2°F (1.1°C) warmer than the average of the other rooms | **Cooling down**: still heat-loaded |
+   | Load off, room within 2°F (1.1°C) of the other rooms | Released: a normal room again |
+   | Load off for 6 hours | Released even if the room is still warm |
+   | Load back on during cool-down | **Active** again, so brief dropouts never release the room |
+
+   Loads that never warmed their room (for example a dishwasher in a room that stays near the house average) are released as soon as they turn off. Cool-down timing survives Home Assistant restarts.
+5. Any change in the heat-loaded rooms (a load turning on or off, or a cool-down ending) immediately re-runs thermostat and vent control, not only Predictive Comfort
+6. Cool-down uses wall-clock time, so it keeps ageing while the thermostat is paused for open windows or doors; an open window in the room simply speeds convergence. Occupancy is unaffected: a cooling-down room that is actually cold still asks for heat
 
 ### Predictive Comfort Logic
 1. The integration gathers indoor temperatures from configured global sensors or enabled area temperature sensors
 2. The configured global weather entity supplies current conditions and forecast highs/lows within the lookahead window
 3. Humidity, active heat-load entities, outdoor forecast pressure, and rain cooling are combined into a predicted indoor temperature
-4. If the prediction exceeds the comfort band plus margin, the sensor recommends pre-cooling or pre-heating. Pre-heat is judged first, on rooms without an active room-scoped heat load and without that room heat, so a warm office cannot turn a cold house's pre-heat into pre-cooling
+4. If the prediction exceeds the comfort band plus margin, the sensor recommends pre-cooling or pre-heating. Pre-heat is judged first, on rooms without a room-scoped heat load (active or cooling down) and without that room heat, so a warm office cannot turn a cold house's pre-heat into pre-cooling
 5. If automatic adjustment is enabled, vacation mode is inactive, contact sensors are closed, and the rate limit has elapsed, the thermostat setpoint is nudged proactively
 6. Recorder history periodically learns whether room-specific heat-load entities cause meaningful temperature swings and uses learned gains instead of the fallback
 
