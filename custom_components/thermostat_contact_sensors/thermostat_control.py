@@ -112,6 +112,9 @@ class RoomTemperatureState:
     # Whether this room is active (occupied long enough)
     is_active: bool = False
 
+    # Whether a configured heat load (PC, TV, appliance) is warming this room
+    heat_load_active: bool = False
+
     # The sensor that determined satiation (closest to target)
     determining_sensor: str | None = None
     determining_temperature: float | None = None
@@ -183,6 +186,11 @@ class ThermostatState:
     predictive_hvac_mode: HVACMode | None = None
     predictive_target_temperature: float | None = None
     predictive_reason: str | None = None
+
+    # Rooms warmed by an active heat load, and the subset whose cooling demand
+    # was ignored because the rest of the house is trending toward HEAT.
+    heat_load_area_ids: list[str] = field(default_factory=list)
+    heat_load_cooling_ignored_area_ids: list[str] = field(default_factory=list)
 
     # Room states (includes both active and critical rooms)
     room_states: dict[str, RoomTemperatureState] = field(default_factory=dict)
@@ -1461,6 +1469,7 @@ class ThermostatController:
         predictive_hvac_mode: HVACMode | None = None,
         predictive_target_temperature: float | None = None,
         predictive_reason: str | None = None,
+        heat_load_area_ids: set[str] | None = None,
     ) -> ThermostatState:
         """Evaluate what action should be taken with the thermostat.
 
@@ -1502,6 +1511,11 @@ class ThermostatController:
             predictive_target_temperature: Optional physical thermostat target to use
                 when acting on Predictive Comfort demand.
             predictive_reason: Optional diagnostic reason from Predictive Comfort.
+            heat_load_area_ids: Optional set of areas currently warmed by an active
+                heat load (for example a running PC). These rooms are left out of
+                the house temperature trend, and while the rest of the house trends
+                toward HEAT their self-generated cooling demand is ignored so a
+                warm office cannot cool, or block heating for, the whole house.
 
         Returns:
             ThermostatState with the recommended action.
@@ -1561,13 +1575,24 @@ class ThermostatController:
             fallback=self._temperature_unit,
         )
         areas_for_trend = all_areas_for_trend if all_areas_for_trend is not None else list(active_areas) + list(inactive_areas)
+        heat_load_area_ids = set(heat_load_area_ids or ())
+        thermostat_state.heat_load_area_ids = sorted(heat_load_area_ids)
+        heat_loaded_sensor_readings: dict[str, float] = {}
         for area in areas_for_trend:
             temp_sensors = area_temp_sensors.get(area.area_id, [])
             for sensor_id in temp_sensors:
                 state = self.hass.states.get(sensor_id)
                 temp = get_temperature_from_state(state, trend_temperature_unit)
                 if temp is not None:
-                    all_sensor_readings[sensor_id] = temp
+                    if area.area_id in heat_load_area_ids:
+                        heat_loaded_sensor_readings[sensor_id] = temp
+                    else:
+                        all_sensor_readings[sensor_id] = temp
+
+        # Rooms warmed by their own heat load do not represent the house trend.
+        # Fall back to them only when no other room has a usable reading.
+        if not all_sensor_readings:
+            all_sensor_readings = heat_loaded_sensor_readings
 
         # Always calculate the inferred mode (temperature trend) regardless of thermostat state
         # This provides visibility into whether the house is trending cold or hot
@@ -1575,6 +1600,22 @@ class ThermostatController:
             all_sensor_readings, target_temp_low, target_temp_high
         )
         thermostat_state.inferred_hvac_mode = inferred_mode
+
+        # While the rest of the house trends toward HEAT, heat-loaded rooms are
+        # self-heating: their cooling demand must not cool or block the house.
+        self_heated_area_ids = (
+            heat_load_area_ids if inferred_mode == HVACMode.HEAT else set()
+        )
+        heat_need_threshold = (
+            (target_temp_low or target_temp or 70.0) - self._temperature_deadband
+        )
+        cooling_ignored_area_ids: set[str] = set()
+
+        def ignores_cooling_demand(area_id: str, room_state: RoomTemperatureState) -> bool:
+            """Return whether a room's non-heat demand comes only from its heat load."""
+            if area_id not in self_heated_area_ids or not room_state.sensor_readings:
+                return False
+            return min(room_state.sensor_readings.values()) >= heat_need_threshold
 
         # Determine evaluation HVAC mode
         # If thermostat is off or unavailable, use the inferred mode for evaluation.
@@ -1650,6 +1691,7 @@ class ThermostatController:
                 area_target_temp_high,
             )
             room_state.is_active = True
+            room_state.heat_load_active = area.area_id in heat_load_area_ids
             thermostat_state.room_states[area.area_id] = room_state
 
             # Only count tracked rooms for decisions
@@ -1657,6 +1699,11 @@ class ThermostatController:
                 tracked_active_count += 1
                 if room_state.is_satiated:
                     satiated_count += 1
+                elif evaluation_hvac_mode != HVACMode.HEAT and ignores_cooling_demand(
+                    area.area_id, room_state
+                ):
+                    satiated_count += 1
+                    cooling_ignored_area_ids.add(area.area_id)
 
         thermostat_state.active_room_count = tracked_active_count
         thermostat_state.satiated_room_count = satiated_count
@@ -1695,7 +1742,20 @@ class ThermostatController:
                 area_target_temp_low,
                 area_target_temp_high,
             )
+            room_state.heat_load_active = area.area_id in heat_load_area_ids
             thermostat_state.room_states[area.area_id] = room_state
+
+            if (
+                room_state.is_critical
+                and evaluation_hvac_mode != HVACMode.HEAT
+                and ignores_cooling_demand(area.area_id, room_state)
+            ):
+                cooling_ignored_area_ids.add(area.area_id)
+                _LOGGER.debug(
+                    "Inactive room %s is warm from its own heat load while the house trends HEAT; ignoring",
+                    area.area_id,
+                )
+                continue
 
             # Only count as critical for thermostat control if the room is eligible
             # (tracked or force-critical). Critical protection overrides eco mode.
@@ -1732,13 +1792,37 @@ class ThermostatController:
                 or (room_state.is_critical and is_area_critical_eligible(area_id))
             )
         }
-        rooms_need_heat, rooms_need_cool = determine_rooms_need_mode(
-            rooms_for_mode_check,
-            effective_target_low,
-            effective_target_high,
-            self._temperature_deadband,
-            self._unoccupied_heating_threshold,
-            self._unoccupied_cooling_threshold,
+        def rooms_need(room_states: dict[str, RoomTemperatureState]) -> tuple[bool, bool]:
+            return determine_rooms_need_mode(
+                room_states,
+                effective_target_low,
+                effective_target_high,
+                self._temperature_deadband,
+                self._unoccupied_heating_threshold,
+                self._unoccupied_cooling_threshold,
+            )
+
+        rooms_need_heat, rooms_need_cool = rooms_need(rooms_for_mode_check)
+        self_heated_mode_rooms = {
+            area_id
+            for area_id, room_state in rooms_for_mode_check.items()
+            if ignores_cooling_demand(area_id, room_state)
+        }
+        if self_heated_mode_rooms:
+            _, rooms_need_cool = rooms_need(
+                {
+                    area_id: room_state
+                    for area_id, room_state in rooms_for_mode_check.items()
+                    if area_id not in self_heated_mode_rooms
+                }
+            )
+            cooling_ignored_area_ids.update(
+                area_id
+                for area_id in self_heated_mode_rooms
+                if rooms_need({area_id: rooms_for_mode_check[area_id]})[1]
+            )
+        thermostat_state.heat_load_cooling_ignored_area_ids = sorted(
+            cooling_ignored_area_ids
         )
         main_rooms_need_heat = rooms_need_heat
         main_rooms_need_cool = rooms_need_cool
@@ -1960,11 +2044,19 @@ class ThermostatController:
                     (hvac_mode == HVACMode.HEAT and rooms_need_heat)
                     or (hvac_mode == HVACMode.COOL and rooms_need_cool)
                 )
+                # When Predictive Comfort is what keeps the current mode running,
+                # turning off for a trend mismatch would only let the off path
+                # re-engage the same predictive mode after the cycle timer.
+                predictive_holds_current_mode = (
+                    predictive_needs_conditioning
+                    and predictive_hvac_mode == hvac_mode
+                )
                 current_mode_mismatches_trend = (
                     hvac_mode in (HVACMode.HEAT, HVACMode.COOL)
                     and inferred_mode in (HVACMode.HEAT, HVACMode.COOL)
                     and hvac_mode != inferred_mode
                     and current_mode_has_demand
+                    and not predictive_holds_current_mode
                 )
                 if predictive_requests_mode_change:
                     thermostat_state.recommended_action = ThermostatAction.TURN_ON

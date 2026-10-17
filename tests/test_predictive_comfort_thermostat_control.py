@@ -313,3 +313,166 @@ class TestPredictiveComfortThermostatControl:
         assert state.inferred_hvac_mode != HVACMode.COOL
         assert state.rooms_need_heat is True
         assert state.rooms_need_cool is False
+
+    def _heat_load_office_scenario(
+        self,
+        controller,
+        mock_hass,
+        *,
+        thermostat_mode: HVACMode,
+        living_room_temperature: float,
+        office_temperature: float = 79.0,
+    ):
+        """Configure a PC-warmed office that is tracked and active."""
+        areas = self._configure_temperature_scenario(
+            controller,
+            mock_hass,
+            thermostat_mode=thermostat_mode,
+            room_temperatures={
+                "living_room": living_room_temperature,
+                "office": office_temperature,
+            },
+        )
+        areas["office"].is_active = True
+        return areas, {
+            "living_room": ["sensor.living_room_temperature"],
+            "office": ["sensor.office_temperature"],
+        }
+
+    def test_heat_loaded_office_does_not_block_predictive_heat(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """A PC-warmed office cannot veto pre-heating the rest of the house."""
+        areas, sensors = self._heat_load_office_scenario(
+            controller,
+            mock_hass,
+            thermostat_mode=HVACMode.OFF,
+            living_room_temperature=69.0,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[areas["office"]],
+            area_temp_sensors=sensors,
+            inactive_areas=[areas["living_room"]],
+            all_areas_for_trend=list(areas.values()),
+            respect_user_off=False,
+            predictive_hvac_mode=HVACMode.HEAT,
+            predictive_target_temperature=72.0,
+            heat_load_area_ids={"office"},
+        )
+
+        assert state.recommended_action == ThermostatAction.TURN_ON
+        assert state.inferred_hvac_mode == HVACMode.HEAT
+        assert state.rooms_need_cool is False
+        assert state.heat_load_cooling_ignored_area_ids == ["office"]
+        assert state.room_states["office"].heat_load_active is True
+
+    def test_hot_office_without_heat_load_signal_keeps_cooling_demand(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """Without an active heat load, a hot office still drives the trend and cooling."""
+        areas, sensors = self._heat_load_office_scenario(
+            controller,
+            mock_hass,
+            thermostat_mode=HVACMode.OFF,
+            living_room_temperature=69.0,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[areas["office"]],
+            area_temp_sensors=sensors,
+            inactive_areas=[areas["living_room"]],
+            all_areas_for_trend=list(areas.values()),
+            respect_user_off=False,
+            predictive_hvac_mode=HVACMode.HEAT,
+            predictive_target_temperature=72.0,
+        )
+
+        assert state.inferred_hvac_mode == HVACMode.COOL
+        assert state.rooms_need_cool is True
+        assert state.heat_load_cooling_ignored_area_ids == []
+
+    def test_heat_loaded_office_stops_whole_house_cooling(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """The office load is excluded from the trend and cannot keep COOL running."""
+        areas, sensors = self._heat_load_office_scenario(
+            controller,
+            mock_hass,
+            thermostat_mode=HVACMode.COOL,
+            living_room_temperature=72.0,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[areas["office"]],
+            area_temp_sensors=sensors,
+            inactive_areas=[areas["living_room"]],
+            all_areas_for_trend=list(areas.values()),
+            respect_user_off=False,
+            heat_load_area_ids={"office"},
+        )
+
+        assert state.inferred_hvac_mode == HVACMode.HEAT
+        assert state.recommended_action == ThermostatAction.TURN_OFF
+        assert state.heat_load_cooling_ignored_area_ids == ["office"]
+
+    def test_heat_loaded_office_still_cools_when_house_trends_cool(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """Summer behavior is kept: a warm house still cools the PC-warmed office."""
+        areas, sensors = self._heat_load_office_scenario(
+            controller,
+            mock_hass,
+            thermostat_mode=HVACMode.OFF,
+            living_room_temperature=74.0,
+        )
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[areas["office"]],
+            area_temp_sensors=sensors,
+            inactive_areas=[areas["living_room"]],
+            all_areas_for_trend=list(areas.values()),
+            respect_user_off=False,
+            heat_load_area_ids={"office"},
+        )
+
+        assert state.recommended_action == ThermostatAction.TURN_ON
+        assert state.inferred_hvac_mode == HVACMode.COOL
+        assert state.heat_load_cooling_ignored_area_ids == []
+
+    def test_predictive_mode_running_against_trend_does_not_flap_off(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """Predictive demand that keeps the current mode is not turned off by the trend."""
+        areas = self._configure_temperature_scenario(
+            controller,
+            mock_hass,
+            thermostat_mode=HVACMode.COOL,
+            room_temperatures={"living_room": 72.0},
+        )
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[],
+            area_temp_sensors={"living_room": ["sensor.living_room_temperature"]},
+            inactive_areas=[areas["living_room"]],
+            all_areas_for_trend=[areas["living_room"]],
+            respect_user_off=False,
+            predictive_hvac_mode=HVACMode.COOL,
+            predictive_target_temperature=73.0,
+        )
+
+        assert state.inferred_hvac_mode == HVACMode.HEAT
+        assert state.recommended_action not in (
+            ThermostatAction.TURN_OFF,
+            ThermostatAction.WAIT_CYCLE_ON,
+        )

@@ -121,7 +121,7 @@ Predictive Comfort Mode is disabled by default. When enabled, it evaluates curre
 | **Global Weather Entity** | auto | Weather source shared by the house; blank falls back to another entry, `weather.pirate_weather`, `weather.forecast_home`, or the first weather entity |
 | **Global Temperature Sensors** | area sensors | Optional global indoor sensors; blank uses enabled area temperature sensors |
 | **Humidity Sensors** | none | Indoor humidity sensors used to add perceived heat pressure |
-| **Global Heat-Load Entities** | none | House-level devices/entities that add heat load; prefer room-specific entities in area options |
+| **Global Heat-Load Entities** | none | Devices/entities that add heat load; an entity assigned to a configured area (directly or through its device) is treated as that room's load, otherwise it is a house-level load |
 | **Comfort Low / High** | 71°F / 74°F | Desired comfort band |
 | **Forecast Lookahead** | 6 hours | How far ahead weather influences predictions |
 | **Trigger Margin** | 0.5°F | Prediction must exceed the comfort band by this amount before pre-heating/pre-cooling |
@@ -208,6 +208,9 @@ For each configuration, the integration creates:
 ### Sensor: Thermostat Control
 - **State**: Current thermostat control status
 - **Attributes**: Details about satiation state, active rooms, and recommended actions
+  - `heat_load_areas`: Rooms currently warmed by an active Predictive Comfort heat load
+  - `heat_load_cooling_ignored_areas`: Heat-loaded rooms whose cooling demand was ignored because the rest of the house trends toward heat
+  - `room_summary.<area>.heat_load_active`: Whether a heat load is warming that room
 
 ### Sensor: Predictive Comfort Mode
 - **State**: `disabled`, `idle`, `pre_cool`, `pre_heat`, or `insufficient_data`
@@ -216,6 +219,8 @@ For each configuration, the integration creates:
   - `indoor_temperature` and `predicted_temperature`: Current and modeled temperatures
   - `forecast_high`, `forecast_low`, `weather_entity`, and rain/humidity effects
   - `active_activity_entities`: Currently active heat-load entities
+  - `heat_load_areas`: Rooms with an active room-scoped heat load
+  - `heating_indoor_temperature` and `heating_predicted_temperature`: The temperatures used for the pre-heat decision, excluding heat-loaded rooms and their room-scoped heat
   - `learning`: History-learning status and learned gains
   - `target_temperature`, `target_hvac_mode`, and `adjustment_status`
   - `away_mode_active`, `allow_away`, `vacation_mode_active`, and `vacation_mode_entity`
@@ -274,13 +279,20 @@ Force recalculation of thermostat state and vent positions.
 3. The system ensures at least N vents remain open (minimum vents open setting)
 4. Priority determines which vents stay open: critical > active > occupied > distance from target
 5. Rooms with **Track Only When Occupied** enabled are excluded from minimum-vent selection while unoccupied, so their vents close even when their temperature is beyond the normal threshold
-6. Debounce protection prevents rapid vent changes
+6. While heating, a room warmed above the heat target by its own heat load (for example a running PC) is satiated and ranks last for minimum vents, so its vent is among the first to close (within the closed-vent budget) and conditioned air goes to the rest of the house
+7. Debounce protection prevents rapid vent changes
+
+### Room Heat Loads
+Heat-load entities that belong to a configured room are treated as warming that room, not the whole house:
+1. Rooms with an active heat load are left out of the house temperature trend (heat vs. cool) used by the thermostat and vents
+2. While the rest of the house trends toward heat, a heat-loaded room's cooling demand is ignored, so a warm office cannot run whole-house cooling or block heating; the room still asks for heat if it is actually cold
+3. When the rest of the house trends toward cooling, heat-loaded rooms keep their normal cooling demand
 
 ### Predictive Comfort Logic
 1. The integration gathers indoor temperatures from configured global sensors or enabled area temperature sensors
 2. The configured global weather entity supplies current conditions and forecast highs/lows within the lookahead window
 3. Humidity, active heat-load entities, outdoor forecast pressure, and rain cooling are combined into a predicted indoor temperature
-4. If the prediction exceeds the comfort band plus margin, the sensor recommends pre-cooling or pre-heating
+4. If the prediction exceeds the comfort band plus margin, the sensor recommends pre-cooling or pre-heating. Pre-heat is judged first, on rooms without an active room-scoped heat load and without that room heat, so a warm office cannot turn a cold house's pre-heat into pre-cooling
 5. If automatic adjustment is enabled, vacation mode is inactive, contact sensors are closed, and the rate limit has elapsed, the thermostat setpoint is nudged proactively
 6. Recorder history periodically learns whether room-specific heat-load entities cause meaningful temperature swings and uses learned gains instead of the fallback
 

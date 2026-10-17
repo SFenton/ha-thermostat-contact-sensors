@@ -442,6 +442,8 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
 
         # Inferred HVAC mode (calculated trend when thermostat is off)
         attrs["inferred_hvac_mode"] = state.inferred_hvac_mode.value if state.inferred_hvac_mode else None
+        attrs["heat_load_areas"] = state.heat_load_area_ids
+        attrs["heat_load_cooling_ignored_areas"] = state.heat_load_cooling_ignored_area_ids
 
         # Room counts
         attrs["active_room_count"] = state.active_room_count
@@ -470,6 +472,7 @@ class ThermostatControlSensor(CoordinatorEntity, SensorEntity):
                 "satiation_reason": room_state.satiation_reason.value if room_state.satiation_reason else None,
                 "has_valid_readings": room_state.has_valid_readings,
                 "sensor_readings": room_state.sensor_readings,
+                "heat_load_active": room_state.heat_load_active,
             }
             if room_state.determining_sensor:
                 room_summary[area_id]["determining_sensor"] = room_state.determining_sensor

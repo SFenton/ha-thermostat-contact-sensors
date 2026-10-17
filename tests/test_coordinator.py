@@ -11,6 +11,7 @@ from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from custom_components.thermostat_contact_sensors.const import (
@@ -29,11 +30,13 @@ from custom_components.thermostat_contact_sensors.const import (
     CONF_PREDICTIVE_TEMPERATURE_SENSORS,
     CONF_PREDICTIVE_TREND_WEIGHT,
     CONF_PREDICTIVE_WEATHER_ENTITY,
+    CONF_TEMPERATURE_SENSORS,
     CONF_VACATION_MODE_ENTITY,
     DOMAIN,
     PREDICTIVE_MODE_DISABLED,
     PREDICTIVE_MODE_IDLE,
     PREDICTIVE_MODE_PRE_COOL,
+    PREDICTIVE_MODE_PRE_HEAT,
 )
 from custom_components.thermostat_contact_sensors.coordinator import (
     ThermostatContactSensorsCoordinator,
@@ -416,6 +419,68 @@ class TestVentEffectiveMode:
             coordinator.update_thermostat_state()
         await coordinator.async_update_vents()
         assert coordinator.vent_controller.evaluate_all_vents.call_args.kwargs["hvac_mode"] == HVACMode.COOL
+
+
+    async def test_effective_mode_ignores_heat_loaded_rooms(
+        self,
+        hass: HomeAssistant,
+        setup_test_entities: None,
+    ) -> None:
+        """A PC-warmed room cannot tip the vent trend toward COOL."""
+        from custom_components.thermostat_contact_sensors.const import (
+            CONF_AREA_ENABLED,
+            CONF_AREA_ID,
+            CONF_VENTS,
+        )
+        from custom_components.thermostat_contact_sensors.thermostat_control import (
+            RoomTemperatureState,
+            ThermostatState,
+        )
+        from custom_components.thermostat_contact_sensors.vent_control import VentControlState
+
+        hass.states.async_set("cover.room_vent", "closed", {"current_tilt_position": 0})
+        await hass.async_block_till_done()
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="test_entry_vent_heat_load",
+            contact_sensors=[],
+            thermostat=TEST_THERMOSTAT,
+            options=get_test_config_options(),
+            areas_config={
+                "room": {
+                    CONF_AREA_ID: "room",
+                    CONF_AREA_ENABLED: True,
+                    CONF_VENTS: ["cover.room_vent"],
+                }
+            },
+        )
+        coordinator.vent_controller.evaluate_all_vents = MagicMock(
+            return_value=VentControlState()
+        )
+        room_states = {}
+        for area_id, temperature in (("room", 69.0), ("office", 79.0)):
+            room_states[area_id] = RoomTemperatureState(area_id=area_id, area_name=area_id)
+            room_states[area_id].determining_temperature = temperature
+
+        with patch.object(
+            coordinator.thermostat_controller,
+            "evaluate_thermostat_action",
+            return_value=ThermostatState(
+                thermostat_entity_id=TEST_THERMOSTAT,
+                hvac_mode=HVACMode.OFF,
+                target_temp_low=68.0,
+                target_temp_high=72.0,
+                room_states=room_states,
+                heat_load_area_ids=["office"],
+            ),
+        ):
+            coordinator.update_thermostat_state()
+        await coordinator.async_update_vents()
+
+        assert (
+            coordinator.vent_controller.evaluate_all_vents.call_args.kwargs["hvac_mode"]
+            == HVACMode.HEAT
+        )
 
 
 class TestVentOnlyTemperatureSensors:
@@ -1454,6 +1519,57 @@ class TestPredictiveComfort:
         heat_gains = coordinator._learn_activity_heat_gains(self.learning_history())
 
         assert heat_gains[TEST_ACTIVITY_ENTITY] == 1.05
+
+    async def test_predictive_preheat_ignores_room_scoped_heat_load(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """A PC-warmed office cannot turn a cold house's pre-heat into pre-cool."""
+        office_load = er.async_get(hass).async_get_or_create(
+            "binary_sensor",
+            "template",
+            "office_heat_load",
+            suggested_object_id="office_heat_load",
+        )
+        er.async_get(hass).async_update_entity(office_load.entity_id, area_id="office")
+        hass.states.async_set(office_load.entity_id, STATE_ON)
+        hass.states.async_set("sensor.office_temperature", "80")
+        hass.states.async_set("sensor.living_room_temperature", "69")
+        hass.states.async_set(
+            TEST_WEATHER,
+            "cloudy",
+            {"temperature": 72, "forecast": [{"temperature": 72, "condition": "cloudy"}]},
+        )
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options.pop(CONF_PREDICTIVE_TEMPERATURE_SENSORS)
+        options.pop(CONF_PREDICTIVE_HUMIDITY_SENSORS)
+        options[CONF_PREDICTIVE_ACTIVITY_ENTITIES] = [office_load.entity_id]
+        coordinator = ThermostatContactSensorsCoordinator(
+            hass,
+            config_entry_id="predictive_entry",
+            contact_sensors=[TEST_SENSOR_1],
+            thermostat=TEST_THERMOSTAT,
+            options=options,
+            areas_config={
+                "office": {CONF_TEMPERATURE_SENSORS: ["sensor.office_temperature"]},
+                "living_room": {
+                    CONF_TEMPERATURE_SENSORS: ["sensor.living_room_temperature"]
+                },
+            },
+        )
+
+        await coordinator.async_setup()
+
+        result = coordinator.predictive_result
+        assert result["predicted_temperature"] == 75.5
+        assert result["heating_predicted_temperature"] == 69.0
+        assert result["heat_load_areas"] == ["office"]
+        assert coordinator.predictive_mode == PREDICTIVE_MODE_PRE_HEAT
+        assert coordinator.heat_load_area_ids == {"office"}
+
+        await coordinator.async_shutdown()
 
     async def test_predictive_comfort_uses_learned_heat_gain(
         self,
