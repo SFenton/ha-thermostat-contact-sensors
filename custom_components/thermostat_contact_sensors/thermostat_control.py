@@ -1826,8 +1826,23 @@ class ThermostatController:
         )
         main_rooms_need_heat = rooms_need_heat
         main_rooms_need_cool = rooms_need_cool
+        # Pre-heat is speculative, so an occupied room already past the cool target
+        # vetoes it whatever mode the thermostat is in. Satiation and the
+        # determining sensor follow the current mode (the coldest sensor in HEAT),
+        # so this reads every sensor. Heat-loaded rooms do not veto: their warmth
+        # is their own (see ignores_cooling_demand). Pre-cool is unaffected.
+        active_room_above_cool_target = any(
+            room_state.is_active
+            and room_state.sensor_readings
+            and max(room_state.sensor_readings.values()) > effective_target_high
+            for area_id, room_state in rooms_for_mode_check.items()
+            if area_id not in heat_load_area_ids
+        )
         predictive_conflicts_with_main_demand = (
-            (predictive_hvac_mode == HVACMode.HEAT and main_rooms_need_cool)
+            (
+                predictive_hvac_mode == HVACMode.HEAT
+                and (main_rooms_need_cool or active_room_above_cool_target)
+            )
             or (predictive_hvac_mode == HVACMode.COOL and main_rooms_need_heat)
         )
         if predictive_conflicts_with_main_demand:
