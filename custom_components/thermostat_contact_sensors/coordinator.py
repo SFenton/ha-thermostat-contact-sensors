@@ -2488,18 +2488,24 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         target_hvac_mode: str | None = None
         reasons: list[str] = []
 
+        preheat_target = min(
+            comfort_high,
+            comfort_low
+            + self._option_float(
+                CONF_PREDICTIVE_PREHEAT_OFFSET,
+                DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
+            ),
+        )
+        predicts_cold = heating_predicted_temperature < comfort_low - trigger_margin
+
         # Pre-heat is checked first: when the house outside self-heating rooms is
         # cold, room-scoped heat must not trigger whole-house cooling instead.
-        if heating_predicted_temperature < comfort_low - trigger_margin:
+        # It only applies while the house is still below the pre-heat target:
+        # heating a house that is already warmer than that cannot bank any heat,
+        # and holding HEAT would keep it from cooling while it is too warm.
+        if predicts_cold and heating_indoor_temperature < preheat_target:
             mode = PREDICTIVE_MODE_PRE_HEAT
-            target_temperature = min(
-                comfort_high,
-                comfort_low
-                + self._option_float(
-                    CONF_PREDICTIVE_PREHEAT_OFFSET,
-                    DEFAULT_PREDICTIVE_PREHEAT_OFFSET,
-                ),
-            )
+            target_temperature = preheat_target
             target_hvac_mode = HVACMode.HEAT
             reasons.append(
                 f"Predicted indoor temperature {heating_predicted_temperature:.1f}°F is below "
@@ -2519,6 +2525,13 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             reasons.append(
                 f"Predicted indoor temperature {predicted_temperature:.1f}°F exceeds "
                 f"comfort high {comfort_high:.1f}°F"
+            )
+        elif predicts_cold:
+            reasons.append(
+                f"Pre-heat skipped: predicted {heating_predicted_temperature:.1f}°F is below "
+                f"comfort low {comfort_low:.1f}°F, but the house is already at "
+                f"{heating_indoor_temperature:.1f}°F, at or above the pre-heat target "
+                f"{preheat_target:.1f}°F"
             )
         else:
             reasons.append("Predicted indoor temperature remains within comfort band")

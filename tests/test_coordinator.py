@@ -1573,6 +1573,63 @@ class TestPredictiveComfort:
 
         await coordinator.async_shutdown()
 
+    async def evaluate_cold_rainy_night(
+        self,
+        hass: HomeAssistant,
+        indoor_temperature: str,
+    ) -> ThermostatContactSensorsCoordinator:
+        """Evaluate a 48F rainy evening forecast against one indoor temperature."""
+        hass.states.async_set(TEST_TEMPERATURE_SENSOR, indoor_temperature)
+        hass.states.async_set(
+            TEST_WEATHER,
+            "rainy",
+            {
+                "temperature": 52,
+                "forecast": [
+                    {"temperature": 52, "templow": 48, "condition": "rainy"}
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+
+        options = self.predictive_options()
+        options.pop(CONF_PREDICTIVE_HUMIDITY_SENSORS)
+        options.pop(CONF_PREDICTIVE_ACTIVITY_ENTITIES)
+        coordinator = self.create_predictive_coordinator(hass, options)
+        await coordinator.async_setup()
+        return coordinator
+
+    async def test_predictive_preheat_skipped_when_house_already_warm(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """A cold, rainy forecast does not pre-heat a house above the pre-heat target."""
+        coordinator = await self.evaluate_cold_rainy_night(hass, "74")
+
+        result = coordinator.predictive_result
+        # 74 - (71 - 48) * 0.1 - 2.0 rain cooling
+        assert result["heating_predicted_temperature"] == 69.7
+        assert coordinator.predictive_mode == PREDICTIVE_MODE_IDLE
+        assert result["target_hvac_mode"] is None
+        assert result["reason"].startswith("Pre-heat skipped")
+
+        await coordinator.async_shutdown()
+
+    @pytest.mark.parametrize("indoor_temperature", ["71", "71.9"])
+    async def test_predictive_preheat_still_runs_below_preheat_target(
+        self,
+        hass: HomeAssistant,
+        indoor_temperature: str,
+    ) -> None:
+        """The same forecast still pre-heats a house below the 72F pre-heat target."""
+        coordinator = await self.evaluate_cold_rainy_night(hass, indoor_temperature)
+
+        assert coordinator.predictive_mode == PREDICTIVE_MODE_PRE_HEAT
+        assert coordinator.predictive_result["target_temperature"] == 72.0
+        assert coordinator.predictive_result["target_hvac_mode"] == HVACMode.HEAT
+
+        await coordinator.async_shutdown()
+
     async def create_office_load_coordinator(
         self,
         hass: HomeAssistant,

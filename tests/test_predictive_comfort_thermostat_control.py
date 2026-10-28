@@ -396,6 +396,102 @@ class TestPredictiveComfortThermostatControl:
         assert state.rooms_need_cool is True
         assert state.heat_load_cooling_ignored_area_ids == []
 
+    def _warm_occupied_room_scenario(self, controller, mock_hass):
+        """Heating, with an occupied music room whose sensors read 72.4F and 74.3F."""
+        areas = self._configure_temperature_scenario(
+            controller,
+            mock_hass,
+            thermostat_mode=HVACMode.HEAT,
+            room_temperatures={"music_room": 72.4},
+        )
+        areas["music_room"].is_active = True
+        get_state = mock_hass.states.get.side_effect
+
+        def get_state_with_north_wall(entity_id):
+            if entity_id == "sensor.music_room_north_wall_temperature":
+                return self._mock_state(
+                    "74.3",
+                    {"unit_of_measurement": UnitOfTemperature.FAHRENHEIT},
+                )
+            return get_state(entity_id)
+
+        mock_hass.states.get.side_effect = get_state_with_north_wall
+        return areas, {
+            "music_room": [
+                "sensor.music_room_temperature",
+                "sensor.music_room_north_wall_temperature",
+            ]
+        }
+
+    def test_occupied_room_above_cool_target_vetoes_predictive_heat(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """Pre-heat never holds HEAT while an occupied room is past the cool target.
+
+        74.3F is past the 74F cool target but inside the 0.5F deadband, so the
+        room-demand check does not call for cooling; only the veto stops pre-heat.
+        """
+        areas, sensors = self._warm_occupied_room_scenario(controller, mock_hass)
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[areas["music_room"]],
+            area_temp_sensors=sensors,
+            inactive_areas=[],
+            all_areas_for_trend=list(areas.values()),
+            respect_user_off=False,
+            predictive_hvac_mode=HVACMode.HEAT,
+            predictive_target_temperature=72.0,
+        )
+
+        assert state.rooms_need_cool is False
+        assert state.rooms_need_heat is False
+        assert "Predictive Comfort" not in state.action_reason
+
+    def test_heat_loaded_room_above_cool_target_does_not_veto_predictive_heat(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """A warm room with an active heat load keeps the existing pre-heat behavior."""
+        areas, sensors = self._warm_occupied_room_scenario(controller, mock_hass)
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[areas["music_room"]],
+            area_temp_sensors=sensors,
+            inactive_areas=[],
+            all_areas_for_trend=list(areas.values()),
+            respect_user_off=False,
+            predictive_hvac_mode=HVACMode.HEAT,
+            predictive_target_temperature=72.0,
+            heat_load_area_ids={"music_room"},
+        )
+
+        assert "Predictive Comfort recommends pre-heating" in state.action_reason
+
+    def test_occupied_room_above_cool_target_keeps_predictive_cool(
+        self,
+        controller,
+        mock_hass,
+    ):
+        """The pre-heat veto leaves Predictive Comfort's pre-cool demand alone."""
+        areas, sensors = self._warm_occupied_room_scenario(controller, mock_hass)
+
+        state = controller.evaluate_thermostat_action(
+            active_areas=[areas["music_room"]],
+            area_temp_sensors=sensors,
+            inactive_areas=[],
+            all_areas_for_trend=list(areas.values()),
+            respect_user_off=False,
+            predictive_hvac_mode=HVACMode.COOL,
+            predictive_target_temperature=72.0,
+        )
+
+        assert state.recommended_action == ThermostatAction.TURN_ON
+        assert state.inferred_hvac_mode == HVACMode.COOL
+        assert state.action_reason == "Predictive Comfort recommends cool; switching from heat"
+
     def test_heat_loaded_office_stops_whole_house_cooling(
         self,
         controller,
