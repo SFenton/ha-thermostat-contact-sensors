@@ -315,6 +315,81 @@ class TestThermostatPausing:
 
         assert coordinator.is_paused is False
 
+    async def test_open_timeout_is_paused_while_turning_thermostat_off(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """Control re-run during the OFF call must not turn the thermostat back on.
+
+        The OFF state change re-runs Predictive Comfort while the service call is
+        still in flight; if the pause is not yet set, it turns heat back on and the
+        pause is then cleared as a manual override.
+        """
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        coordinator._update_open_sensors()
+        coordinator._pending_open_sensor = TEST_SENSOR_1
+
+        seen: dict[str, bool] = {}
+        controller = coordinator.thermostat_controller
+        evaluated_state = MagicMock()
+        execute_action = AsyncMock(return_value=True)
+        controller.async_execute_action = execute_action
+
+        async def turn_off(_mode) -> None:
+            seen["coordinator"] = coordinator.is_paused
+            seen["controller"] = controller.is_paused_by_contact_sensors
+            with patch.object(
+                coordinator, "update_thermostat_state", return_value=evaluated_state
+            ):
+                await coordinator.async_update_thermostat_state()
+
+        coordinator._async_set_hvac_mode = AsyncMock(side_effect=turn_off)
+
+        await coordinator._async_open_timeout_expired()
+
+        assert seen == {"coordinator": True, "controller": True}
+        execute_action.assert_not_awaited()
+        assert coordinator.is_paused is True
+        assert coordinator.trigger_sensor == TEST_SENSOR_1
+
+    async def test_open_timeout_failure_clears_pause(
+        self,
+        hass: HomeAssistant,
+        coordinator: ThermostatContactSensorsCoordinator,
+        mock_climate_service: AsyncMock,
+    ) -> None:
+        """A failed OFF call on open timeout leaves the thermostat unpaused."""
+        hass.states.async_set(TEST_SENSOR_1, STATE_ON, {"friendly_name": "Front Door"})
+        coordinator._update_open_sensors()
+        coordinator._async_set_hvac_mode = AsyncMock(side_effect=RuntimeError("boom"))
+
+        await coordinator._async_open_timeout_expired()
+
+        assert coordinator.is_paused is False
+        assert coordinator.thermostat_controller.is_paused_by_contact_sensors is False
+
+    async def test_pause_service_is_paused_while_turning_thermostat_off(
+        self,
+        coordinator: ThermostatContactSensorsCoordinator,
+    ) -> None:
+        """The pause service also marks the pause before the OFF call."""
+        seen: dict[str, bool] = {}
+
+        async def turn_off(_mode) -> None:
+            seen["coordinator"] = coordinator.is_paused
+            seen["controller"] = (
+                coordinator.thermostat_controller.is_paused_by_contact_sensors
+            )
+
+        coordinator._async_set_hvac_mode = AsyncMock(side_effect=turn_off)
+
+        await coordinator.async_pause()
+
+        assert seen == {"coordinator": True, "controller": True}
+        assert coordinator.is_paused is True
+
     async def test_restored_pause_with_closed_sensors_schedules_resume(
         self,
         coordinator: ThermostatContactSensorsCoordinator,
