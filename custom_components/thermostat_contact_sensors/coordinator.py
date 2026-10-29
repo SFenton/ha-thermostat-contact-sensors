@@ -2964,6 +2964,11 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         self._check_initial_open_sensors()
 
+    def _set_contact_pause(self, paused: bool) -> None:
+        """Set the contact-sensor pause and push it to the thermostat controller."""
+        self.is_paused = paused
+        self.thermostat_controller.set_paused_by_contact_sensors(paused)
+
     async def _async_set_hvac_mode(self, hvac_mode: HVACMode | str) -> None:
         """Set the physical thermostat mode and update cycle tracking on success."""
         mode_value = hvac_mode.value if hasattr(hvac_mode, "value") else hvac_mode
@@ -3230,6 +3235,12 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
         climate_state = self.hass.states.get(self.thermostat)
         previous_hvac_mode = self._capture_previous_hvac_mode()
 
+        # Mark the pause before turning the thermostat off: the OFF state change
+        # re-runs Predictive Comfort and thermostat control while the service
+        # call is still in flight, and they must see the pause or they turn the
+        # thermostat straight back on.
+        self._set_contact_pause(True)
+
         try:
             # If supported, set fan mode to auto (or off fallback) before turning HVAC off.
             if climate_state:
@@ -3260,10 +3271,10 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
             await self._async_set_hvac_mode(HVACMode.OFF)
         except Exception:
             _LOGGER.exception("Failed to pause thermostat")
+            self._set_contact_pause(False)
             self.async_set_updated_data(None)
             return
 
-        self.is_paused = True
         self.previous_hvac_mode = previous_hvac_mode
         self.trigger_sensor = trigger_sensor
 
@@ -3339,14 +3350,17 @@ class ThermostatContactSensorsCoordinator(DataUpdateCoordinator):
 
         self._cancel_open_timer()
 
+        # Mark the pause before the OFF call, as in _async_open_timeout_expired.
+        self._set_contact_pause(True)
+
         try:
             await self._async_set_hvac_mode(HVACMode.OFF)
         except Exception:
             _LOGGER.exception("Failed to pause thermostat via service")
+            self._set_contact_pause(False)
             self.async_set_updated_data(None)
             return
 
-        self.is_paused = True
         self.previous_hvac_mode = previous_hvac_mode
 
         # Send notification
